@@ -1,28 +1,127 @@
 .forbidden-page {
+  position: relative;
+  padding: 72px 0 120px;
+  overflow: hidden;
+}
+
+.forbidden-page::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(600px 320px at 10% -10%, rgba(255, 192, 120, 0.2), transparent 65%),
+    radial-gradient(520px 340px at 95% 5%, rgba(120, 200, 255, 0.18), transparent 70%),
+    linear-gradient(140deg, rgba(16, 20, 32, 0.95), rgba(19, 24, 36, 0.9));
+  pointer-events: none;
+}
+
+.forbidden-page::after {
+  content: "";
+  position: absolute;
+  inset: -20% 35% auto;
+  height: 140%;
+  background: radial-gradient(420px 520px at 30% 40%, rgba(255, 255, 255, 0.06), transparent 70%);
+  pointer-events: none;
+}
+
+.forbidden-page .container {
+  position: relative;
+  z-index: 1;
+}
+
+.forbidden-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 32px;
+  align-items: start;
+}
+
+.forbidden-copy {
+  display: grid;
+  gap: 18px;
+}
+
+.forbidden-eyebrow {
+  color: var(--accent-warm);
+  margin: 0;
+}
+
+.forbidden-lead {
+  margin: 0;
+  color: var(--muted);
+}
+
+.forbidden-actions {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
-.forbidden-container {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 40px 18px;
-  background: var(--bg);
+.forbidden-hint {
+  display: grid;
+  gap: 8px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(18, 22, 34, 0.65);
+  color: var(--muted);
 }
 
-.forbidden-card {
-  width: min(420px, 92vw);
+.forbidden-hint p {
+  margin: 0;
 }
 
-.forbidden-text {
+.forbidden-ads {
+  display: grid;
+  gap: 18px;
+}
+
+.forbidden-panel {
+  padding: 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(16, 20, 32, 0.85);
+  box-shadow: var(--shadow);
+}
+
+.ad-slot {
+  border-style: dashed;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.ad-label {
+  text-transform: uppercase;
+  letter-spacing: var(--text-label-ls);
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-lh);
+  font-weight: var(--text-label-wt);
+  color: var(--muted);
+  margin: 0 0 12px;
+}
+
+.ad-slot.compact p {
   margin: 0;
   color: var(--muted);
   font-size: var(--text-body-sm-size);
   line-height: var(--text-body-sm-lh);
 }
 
-.forbidden-action {
-  width: 100%;
+@media (max-width: 960px) {
+  .forbidden-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .forbidden-page {
+    padding: 56px 0 90px;
+  }
+
+  .forbidden-actions {
+    flex-direction: column;
+  }
+
+  .forbidden-actions .button {
+    width: 100%;
+  }
 }
