@@ -45,6 +45,7 @@ type MultipartUploadStartInput struct {
 	UploadPartCount   int
 	EncryptionVersion int16
 	FolderID          *string
+	SinglePart        bool
 }
 
 type MultipartUploadCompleteInput struct {
@@ -57,6 +58,7 @@ type MultipartUploadCompleteInput struct {
 	ThumbnailMime     string
 	ThumbnailWidth    int
 	ThumbnailHeight   int
+	ThumbnailSize     int64
 }
 
 type UploadPartRecordInput struct {
@@ -109,7 +111,10 @@ func (s *Service) StartMultipartUploadSession(ctx context.Context, userID string
 	if input.UploadPartCount <= 0 {
 		validationErrors.Add("uploadPartCount", "upload part count is required")
 	}
-	if input.UploadPartCount > 1 {
+	if input.SinglePart && (input.TotalChunks != 1 || input.UploadPartCount != 1) {
+		validationErrors.Add("singlePart", "single-part uploads require one chunk")
+	}
+	if !input.SinglePart && input.UploadPartCount > 1 {
 		provider, providerErr := s.storage.ActiveProvider(ctx)
 		if providerErr != nil {
 			return models.UploadStartResponse{}, nil, providerErr
@@ -190,10 +195,13 @@ func (s *Service) StartMultipartUploadSession(ctx context.Context, userID string
 		_ = tx.Rollback(ctx)
 		return models.UploadStartResponse{}, nil, err
 	}
-	providerUploadID, err := s.storage.CreateMultipartUpload(ctx, objectKey, "application/octet-stream")
-	if err != nil {
-		_ = tx.Rollback(ctx)
-		return models.UploadStartResponse{}, nil, err
+	providerUploadID := ""
+	if !input.SinglePart {
+		providerUploadID, err = s.storage.CreateMultipartUpload(ctx, objectKey, "application/octet-stream")
+		if err != nil {
+			_ = tx.Rollback(ctx)
+			return models.UploadStartResponse{}, nil, err
+		}
 	}
 
 	reserved, err := s.storageRepo.ReserveStorage(ctx, tx, userID, declaredEncryptedSize, storageSettings.MaxStorageBytes)
@@ -231,7 +239,7 @@ func (s *Service) StartMultipartUploadSession(ctx context.Context, userID string
 		return models.UploadStartResponse{}, nil, err
 	}
 
-	return models.UploadStartResponse{
+	response := models.UploadStartResponse{
 		FileID:           file.ID,
 		VaultID:          file.UserID,
 		UploadSessionID:  session.ID,
@@ -240,7 +248,44 @@ func (s *Service) StartMultipartUploadSession(ctx context.Context, userID string
 		TotalChunks:      input.TotalChunks,
 		UploadPartSize:   input.UploadPartSize,
 		UploadPartCount:  input.UploadPartCount,
-	}, nil, nil
+	}
+	if input.SinglePart {
+		response.UploadURL, err = s.storage.PresignUpload(ctx, objectKey, "application/octet-stream", uploadExpiry)
+		if err != nil {
+			return models.UploadStartResponse{}, nil, err
+		}
+	}
+	return response, nil, nil
+}
+
+func (s *Service) PresignSingleUpload(ctx context.Context, userID, uploadSessionID string) (string, error) {
+	var err error
+	userID, err = validateUserID(userID)
+	if err != nil {
+		return "", err
+	}
+	uploadSessionID, err = validateUploadID(uploadSessionID)
+	if err != nil {
+		return "", err
+	}
+	uploadSession, err := s.uploadRepo.GetUploadSessionForUser(ctx, s.db, uploadSessionID, userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrNotFound
+		}
+		return "", err
+	}
+	if uploadSession.Status != UploadStatusActive || uploadSession.ProviderUploadID != "" || uploadSession.UploadPartCount != 1 || isExpired(&uploadSession.ExpiresAt) {
+		return "", ErrUploadCancelled
+	}
+	if err := s.uploadRepo.TouchUploadSession(ctx, s.db, uploadSessionID, UploadStatusActive, time.Now().Add(s.uploadExpiry(ctx))); err != nil {
+		return "", err
+	}
+	objectKey, err := storage.BuildObjectKey(userID, uploadSession.FileID)
+	if err != nil {
+		return "", err
+	}
+	return s.storage.PresignUpload(ctx, objectKey, "application/octet-stream", s.uploadExpiry(ctx))
 }
 
 func (s *Service) PresignMultipartUploadPart(ctx context.Context, userID, uploadSessionID string, partNumber int) (string, error) {
@@ -407,7 +452,7 @@ func (s *Service) CompleteMultipartUploadSession(ctx context.Context, userID, up
 		return ErrInvalidInput
 	}
 	if input.HasThumbnail {
-		if strings.TrimSpace(input.ThumbnailMime) != thumbnailMimeWebP || input.ThumbnailWidth <= 0 || input.ThumbnailHeight <= 0 {
+		if strings.TrimSpace(input.ThumbnailMime) != thumbnailMimeWebP || input.ThumbnailWidth <= 0 || input.ThumbnailHeight <= 0 || input.ThumbnailSize <= 0 || input.ThumbnailSize > thumbnailMaxEncryptedBytes {
 			return ErrInvalidInput
 		}
 	}
@@ -424,12 +469,16 @@ func (s *Service) CompleteMultipartUploadSession(ctx context.Context, userID, up
 		return err
 	}
 
-	parts, err := s.uploadRepo.ListUploadParts(ctx, s.db, uploadSessionID)
-	if err != nil {
-		return err
-	}
-	if uploadSession.UploadPartCount <= 0 || len(parts) != uploadSession.UploadPartCount {
-		return ErrPartsRequired
+	isSinglePart := uploadSession.ProviderUploadID == ""
+	var parts []models.UploadPart
+	if !isSinglePart {
+		parts, err = s.uploadRepo.ListUploadParts(ctx, s.db, uploadSessionID)
+		if err != nil {
+			return err
+		}
+		if uploadSession.UploadPartCount <= 0 || len(parts) != uploadSession.UploadPartCount {
+			return ErrPartsRequired
+		}
 	}
 	encryptedMetadata, err := base64.StdEncoding.DecodeString(strings.TrimSpace(input.EncryptedMetadata))
 	if err != nil {
@@ -462,28 +511,29 @@ func (s *Service) CompleteMultipartUploadSession(ctx context.Context, userID, up
 		}
 	}
 
-	completedParts := make([]storage.CompletedPart, 0, len(parts))
-	for idx, part := range parts {
-		if part.PartNumber != idx+1 {
-			return ErrPartsRequired
-		}
-		completedParts = append(completedParts, storage.CompletedPart{
-			PartNumber: int32(part.PartNumber),
-			ETag:       part.ETag,
-		})
-	}
-
 	objectKey, err := storage.BuildObjectKey(userID, uploadSession.FileID)
 	if err != nil {
 		return err
 	}
-	if err := s.storage.CompleteMultipartUpload(ctx, objectKey, uploadSession.ProviderUploadID, completedParts); err != nil {
-		if thumbnailObjectKey != "" {
-			_ = s.storage.DeleteObject(ctx, thumbnailObjectKey)
+	if !isSinglePart {
+		completedParts := make([]storage.CompletedPart, 0, len(parts))
+		for idx, part := range parts {
+			if part.PartNumber != idx+1 {
+				return ErrPartsRequired
+			}
+			completedParts = append(completedParts, storage.CompletedPart{
+				PartNumber: int32(part.PartNumber),
+				ETag:       part.ETag,
+			})
 		}
-		_ = s.uploadRepo.UpdateUploadSessionStatus(ctx, s.db, uploadSessionID, UploadStatusFailed)
-		_, _ = s.fileRepo.UpdateEncryptedFileStatusIf(ctx, s.db, file.ID, FileUploadFailed, []string{FileUploadUploading, FileUploadPending})
-		return err
+		if err := s.storage.CompleteMultipartUpload(ctx, objectKey, uploadSession.ProviderUploadID, completedParts); err != nil {
+			if thumbnailObjectKey != "" {
+				_ = s.storage.DeleteObject(ctx, thumbnailObjectKey)
+			}
+			_ = s.uploadRepo.UpdateUploadSessionStatus(ctx, s.db, uploadSessionID, UploadStatusFailed)
+			_, _ = s.fileRepo.UpdateEncryptedFileStatusIf(ctx, s.db, file.ID, FileUploadFailed, []string{FileUploadUploading, FileUploadPending})
+			return err
+		}
 	}
 	actualEncryptedSize, err := objectSizeWithRetry(ctx, func(measureCtx context.Context) (int64, error) {
 		return s.storage.ObjectSize(measureCtx, objectKey)
@@ -507,26 +557,8 @@ func (s *Service) CompleteMultipartUploadSession(ctx context.Context, userID, up
 	thumbnailSizeBytes := int64(0)
 	hasStoredThumbnail := false
 	if thumbnailObjectKey != "" {
-		thumbnailSizeBytes, err = objectSizeWithRetry(ctx, func(measureCtx context.Context) (int64, error) {
-			return s.storage.ObjectSize(measureCtx, thumbnailObjectKey)
-		})
-		if err != nil {
-			if deleteErr := s.storage.DeleteObject(ctx, thumbnailObjectKey); deleteErr != nil {
-				log.Printf("uploads: failed to delete thumbnail after size lookup failure file=%s key=%s: %v", file.ID, thumbnailObjectKey, deleteErr)
-			}
-			log.Printf("uploads: continuing without thumbnail after size lookup failure file=%s key=%s: %v", file.ID, thumbnailObjectKey, err)
-			thumbnailObjectKey = ""
-			thumbnailSizeBytes = 0
-		} else if thumbnailSizeBytes <= 0 || thumbnailSizeBytes > thumbnailMaxEncryptedBytes {
-			if deleteErr := s.storage.DeleteObject(ctx, thumbnailObjectKey); deleteErr != nil {
-				log.Printf("uploads: failed to delete invalid thumbnail file=%s key=%s: %v", file.ID, thumbnailObjectKey, deleteErr)
-			}
-			log.Printf("uploads: continuing without thumbnail after invalid size file=%s key=%s size=%d", file.ID, thumbnailObjectKey, thumbnailSizeBytes)
-			thumbnailObjectKey = ""
-			thumbnailSizeBytes = 0
-		} else {
-			hasStoredThumbnail = true
-		}
+		thumbnailSizeBytes = input.ThumbnailSize
+		hasStoredThumbnail = true
 	}
 	reservedSize := reservedUploadSize(file.PlaintextSize, file.ChunkCount)
 	actualStoredSize := actualEncryptedSize + thumbnailSizeBytes
@@ -643,7 +675,11 @@ func (s *Service) AbortMultipartUploadSession(ctx context.Context, userID, uploa
 
 	objectKey, keyErr := storage.BuildObjectKey(userID, uploadSession.FileID)
 	if keyErr == nil {
-		_ = s.storage.AbortMultipartUpload(ctx, objectKey, uploadSession.ProviderUploadID)
+		if uploadSession.ProviderUploadID == "" {
+			_ = s.storage.DeleteObject(ctx, objectKey)
+		} else {
+			_ = s.storage.AbortMultipartUpload(ctx, objectKey, uploadSession.ProviderUploadID)
+		}
 	}
 	if thumbnailKey, thumbErr := storage.BuildThumbnailObjectKey(userID, uploadSession.FileID); thumbErr == nil {
 		_ = s.storage.DeleteObject(ctx, thumbnailKey)
