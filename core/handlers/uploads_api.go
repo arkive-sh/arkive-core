@@ -24,6 +24,7 @@ type uploadStartRequest struct {
 	UploadPartCount   int     `json:"uploadPartCount"`
 	EncryptionVersion int16   `json:"encryptionVersion"`
 	FolderID          *string `json:"folderId"`
+	SinglePart        bool    `json:"singlePart"`
 }
 
 type uploadPartRecordRequest struct {
@@ -46,6 +47,7 @@ type uploadCompleteRequest struct {
 	ThumbnailMime     string               `json:"thumbnailMime"`
 	ThumbnailWidth    int                  `json:"thumbnailWidth"`
 	ThumbnailHeight   int                  `json:"thumbnailHeight"`
+	ThumbnailSize     int64                `json:"thumbnailSize"`
 }
 
 type searchTokenRequest struct {
@@ -128,6 +130,7 @@ func APIUploadStart(svc *uploads.Service) gin.HandlerFunc {
 			UploadPartCount:   req.UploadPartCount,
 			EncryptionVersion: req.EncryptionVersion,
 			FolderID:          req.FolderID,
+			SinglePart:        req.SinglePart,
 		})
 		if err != nil {
 			var limitErr *uploads.StorageLimitExceededError
@@ -166,7 +169,33 @@ func APIUploadStart(svc *uploads.Service) gin.HandlerFunc {
 			"totalChunks":      resp.TotalChunks,
 			"uploadPartSize":   resp.UploadPartSize,
 			"uploadPartCount":  resp.UploadPartCount,
+			"uploadUrl":        resp.UploadURL,
 		})
+	}
+}
+
+func APIUploadSinglePresign(svc *uploads.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		uploadSessionID := c.Param("id")
+		userID, ok := c.Get("user_id")
+		if !ok {
+			apierror.Unauthorized(c)
+			return
+		}
+		url, err := svc.PresignSingleUpload(c.Request.Context(), userID.(string), uploadSessionID)
+		if err != nil {
+			switch err {
+			case uploads.ErrNotFound:
+				apierror.Write(c, http.StatusNotFound, "upload_not_found", "Upload not found", nil)
+			case uploads.ErrUploadCancelled:
+				apierror.Write(c, http.StatusConflict, "upload_cancelled", "Upload cancelled", nil)
+			default:
+				_ = c.Error(errs.WithStack(err))
+				apierror.Internal(c, "Upload presign failed")
+			}
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"url": url})
 	}
 }
 
@@ -328,6 +357,7 @@ func APIUploadComplete(svc *uploads.Service) gin.HandlerFunc {
 			ThumbnailMime:     req.ThumbnailMime,
 			ThumbnailWidth:    req.ThumbnailWidth,
 			ThumbnailHeight:   req.ThumbnailHeight,
+			ThumbnailSize:     req.ThumbnailSize,
 		}); err != nil {
 			var limitErr *uploads.StorageLimitExceededError
 			switch err {

@@ -332,9 +332,10 @@ export class UploadRunner {
 					fileChunkSize: job.public.fileChunkSize,
 					totalChunks: job.public.totalChunks,
 					uploadPartSize: job.public.uploadPartSize,
-					uploadPartCount: job.public.uploadPartCount,
+					 uploadPartCount: job.public.uploadPartCount,
 					encryptionVersion: 1,
 					folderId: currentFolderId(),
+					singlePart: job.public.totalChunks === 1,
 				}, signal);
 			});
 		if (this.shouldStopJob(job)) {
@@ -437,6 +438,7 @@ export class UploadRunner {
 					thumbnailMime: uploadedThumbnail ? uploadedThumbnail.mime : "",
 					thumbnailWidth: uploadedThumbnail ? uploadedThumbnail.width : 0,
 					thumbnailHeight: uploadedThumbnail ? uploadedThumbnail.height : 0,
+					thumbnailSize: uploadedThumbnail ? uploadedThumbnail.encryptedSize : 0,
 				}, signal);
 			});
 			if (this.shouldStopJob(job)) {
@@ -614,11 +616,13 @@ export class UploadRunner {
 		const uploadBody = joinUint8Arrays(encryptedChunks);
 		const uploadHash = await hashUploadPayload({ bytes: uploadBody });
 
-		const presigned = presigner
-			? { url: await presigner.get(partNumber) }
-			: await this.runWithController(async (signal) => {
-				return presignUploadPart(started.uploadSessionId, partNumber, signal);
-			});
+		const presigned = started.uploadUrl
+			? { url: started.uploadUrl }
+			: presigner
+				? { url: await presigner.get(partNumber) }
+				: await this.runWithController(async (signal) => {
+					return presignUploadPart(started.uploadSessionId, partNumber, signal);
+				});
 		if (this.shouldStopJob(job)) {
 			throw STOPPED_UPLOAD;
 		}
@@ -636,13 +640,15 @@ export class UploadRunner {
 			throw toAppError(null, { code: "upload_failed", message: "Part upload failed" });
 		}
 		const etag = response.headers.get("etag") || response.headers.get("ETag") || "";
-		await this.runWithController(async (signal) => {
-			return recordUploadPart(started.uploadSessionId, {
-				partNumber: partNumber,
-				encryptedHash: uploadHash,
-				etag: etag,
-			}, signal);
-		});
+		if (started.providerUploadId) {
+			await this.runWithController(async (signal) => {
+				return recordUploadPart(started.uploadSessionId, {
+					partNumber: partNumber,
+					encryptedHash: uploadHash,
+					etag: etag,
+				}, signal);
+			});
+		}
 		uploadBody.fill(0);
 		if (this.shouldStopJob(job)) {
 			throw STOPPED_UPLOAD;
