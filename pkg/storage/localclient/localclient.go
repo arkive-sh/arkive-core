@@ -28,14 +28,15 @@ type Client struct {
 }
 
 type tokenEntry struct {
-	Key         string
-	Filename    string
-	Disposition string
-	ContentType string
-	ExpiresAt   time.Time
-	Download    bool
-	UploadID    string
-	PartNumber  int32
+	Key           string
+	Filename      string
+	Disposition   string
+	ContentType   string
+	ContentLength int64
+	ExpiresAt     time.Time
+	Download      bool
+	UploadID      string
+	PartNumber    int32
 }
 
 func New(rootFunc RootFunc) *Client {
@@ -45,7 +46,7 @@ func New(rootFunc RootFunc) *Client {
 	}
 }
 
-func (c *Client) PresignUpload(ctx context.Context, key, contentType string, expires time.Duration) (string, error) {
+func (c *Client) PresignUpload(ctx context.Context, key, contentType string, contentLength int64, expires time.Duration) (string, error) {
 	if strings.TrimSpace(key) == "" {
 		return "", errors.New("key is required")
 	}
@@ -54,9 +55,10 @@ func (c *Client) PresignUpload(ctx context.Context, key, contentType string, exp
 		return "", err
 	}
 	c.storeToken(token, tokenEntry{
-		Key:         key,
-		ContentType: contentType,
-		ExpiresAt:   time.Now().Add(expires),
+		Key:           key,
+		ContentType:   contentType,
+		ContentLength: contentLength,
+		ExpiresAt:     time.Now().Add(expires),
 	})
 	return "/local-storage/upload/" + token, nil
 }
@@ -109,7 +111,7 @@ func (c *Client) CreateMultipartUpload(ctx context.Context, key, contentType str
 	return newToken()
 }
 
-func (c *Client) PresignUploadPart(ctx context.Context, key, uploadID string, partNumber int32, expires time.Duration) (string, error) {
+func (c *Client) PresignUploadPart(ctx context.Context, key, uploadID string, partNumber int32, contentLength int64, expires time.Duration) (string, error) {
 	if strings.TrimSpace(key) == "" {
 		return "", errors.New("key is required")
 	}
@@ -124,10 +126,11 @@ func (c *Client) PresignUploadPart(ctx context.Context, key, uploadID string, pa
 		return "", err
 	}
 	c.storeToken(token, tokenEntry{
-		Key:        key,
-		UploadID:   uploadID,
-		PartNumber: partNumber,
-		ExpiresAt:  time.Now().Add(expires),
+		Key:           key,
+		UploadID:      uploadID,
+		PartNumber:    partNumber,
+		ContentLength: contentLength,
+		ExpiresAt:     time.Now().Add(expires),
 	})
 	return "/local-storage/upload/" + token, nil
 }
@@ -196,6 +199,10 @@ func (c *Client) ServeUpload(w http.ResponseWriter, r *http.Request, token strin
 	entry, ok := c.consumeToken(token, false)
 	if !ok {
 		http.NotFound(w, r)
+		return
+	}
+	if entry.ContentLength <= 0 || r.ContentLength != entry.ContentLength {
+		http.Error(w, "invalid upload length", http.StatusBadRequest)
 		return
 	}
 	path, err := c.objectPath(r.Context(), entry.Key)

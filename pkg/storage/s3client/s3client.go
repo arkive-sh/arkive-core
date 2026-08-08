@@ -59,14 +59,15 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) PresignUpload(ctx context.Context, key, contentType string, expires time.Duration) (string, error) {
+func (c *Client) PresignUpload(ctx context.Context, key, contentType string, contentLength int64, expires time.Duration) (string, error) {
 	if key == "" {
 		return "", errors.New("key is required")
 	}
 
 	input := &s3.PutObjectInput{
-		Bucket: aws.String(c.bucket),
-		Key:    aws.String(key),
+		Bucket:        aws.String(c.bucket),
+		Key:           aws.String(key),
+		ContentLength: aws.Int64(contentLength),
 	}
 	if contentType != "" {
 		input.ContentType = aws.String(contentType)
@@ -156,7 +157,7 @@ func (c *Client) CreateMultipartUpload(ctx context.Context, key, contentType str
 	return aws.ToString(out.UploadId), nil
 }
 
-func (c *Client) PresignUploadPart(ctx context.Context, key, uploadID string, partNumber int32, expires time.Duration) (string, error) {
+func (c *Client) PresignUploadPart(ctx context.Context, key, uploadID string, partNumber int32, contentLength int64, expires time.Duration) (string, error) {
 	if key == "" {
 		return "", errors.New("key is required")
 	}
@@ -168,10 +169,11 @@ func (c *Client) PresignUploadPart(ctx context.Context, key, uploadID string, pa
 	}
 
 	input := &s3.UploadPartInput{
-		Bucket:     aws.String(c.bucket),
-		Key:        aws.String(key),
-		UploadId:   aws.String(uploadID),
-		PartNumber: aws.Int32(partNumber),
+		Bucket:        aws.String(c.bucket),
+		Key:           aws.String(key),
+		UploadId:      aws.String(uploadID),
+		PartNumber:    aws.Int32(partNumber),
+		ContentLength: aws.Int64(contentLength),
 	}
 
 	var opts []func(*s3.PresignOptions)

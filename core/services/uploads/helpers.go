@@ -1,7 +1,7 @@
 package uploads
 
 import (
-	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -54,6 +54,19 @@ func reservedUploadSize(plaintextSize int64, chunkCount int) int64 {
 	return encryptedFileSize(plaintextSize, chunkCount) + thumbnailMaxEncryptedBytes
 }
 
-func objectSizeWithRetry(ctx context.Context, measure func(context.Context) (int64, error)) (int64, error) {
-	return measure(ctx)
+func expectedEncryptedPartSize(plaintextSize, chunkSize, partSize int64, partNumber int) (int64, error) {
+	if plaintextSize <= 0 || chunkSize <= 0 || partSize <= 0 || partNumber <= 0 {
+		return 0, fmt.Errorf("invalid upload part size")
+	}
+	start := int64(partNumber-1) * partSize
+	if start >= plaintextSize {
+		return 0, fmt.Errorf("upload part is out of range")
+	}
+	end := start + partSize
+	if end > plaintextSize {
+		end = plaintextSize
+	}
+	firstChunk := start / chunkSize
+	lastChunk := (end + chunkSize - 1) / chunkSize
+	return (end - start) + (lastChunk-firstChunk)*encryptedChunkEnvelopeOverheadBytes, nil
 }
