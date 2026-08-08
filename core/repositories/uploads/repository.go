@@ -10,6 +10,15 @@ import (
 
 type Repository struct{}
 
+type StaleUpload struct {
+	ID               string
+	FileID           string
+	UserID           string
+	ProviderUploadID string
+	PlaintextSize    int64
+	ChunkCount       int
+}
+
 func New() *Repository {
 	return &Repository{}
 }
@@ -84,6 +93,39 @@ func (r *Repository) UpdateUploadSessionStatus(ctx context.Context, db database.
 		id = $1`
 	_, err := db.Exec(ctx, query, uploadSessionID, status)
 	return err
+}
+
+func (r *Repository) ListExpiredActiveUploads(ctx context.Context, db database.PgExecutor, limit int) ([]StaleUpload, error) {
+	rows, err := db.Query(ctx, `SELECT
+		upload_sessions.id, upload_sessions.file_id, files.user_id,
+		COALESCE(upload_sessions.provider_upload_id, ''), files.plaintext_size, files.chunk_count
+	FROM upload_sessions
+	JOIN files ON files.id = upload_sessions.file_id
+	WHERE upload_sessions.status = 'active' AND upload_sessions.expires_at <= now()
+	ORDER BY upload_sessions.expires_at
+	LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var uploads []StaleUpload
+	for rows.Next() {
+		var upload StaleUpload
+		if err := rows.Scan(&upload.ID, &upload.FileID, &upload.UserID,
+			&upload.ProviderUploadID, &upload.PlaintextSize, &upload.ChunkCount); err != nil {
+			return nil, err
+		}
+		uploads = append(uploads, upload)
+	}
+	return uploads, rows.Err()
+}
+
+func (r *Repository) ExpireUploadSession(ctx context.Context, db database.PgExecutor, uploadSessionID string) (bool, error) {
+	tag, err := db.Exec(ctx, `UPDATE upload_sessions
+	SET status = 'expired', updated_at = now()
+	WHERE id = $1 AND status = 'active'`, uploadSessionID)
+	return tag.RowsAffected() > 0, err
 }
 
 func (r *Repository) TouchUploadSession(ctx context.Context, db database.PgExecutor, uploadSessionID, status string, expiresAt time.Time) error {

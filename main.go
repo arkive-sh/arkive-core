@@ -88,6 +88,11 @@ func main() {
 			DownloadExpire:      3 * time.Hour,
 			ShareDownloadExpire: 30 * time.Minute,
 		})
+	staleUploadCleanupCron, err := jobs.StartStaleUploadCleanup(uploadService)
+	if err != nil {
+		log.Fatalf("stale upload cleanup cron failed: %v", err)
+	}
+	defer staleUploadCleanupCron.Stop()
 	folderService := folderssvc.NewService(db, folderRepo, fileRepo, filesService)
 
 	if strings.EqualFold(cfg.Env, "dev") {

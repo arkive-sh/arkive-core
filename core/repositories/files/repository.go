@@ -9,6 +9,14 @@ import (
 
 type Repository struct{}
 
+type UploadDetails struct {
+	ID            string
+	ChunkSize     int64
+	ChunkCount    int
+	PlaintextSize int64
+	UploadStatus  string
+}
+
 func New() *Repository {
 	return &Repository{}
 }
@@ -110,6 +118,21 @@ func (r *Repository) GetEncryptedFileForUser(ctx context.Context, db database.Pg
 	}
 	file.FolderID = folderID
 	return file, nil
+}
+
+func (r *Repository) GetUploadDetailsForUser(ctx context.Context, db database.PgExecutor, fileID, userID string) (UploadDetails, error) {
+	var details UploadDetails
+	err := db.QueryRow(ctx, `SELECT
+		id, chunk_size, chunk_count, plaintext_size, upload_status
+	FROM files
+	WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL`, fileID, userID).Scan(
+		&details.ID,
+		&details.ChunkSize,
+		&details.ChunkCount,
+		&details.PlaintextSize,
+		&details.UploadStatus,
+	)
+	return details, err
 }
 
 func (r *Repository) UpdateEncryptedFileEnvelope(ctx context.Context, db database.PgExecutor, fileID string, encryptedMetadata, encryptedFileKey, encryptedManifest, encryptedHash []byte) error {
