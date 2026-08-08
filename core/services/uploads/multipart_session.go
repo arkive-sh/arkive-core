@@ -286,7 +286,7 @@ func (s *Service) PresignSingleUpload(ctx context.Context, userID, uploadSession
 	if err != nil {
 		return "", err
 	}
-	file, err := s.fileRepo.GetEncryptedFileForUser(ctx, s.db, uploadSession.FileID, userID)
+	file, err := s.fileRepo.GetUploadDetailsForUser(ctx, s.db, uploadSession.FileID, userID)
 	if err != nil {
 		return "", err
 	}
@@ -328,7 +328,7 @@ func (s *Service) PresignMultipartUploadPart(ctx context.Context, userID, upload
 	if err != nil {
 		return "", err
 	}
-	file, err := s.fileRepo.GetEncryptedFileForUser(ctx, s.db, uploadSession.FileID, userID)
+	file, err := s.fileRepo.GetUploadDetailsForUser(ctx, s.db, uploadSession.FileID, userID)
 	if err != nil {
 		return "", err
 	}
@@ -375,7 +375,7 @@ func (s *Service) PresignMultipartUploadParts(ctx context.Context, userID, uploa
 		return nil, err
 	}
 
-	file, err := s.fileRepo.GetEncryptedFileForUser(ctx, s.db, uploadSession.FileID, userID)
+	file, err := s.fileRepo.GetUploadDetailsForUser(ctx, s.db, uploadSession.FileID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -478,7 +478,7 @@ func (s *Service) CompleteMultipartUploadSession(ctx context.Context, userID, up
 		}
 	}
 
-	file, err := s.fileRepo.GetEncryptedFileForUser(ctx, s.db, uploadSession.FileID, userID)
+	file, err := s.fileRepo.GetUploadDetailsForUser(ctx, s.db, uploadSession.FileID, userID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
@@ -642,7 +642,7 @@ func (s *Service) CompleteMultipartUploadSession(ctx context.Context, userID, up
 		_ = tx.Rollback(ctx)
 		return err
 	}
-	if err := s.fileRepo.InsertSearchTokensForFile(ctx, tx, userID, file.UserID, file.ID, searchTokens); err != nil {
+	if err := s.fileRepo.InsertSearchTokensForFile(ctx, tx, userID, userID, file.ID, searchTokens); err != nil {
 		_ = tx.Rollback(ctx)
 		return err
 	}
@@ -668,7 +668,7 @@ func (s *Service) AbortMultipartUploadSession(ctx context.Context, userID, uploa
 		return err
 	}
 
-	file, err := s.fileRepo.GetEncryptedFileForUser(ctx, s.db, uploadSession.FileID, userID)
+	file, err := s.fileRepo.GetUploadDetailsForUser(ctx, s.db, uploadSession.FileID, userID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
@@ -746,7 +746,7 @@ func (s *Service) PresignThumbnailUpload(ctx context.Context, userID, uploadSess
 		return "", err
 	}
 
-	file, err := s.fileRepo.GetEncryptedFileForUser(ctx, s.db, uploadSession.FileID, userID)
+	file, err := s.fileRepo.GetUploadDetailsForUser(ctx, s.db, uploadSession.FileID, userID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", ErrNotFound
