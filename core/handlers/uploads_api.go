@@ -27,6 +27,36 @@ type uploadStartRequest struct {
 	SinglePart        bool    `json:"singlePart"`
 }
 
+const maxUploadBatchItems = 500
+
+type uploadBatchStartRequest struct {
+	Files []uploadBatchStartItem `json:"files"`
+}
+
+type uploadBatchStartItem struct {
+	ClientID string `json:"clientId"`
+	uploadStartRequest
+}
+
+type uploadBatchStartResult struct {
+	ClientID         string            `json:"clientId"`
+	FileID           string            `json:"fileId,omitempty"`
+	VaultID          string            `json:"vaultId,omitempty"`
+	UploadSessionID  string            `json:"uploadSessionId,omitempty"`
+	ProviderUploadID string            `json:"providerUploadId,omitempty"`
+	FileChunkSize    int64             `json:"fileChunkSize,omitempty"`
+	TotalChunks      int               `json:"totalChunks,omitempty"`
+	UploadPartSize   int64             `json:"uploadPartSize,omitempty"`
+	UploadPartCount  int               `json:"uploadPartCount,omitempty"`
+	UploadURL        string            `json:"uploadUrl,omitempty"`
+	Error            string            `json:"error,omitempty"`
+	ValidationErrors map[string]string `json:"validationErrors,omitempty"`
+}
+
+type uploadBatchStartResponse struct {
+	Uploads []uploadBatchStartResult `json:"uploads"`
+}
+
 type uploadPartRecordRequest struct {
 	PartNumber    int    `json:"partNumber"`
 	EncryptedHash string `json:"encryptedHash"`
@@ -48,6 +78,26 @@ type uploadCompleteRequest struct {
 	ThumbnailWidth    int                  `json:"thumbnailWidth"`
 	ThumbnailHeight   int                  `json:"thumbnailHeight"`
 	ThumbnailSize     int64                `json:"thumbnailSize"`
+}
+
+type uploadBatchCompleteRequest struct {
+	Uploads []uploadBatchCompleteItem `json:"uploads"`
+}
+
+type uploadBatchCompleteItem struct {
+	ClientID        string `json:"clientId"`
+	UploadSessionID string `json:"uploadSessionId"`
+	uploadCompleteRequest
+}
+
+type uploadBatchCompleteResult struct {
+	ClientID  string `json:"clientId"`
+	Completed bool   `json:"completed"`
+	Error     string `json:"error,omitempty"`
+}
+
+type uploadBatchCompleteResponse struct {
+	Uploads []uploadBatchCompleteResult `json:"uploads"`
 }
 
 type searchTokenRequest struct {
@@ -108,6 +158,42 @@ func APIUploadLimits(settingsService *settingssvc.Service) gin.HandlerFunc {
 	}
 }
 
+func uploadStartInput(req uploadStartRequest) uploads.MultipartUploadStartInput {
+	return uploads.MultipartUploadStartInput{
+		OriginalSize:      req.OriginalSize,
+		FileChunkSize:     req.FileChunkSize,
+		TotalChunks:       req.TotalChunks,
+		UploadPartSize:    req.UploadPartSize,
+		UploadPartCount:   req.UploadPartCount,
+		EncryptionVersion: req.EncryptionVersion,
+		FolderID:          req.FolderID,
+		SinglePart:        req.SinglePart,
+	}
+}
+
+func uploadStartResult(clientID string, resp models.UploadStartResponse) uploadBatchStartResult {
+	return uploadBatchStartResult{
+		ClientID:         clientID,
+		FileID:           resp.FileID,
+		VaultID:          resp.VaultID,
+		UploadSessionID:  resp.UploadSessionID,
+		ProviderUploadID: resp.ProviderUploadID,
+		FileChunkSize:    resp.FileChunkSize,
+		TotalChunks:      resp.TotalChunks,
+		UploadPartSize:   resp.UploadPartSize,
+		UploadPartCount:  resp.UploadPartCount,
+		UploadURL:        resp.UploadURL,
+	}
+}
+
+func batchStartError(err error, validationErrors map[string]string) uploadBatchStartResult {
+	result := uploadBatchStartResult{ValidationErrors: validationErrors}
+	if err != nil {
+		result.Error = err.Error()
+	}
+	return result
+}
+
 func APIUploadStart(svc *uploads.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req uploadStartRequest
@@ -122,16 +208,8 @@ func APIUploadStart(svc *uploads.Service) gin.HandlerFunc {
 			return
 		}
 
-		resp, validationErrors, err := svc.StartMultipartUploadSession(c.Request.Context(), userID.(string), uploads.MultipartUploadStartInput{
-			OriginalSize:      req.OriginalSize,
-			FileChunkSize:     req.FileChunkSize,
-			TotalChunks:       req.TotalChunks,
-			UploadPartSize:    req.UploadPartSize,
-			UploadPartCount:   req.UploadPartCount,
-			EncryptionVersion: req.EncryptionVersion,
-			FolderID:          req.FolderID,
-			SinglePart:        req.SinglePart,
-		})
+		resp, validationErrors, err := svc.StartMultipartUploadSession(
+			c.Request.Context(), userID.(string), uploadStartInput(req))
 		if err != nil {
 			var limitErr *uploads.StorageLimitExceededError
 			switch err {
@@ -171,6 +249,46 @@ func APIUploadStart(svc *uploads.Service) gin.HandlerFunc {
 			"uploadPartCount":  resp.UploadPartCount,
 			"uploadUrl":        resp.UploadURL,
 		})
+	}
+}
+
+func APIUploadBatchStart(svc *uploads.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req uploadBatchStartRequest
+		if err := c.ShouldBindJSON(&req); err != nil || len(req.Files) == 0 || len(req.Files) > maxUploadBatchItems {
+			apierror.InvalidPayload(c)
+			return
+		}
+
+		userID, ok := c.Get("user_id")
+		if !ok {
+			apierror.Unauthorized(c)
+			return
+		}
+
+		results := make([]uploadBatchStartResult, 0, len(req.Files))
+		for _, item := range req.Files {
+			if strings.TrimSpace(item.ClientID) == "" {
+				results = append(results, uploadBatchStartResult{
+					Error: "clientId is required",
+				})
+				continue
+			}
+
+			resp, validationErrors, err := svc.StartMultipartUploadSession(
+				c.Request.Context(), userID.(string), uploadStartInput(item.uploadStartRequest))
+			result := uploadStartResult(item.ClientID, resp)
+			if err != nil {
+				result = batchStartError(err, nil)
+				result.ClientID = item.ClientID
+			} else if validationErrors != nil && validationErrors.HasAny() {
+				result = batchStartError(nil, map[string]string(validationErrors))
+				result.ClientID = item.ClientID
+			}
+			results = append(results, result)
+		}
+
+		c.JSON(http.StatusOK, uploadBatchStartResponse{Uploads: results})
 	}
 }
 
@@ -347,18 +465,9 @@ func APIUploadComplete(svc *uploads.Service) gin.HandlerFunc {
 			return
 		}
 
-		if err := svc.CompleteMultipartUploadSession(c.Request.Context(), userID.(string), uploadSessionID, uploads.MultipartUploadCompleteInput{
-			EncryptedMetadata: req.EncryptedMetadata,
-			EncryptedFileKey:  req.EncryptedFileKey,
-			EncryptedManifest: req.EncryptedManifest,
-			EncryptedHash:     req.EncryptedHash,
-			SearchTokens:      searchTokens,
-			HasThumbnail:      req.HasThumbnail,
-			ThumbnailMime:     req.ThumbnailMime,
-			ThumbnailWidth:    req.ThumbnailWidth,
-			ThumbnailHeight:   req.ThumbnailHeight,
-			ThumbnailSize:     req.ThumbnailSize,
-		}); err != nil {
+		if err := svc.CompleteMultipartUploadSession(
+			c.Request.Context(), userID.(string), uploadSessionID,
+			uploadCompleteInput(req, searchTokens)); err != nil {
 			var limitErr *uploads.StorageLimitExceededError
 			switch err {
 			case uploads.ErrUnauthorized:
@@ -387,6 +496,67 @@ func APIUploadComplete(svc *uploads.Service) gin.HandlerFunc {
 		}
 
 		c.Status(http.StatusNoContent)
+	}
+}
+
+func uploadCompleteInput(req uploadCompleteRequest,
+	searchTokens []models.FileSearchToken) uploads.MultipartUploadCompleteInput {
+	return uploads.MultipartUploadCompleteInput{
+		EncryptedMetadata: req.EncryptedMetadata,
+		EncryptedFileKey:  req.EncryptedFileKey,
+		EncryptedManifest: req.EncryptedManifest,
+		EncryptedHash:     req.EncryptedHash,
+		SearchTokens:      searchTokens,
+		HasThumbnail:      req.HasThumbnail,
+		ThumbnailMime:     req.ThumbnailMime,
+		ThumbnailWidth:    req.ThumbnailWidth,
+		ThumbnailHeight:   req.ThumbnailHeight,
+		ThumbnailSize:     req.ThumbnailSize,
+	}
+}
+
+func APIUploadBatchComplete(svc *uploads.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req uploadBatchCompleteRequest
+		if err := c.ShouldBindJSON(&req); err != nil || len(req.Uploads) == 0 || len(req.Uploads) > maxUploadBatchItems {
+			apierror.InvalidPayload(c)
+			return
+		}
+
+		userID, ok := c.Get("user_id")
+		if !ok {
+			apierror.Unauthorized(c)
+			return
+		}
+
+		results := make([]uploadBatchCompleteResult, 0, len(req.Uploads))
+		for _, item := range req.Uploads {
+			result := uploadBatchCompleteResult{ClientID: item.ClientID}
+			if strings.TrimSpace(item.ClientID) == "" || strings.TrimSpace(item.UploadSessionID) == "" {
+				result.Error = "clientId and uploadSessionId are required"
+				results = append(results, result)
+				continue
+			}
+
+			searchTokens, err := decodeSearchTokens(item.uploadCompleteRequest.SearchTokens)
+			if err != nil {
+				result.Error = err.Error()
+				results = append(results, result)
+				continue
+			}
+
+			err = svc.CompleteMultipartUploadSession(
+				c.Request.Context(), userID.(string), item.UploadSessionID,
+				uploadCompleteInput(item.uploadCompleteRequest, searchTokens))
+			if err != nil {
+				result.Error = err.Error()
+			} else {
+				result.Completed = true
+			}
+			results = append(results, result)
+		}
+
+		c.JSON(http.StatusOK, uploadBatchCompleteResponse{Uploads: results})
 	}
 }
 

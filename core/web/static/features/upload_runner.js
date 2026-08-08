@@ -1,6 +1,6 @@
 import { UPLOAD_POLICY } from "../upload/upload_policy.js";
 import { STATUS, isTerminal } from "../upload/upload_state.js";
-import { startUpload, presignUploadPart, presignUploadParts, presignThumbnailUpload, recordUploadPart, completeUpload, cancelUpload, cancelUploadBestEffort } from "../upload/upload_api.js";
+import { startUploadBatch, presignUploadPart, presignUploadParts, presignThumbnailUpload, recordUploadPart, completeUploadBatch, cancelUpload, cancelUploadBestEffort } from "../upload/upload_api.js";
 import { setVaultSession, restoreVaultSession, prepareUpload, encryptUploadMetadata, encryptUploadThumbnail, encryptUploadPart, hashUploadPayload, finalizeUpload, clearUploadContext } from "../upload/upload_crypto.js";
 import { generateUploadThumbnail } from "../upload/upload_thumbnail.js";
 import { toAppError } from "../lib/errors.js";
@@ -163,6 +163,8 @@ export class UploadRunner {
 		this.jobs = new Map();
 		this.jobCleanupTimers = new Map();
 		this.activeJobId = null;
+		this.processingQueue = false;
+		this.pendingCompletions = [];
 		this.currentControllers = new Set();
 		this.stateHandlers = [];
 		this.eventHandlers = [];
@@ -254,6 +256,8 @@ export class UploadRunner {
 			const uploadPartSize = UPLOAD_POLICY.uploadPartSize;
 			this.jobs.set(jobId, {
 				file: file,
+				started: null,
+				pendingCompletion: null,
 				public: {
 					jobId: jobId,
 					batchId: batchId,
@@ -295,7 +299,7 @@ export class UploadRunner {
 	nextQueuedJob() {
 		if (this.activeJobId) return null;
 		for (const job of this.jobs.values()) {
-			if (job.public.status === STATUS.QUEUED) {
+			if (job.public.status === STATUS.QUEUED && job.started) {
 				return job;
 			}
 		}
@@ -303,19 +307,121 @@ export class UploadRunner {
 	}
 
 	processQueue() {
-		const next = this.nextQueuedJob();
-		if (!next) return;
-		this.activeJobId = next.public.jobId;
-		this.startJob(next).catch((error) => {
-			if (error === STOPPED_UPLOAD || (error && error.message === STOPPED_UPLOAD.message)) {
-				return;
+		if (this.processingQueue) return;
+		this.processingQueue = true;
+		void this.runQueue().finally(() => {
+			this.processingQueue = false;
+			if (this.nextQueuedJob()) {
+				this.processQueue();
 			}
-			return this.failJob(next, error);
-		}).finally(() => {
-			this.activeJobId = null;
-			this.emitState();
-			this.processQueue();
 		});
+	}
+
+	async runQueue() {
+		while (true) {
+			let next = this.nextQueuedJob();
+			if (!next) {
+				const candidates = [];
+				for (const job of this.jobs.values()) {
+					if (job.public.status !== STATUS.QUEUED || job.started) continue;
+					candidates.push(job);
+					if (candidates.length >= UPLOAD_POLICY.apiBatchSize) break;
+				}
+				if (!candidates.length) break;
+				await this.startQueuedBatch(candidates);
+				next = this.nextQueuedJob();
+				if (!next) continue;
+			}
+
+			this.activeJobId = next.public.jobId;
+			try {
+				await this.startJob(next);
+			} catch (error) {
+				if (error !== STOPPED_UPLOAD && (!error || error.message !== STOPPED_UPLOAD.message)) {
+					await this.failJob(next, error);
+				}
+			} finally {
+				this.activeJobId = null;
+				this.emitState();
+			}
+
+			if (this.pendingCompletions.length >= UPLOAD_POLICY.apiBatchSize) {
+				await this.completePendingBatch();
+			}
+		}
+
+		await this.completePendingBatch();
+	}
+
+	async startQueuedBatch(jobs) {
+		let response;
+		try {
+			response = await this.runWithController((signal) => startUploadBatch(jobs.map((job) => ({
+				clientId: job.public.jobId,
+				originalSize: job.file.size,
+				fileChunkSize: job.public.fileChunkSize,
+				totalChunks: job.public.totalChunks,
+				uploadPartSize: job.public.uploadPartSize,
+				uploadPartCount: job.public.uploadPartCount,
+				encryptionVersion: 1,
+				folderId: currentFolderId(),
+				singlePart: job.public.totalChunks === 1,
+			})), signal));
+		} catch (error) {
+			for (const job of jobs) await this.failJob(job, error);
+			return;
+		}
+
+		const results = new Map((response && Array.isArray(response.uploads) ? response.uploads : [])
+			.map((result) => [String(result.clientId || ""), result]));
+		for (const job of jobs) {
+			const result = results.get(job.public.jobId);
+			if (!result || result.error || !result.uploadSessionId) {
+				await this.failJob(job, new Error(result && result.error ? result.error : "Batch upload start failed"));
+				continue;
+			}
+			job.started = result;
+			job.public.fileId = result.fileId;
+			job.public.sessionId = result.uploadSessionId;
+			job.public.vaultId = result.vaultId;
+			job.public.updatedAt = nowISO();
+		}
+		this.emitState();
+	}
+
+	async completePendingBatch() {
+		if (!this.pendingCompletions.length) return;
+		const pending = this.pendingCompletions.splice(0, UPLOAD_POLICY.apiBatchSize);
+		let response;
+		try {
+			response = await this.runWithController((signal) => completeUploadBatch(pending.map((item) => ({
+				clientId: item.job.public.jobId,
+				uploadSessionId: item.job.started.uploadSessionId,
+				...item.payload,
+			})), signal));
+		} catch (error) {
+			for (const item of pending) await this.failJob(item.job, error);
+			return;
+		}
+
+		const results = new Map((response && Array.isArray(response.uploads) ? response.uploads : [])
+			.map((result) => [String(result.clientId || ""), result]));
+		for (const item of pending) {
+			const result = results.get(item.job.public.jobId);
+			if (!result || !result.completed) {
+				await this.failJob(item.job, new Error(result && result.error ? result.error : "Batch upload complete failed"));
+				continue;
+			}
+			await clearUploadContext(item.job.public.jobId).catch(function () {});
+			item.job.public.status = STATUS.COMPLETED;
+			item.job.public.completedBytes = item.job.file.size;
+			item.job.public.transferRate = 0;
+			item.job.public.updatedAt = nowISO();
+			this.releaseJobFile(item.job);
+			this.emitState();
+			this.scheduleTerminalCleanup(item.job);
+			this.notifyBatchComplete(item.job.public.batchId);
+		}
 	}
 
 	async startJob(job) {
@@ -326,18 +432,10 @@ export class UploadRunner {
 
 		await restoreVaultSession();
 
-		const started = await this.runWithController(async (signal) => {
-				return startUpload({
-					originalSize: job.file.size,
-					fileChunkSize: job.public.fileChunkSize,
-					totalChunks: job.public.totalChunks,
-					uploadPartSize: job.public.uploadPartSize,
-					 uploadPartCount: job.public.uploadPartCount,
-					encryptionVersion: 1,
-					folderId: currentFolderId(),
-					singlePart: job.public.totalChunks === 1,
-				}, signal);
-			});
+		const started = job.started;
+		if (!started) {
+			throw new Error("Upload session was not started");
+		}
 		if (this.shouldStopJob(job)) {
 			throw STOPPED_UPLOAD;
 		}
@@ -348,7 +446,7 @@ export class UploadRunner {
 		job.public.updatedAt = nowISO();
 		this.emitState();
 
-		let completed = false;
+		let preparedForCompletion = false;
 		try {
 			const prepared = await prepareUpload({
 				uploadToken: job.public.jobId,
@@ -423,12 +521,15 @@ export class UploadRunner {
 				throw STOPPED_UPLOAD;
 			}
 
-			await this.runWithController(async (signal) => {
-				const searchTokens = await vault.createSearchTokenEntries(started.vaultId, {
+			const searchTokens = await this.runWithController(async () => {
+				return vault.createSearchTokenEntries(started.vaultId, {
 					name: job.file.name,
 					mime: job.file.type || "application/octet-stream",
 				});
-				return completeUpload(started.uploadSessionId, {
+			});
+			job.pendingCompletion = {
+				job: job,
+				payload: {
 					encryptedMetadata: preparedMetadata.encryptedMetadata,
 					encryptedFileKey: prepared.encryptedFileKey,
 					encryptedManifest: finalized.encryptedManifest,
@@ -439,23 +540,12 @@ export class UploadRunner {
 					thumbnailWidth: uploadedThumbnail ? uploadedThumbnail.width : 0,
 					thumbnailHeight: uploadedThumbnail ? uploadedThumbnail.height : 0,
 					thumbnailSize: uploadedThumbnail ? uploadedThumbnail.encryptedSize : 0,
-				}, signal);
-			});
-			if (this.shouldStopJob(job)) {
-				throw STOPPED_UPLOAD;
-			}
-
-			job.public.status = STATUS.COMPLETED;
-			job.public.completedBytes = job.file.size;
-			job.public.transferRate = 0;
-			job.public.updatedAt = nowISO();
-			this.releaseJobFile(job);
-			this.emitState();
-			this.scheduleTerminalCleanup(job);
-			completed = true;
-			this.notifyBatchComplete(job.public.batchId);
+				},
+			};
+			this.pendingCompletions.push(job.pendingCompletion);
+			preparedForCompletion = true;
 		} finally {
-			if (!completed) {
+			if (!preparedForCompletion) {
 				await clearUploadContext(job.public.jobId).catch(function () {});
 			}
 		}

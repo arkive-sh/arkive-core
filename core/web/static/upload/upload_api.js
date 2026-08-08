@@ -18,6 +18,16 @@ export async function startUpload(payload, signal) {
 	}, { code: "upload_failed", message: "Upload start failed" });
 }
 
+export async function startUploadBatch(files, signal) {
+	return apiRequest("/api/uploads/batch/start", {
+		method: "POST",
+		credentials: "include",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ files: files || [] }),
+		signal: signal,
+	}, { code: "upload_failed", message: "Batch upload start failed" });
+}
+
 export async function presignUploadPart(sessionId, partNumber, signal) {
 	return apiRequest("/api/uploads/" + encodeURIComponent(sessionId) + "/parts/" + encodeURIComponent(String(partNumber)) + "/presign", {
 		method: "POST",
@@ -54,6 +64,16 @@ export async function completeUpload(sessionId, payload, signal) {
 		body: JSON.stringify(payload),
 		signal: signal,
 	}, { code: "upload_failed", message: "Upload complete failed" });
+}
+
+export async function completeUploadBatch(uploads, signal) {
+	return apiRequest("/api/uploads/batch/complete", {
+		method: "POST",
+		credentials: "include",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ uploads: uploads || [] }),
+		signal: signal,
+	}, { code: "upload_failed", message: "Batch upload complete failed" });
 }
 
 export async function presignThumbnailUpload(sessionId, payload, signal) {
