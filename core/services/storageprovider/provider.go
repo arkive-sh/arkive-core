@@ -30,19 +30,19 @@ func New(db database.PgPool, settingsRepo *settingsrepo.Repository, local *local
 	}
 }
 
-func (p *Provider) PresignUpload(ctx context.Context, key, contentType string, expires time.Duration) (string, error) {
+func (p *Provider) PresignUpload(ctx context.Context, key, contentType string, contentLength int64, expires time.Duration) (string, error) {
 	settings, err := p.load(ctx)
 	if err != nil {
 		return "", err
 	}
 	if settings.Provider == "local" {
-		return p.local.PresignUpload(ctx, key, contentType, expires)
+		return p.local.PresignUpload(ctx, key, contentType, contentLength, expires)
 	}
 	client, err := p.s3(ctx, settings)
 	if err != nil {
 		return "", err
 	}
-	return client.PresignUpload(ctx, key, contentType, expires)
+	return client.PresignUpload(ctx, key, contentType, contentLength, expires)
 }
 
 func (p *Provider) PresignDownload(ctx context.Context, key, filename, disposition string, expires time.Duration) (string, error) {
@@ -105,19 +105,19 @@ func (p *Provider) CreateMultipartUpload(ctx context.Context, key, contentType s
 	return client.CreateMultipartUpload(ctx, key, contentType)
 }
 
-func (p *Provider) PresignUploadPart(ctx context.Context, key, uploadID string, partNumber int32, expires time.Duration) (string, error) {
+func (p *Provider) PresignUploadPart(ctx context.Context, key, uploadID string, partNumber int32, contentLength int64, expires time.Duration) (string, error) {
 	settings, err := p.load(ctx)
 	if err != nil {
 		return "", err
 	}
 	if settings.Provider == "local" {
-		return p.local.PresignUploadPart(ctx, key, uploadID, partNumber, expires)
+		return p.local.PresignUploadPart(ctx, key, uploadID, partNumber, contentLength, expires)
 	}
 	client, err := p.s3(ctx, settings)
 	if err != nil {
 		return "", err
 	}
-	return client.PresignUploadPart(ctx, key, uploadID, partNumber, expires)
+	return client.PresignUploadPart(ctx, key, uploadID, partNumber, contentLength, expires)
 }
 
 func (p *Provider) CompleteMultipartUpload(ctx context.Context, key, uploadID string, parts []storage.CompletedPart) error {

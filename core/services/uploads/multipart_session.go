@@ -225,6 +225,7 @@ func (s *Service) StartMultipartUploadSession(ctx context.Context, userID string
 	session, err := s.uploadRepo.CreateUploadSession(ctx, tx, models.UploadSession{
 		FileID:           file.ID,
 		ProviderUploadID: providerUploadID,
+		UploadPartSize:   input.UploadPartSize,
 		UploadPartCount:  input.UploadPartCount,
 		Status:           UploadStatusActive,
 		ExpiresAt:        time.Now().Add(uploadExpiry),
@@ -250,7 +251,7 @@ func (s *Service) StartMultipartUploadSession(ctx context.Context, userID string
 		UploadPartCount:  input.UploadPartCount,
 	}
 	if input.SinglePart {
-		response.UploadURL, err = s.storage.PresignUpload(ctx, objectKey, "application/octet-stream", uploadExpiry)
+		response.UploadURL, err = s.storage.PresignUpload(ctx, objectKey, "application/octet-stream", encryptedFileSize(file.PlaintextSize, file.ChunkCount), uploadExpiry)
 		if err != nil {
 			return models.UploadStartResponse{}, nil, err
 		}
@@ -285,7 +286,11 @@ func (s *Service) PresignSingleUpload(ctx context.Context, userID, uploadSession
 	if err != nil {
 		return "", err
 	}
-	return s.storage.PresignUpload(ctx, objectKey, "application/octet-stream", s.uploadExpiry(ctx))
+	file, err := s.fileRepo.GetEncryptedFileForUser(ctx, s.db, uploadSession.FileID, userID)
+	if err != nil {
+		return "", err
+	}
+	return s.storage.PresignUpload(ctx, objectKey, "application/octet-stream", encryptedFileSize(file.PlaintextSize, file.ChunkCount), s.uploadExpiry(ctx))
 }
 
 func (s *Service) PresignMultipartUploadPart(ctx context.Context, userID, uploadSessionID string, partNumber int) (string, error) {
@@ -323,7 +328,15 @@ func (s *Service) PresignMultipartUploadPart(ctx context.Context, userID, upload
 	if err != nil {
 		return "", err
 	}
-	return s.storage.PresignUploadPart(ctx, objectKey, uploadSession.ProviderUploadID, int32(partNumber), s.uploadExpiry(ctx))
+	file, err := s.fileRepo.GetEncryptedFileForUser(ctx, s.db, uploadSession.FileID, userID)
+	if err != nil {
+		return "", err
+	}
+	partSize, err := expectedEncryptedPartSize(file.PlaintextSize, file.ChunkSize, uploadSession.UploadPartSize, partNumber)
+	if err != nil {
+		return "", err
+	}
+	return s.storage.PresignUploadPart(ctx, objectKey, uploadSession.ProviderUploadID, int32(partNumber), partSize, s.uploadExpiry(ctx))
 }
 
 func (s *Service) PresignMultipartUploadParts(ctx context.Context, userID, uploadSessionID string, partNumbers []int) (map[string]string, error) {
@@ -362,6 +375,10 @@ func (s *Service) PresignMultipartUploadParts(ctx context.Context, userID, uploa
 		return nil, err
 	}
 
+	file, err := s.fileRepo.GetEncryptedFileForUser(ctx, s.db, uploadSession.FileID, userID)
+	if err != nil {
+		return nil, err
+	}
 	urls := make(map[string]string, len(partNumbers))
 	seen := make(map[int]struct{}, len(partNumbers))
 	for _, partNumber := range partNumbers {
@@ -376,7 +393,11 @@ func (s *Service) PresignMultipartUploadParts(ctx context.Context, userID, uploa
 		}
 		seen[partNumber] = struct{}{}
 
-		url, presignErr := s.storage.PresignUploadPart(ctx, objectKey, uploadSession.ProviderUploadID, int32(partNumber), s.uploadExpiry(ctx))
+		partSize, sizeErr := expectedEncryptedPartSize(file.PlaintextSize, file.ChunkSize, uploadSession.UploadPartSize, partNumber)
+		if sizeErr != nil {
+			return nil, sizeErr
+		}
+		url, presignErr := s.storage.PresignUploadPart(ctx, objectKey, uploadSession.ProviderUploadID, int32(partNumber), partSize, s.uploadExpiry(ctx))
 		if presignErr != nil {
 			return nil, presignErr
 		}
@@ -535,25 +556,7 @@ func (s *Service) CompleteMultipartUploadSession(ctx context.Context, userID, up
 			return err
 		}
 	}
-	actualEncryptedSize, err := objectSizeWithRetry(ctx, func(measureCtx context.Context) (int64, error) {
-		return s.storage.ObjectSize(measureCtx, objectKey)
-	})
-	if err != nil {
-		if deleteErr := s.storage.DeleteObject(ctx, objectKey); deleteErr != nil {
-			log.Printf("uploads: failed to delete object after size lookup failure file=%s key=%s: %v", file.ID, objectKey, deleteErr)
-		}
-		if thumbnailObjectKey != "" {
-			_ = s.storage.DeleteObject(ctx, thumbnailObjectKey)
-		}
-		_ = s.uploadRepo.UpdateUploadSessionStatus(ctx, s.db, uploadSessionID, UploadStatusFailed)
-		_, _ = s.fileRepo.UpdateEncryptedFileStatusIf(ctx, s.db, file.ID, FileUploadFailed, []string{FileUploadUploading, FileUploadPending})
-		tx, txErr := s.db.BeginTx(ctx, pgx.TxOptions{})
-		if txErr == nil {
-			_, _ = s.storageRepo.ReleaseReservedStorage(ctx, tx, userID, reservedUploadSize(file.PlaintextSize, file.ChunkCount))
-			_ = tx.Commit(ctx)
-		}
-		return err
-	}
+	actualEncryptedSize := encryptedFileSize(file.PlaintextSize, file.ChunkCount)
 	thumbnailSizeBytes := int64(0)
 	hasStoredThumbnail := false
 	if thumbnailObjectKey != "" {
@@ -761,5 +764,5 @@ func (s *Service) PresignThumbnailUpload(ctx context.Context, userID, uploadSess
 	if err != nil {
 		return "", err
 	}
-	return s.storage.PresignUpload(ctx, objectKey, "application/octet-stream", s.uploadExpiry(ctx))
+	return s.storage.PresignUpload(ctx, objectKey, "application/octet-stream", input.EncryptedSize, s.uploadExpiry(ctx))
 }

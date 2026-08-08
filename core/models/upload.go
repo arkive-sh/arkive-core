@@ -26,6 +26,7 @@ type UploadSession struct {
 	ID               string
 	FileID           string
 	ProviderUploadID string
+	UploadPartSize   int64
 	UploadPartCount  int
 	Status           string
 	ExpiresAt        time.Time
