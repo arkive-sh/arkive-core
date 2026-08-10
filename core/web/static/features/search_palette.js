@@ -3,7 +3,7 @@ import { thumbnailCache } from "../upload/thumbnail_cache.js";
 import { vault } from "./vault.js";
 
 const SEARCH_DEBOUNCE_MS = 300;
-const MIN_SEARCH_QUERY_LEN = 3;
+const MIN_SEARCH_QUERY_LEN = 1;
 
 const SETTINGS = [
   { id: "settings-0", title: "Instance Overview", terms: ["instance overview", "instance", "admin", "email", "storage", "usage"], url: "/settings#settings-account", meta: "Settings" },

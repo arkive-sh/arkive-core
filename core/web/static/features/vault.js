@@ -263,8 +263,11 @@ function normalizeSearchText(value) {
 function trigramsForText(value) {
   const normalized = normalizeSearchText(value);
   const terms = [];
-  if (normalized.length < 3) {
+  if (!normalized) {
     return terms;
+  }
+  if (normalized.length < 3) {
+    return [normalized];
   }
   for (let i = 0; i <= normalized.length - 3; i += 1) {
     terms.push(normalized.slice(i, i + 3));
