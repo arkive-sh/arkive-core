@@ -28,8 +28,11 @@ func NormalizeSearchTokens(tokens []models.FileSearchToken, maxTokens int) ([]mo
 	if maxTokens <= 0 {
 		maxTokens = MaxSearchTokensPerFile
 	}
-	if len(tokens) == 0 || len(tokens) > maxTokens {
+	if len(tokens) > maxTokens {
 		return nil, ErrInvalidInput
+	}
+	if len(tokens) == 0 {
+		return []models.FileSearchToken{}, nil
 	}
 
 	normalized := make([]models.FileSearchToken, 0, len(tokens))
@@ -56,7 +59,7 @@ func NormalizeSearchTokens(tokens []models.FileSearchToken, maxTokens int) ([]mo
 			Weight:    token.Weight,
 		})
 	}
-	if len(normalized) == 0 || len(normalized) > maxTokens {
+	if len(normalized) > maxTokens {
 		return nil, ErrInvalidInput
 	}
 	return normalized, nil

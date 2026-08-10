@@ -108,7 +108,7 @@ type searchTokenRequest struct {
 
 func decodeSearchTokens(input []searchTokenRequest) ([]models.FileSearchToken, error) {
 	if len(input) == 0 {
-		return nil, filessvc.ErrInvalidInput
+		return []models.FileSearchToken{}, nil
 	}
 	tokens := make([]models.FileSearchToken, 0, len(input))
 	for _, item := range input {
