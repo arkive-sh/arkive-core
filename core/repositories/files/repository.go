@@ -77,49 +77,6 @@ func (r *Repository) CreateEncryptedFile(ctx context.Context, db database.PgExec
 	return created, nil
 }
 
-func (r *Repository) GetEncryptedFileForUser(ctx context.Context, db database.PgExecutor, fileID, userID string) (models.File, error) {
-	var file models.File
-	var folderID *string
-	query := `SELECT
-		id, user_id, folder_id, encrypted_metadata, encrypted_file_key, encrypted_manifest, encryption_version, chunk_size, chunk_count,
-		plaintext_size, actual_encrypted_size, encrypted_hash, upload_status,
-		thumbnail_status, thumbnail_size_bytes, thumbnail_mime, thumbnail_width, thumbnail_height,
-		completed_at, created_at, updated_at, expires_at
-	FROM
-		files
-	WHERE
-		id = $1 AND user_id = $2
-		AND deleted_at IS NULL`
-	if err := db.QueryRow(ctx, query, fileID, userID).Scan(
-		&file.ID,
-		&file.UserID,
-		&folderID,
-		&file.EncryptedMetadata,
-		&file.EncryptedFileKey,
-		&file.EncryptedManifest,
-		&file.EncryptionVersion,
-		&file.ChunkSize,
-		&file.ChunkCount,
-		&file.PlaintextSize,
-		&file.ActualEncryptedSize,
-		&file.EncryptedHash,
-		&file.UploadStatus,
-		&file.ThumbnailStatus,
-		&file.ThumbnailSizeBytes,
-		&file.ThumbnailMime,
-		&file.ThumbnailWidth,
-		&file.ThumbnailHeight,
-		&file.CompletedAt,
-		&file.CreatedAt,
-		&file.UpdatedAt,
-		&file.ExpiresAt,
-	); err != nil {
-		return models.File{}, err
-	}
-	file.FolderID = folderID
-	return file, nil
-}
-
 func (r *Repository) GetUploadDetailsForUser(ctx context.Context, db database.PgExecutor, fileID, userID string) (UploadDetails, error) {
 	var details UploadDetails
 	err := db.QueryRow(ctx, `SELECT

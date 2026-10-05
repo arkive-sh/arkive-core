@@ -445,7 +445,7 @@ func renderFileRow(file models.File) g.Node {
 			h.Span(
 				h.Class("files-type-icon"),
 				g.Attr("data-file-field", "icon"),
-				fileTypeGlyph(file),
+				fileTypeGlyph(),
 			),
 		),
 		h.Td(
@@ -530,7 +530,7 @@ func renderFileCard(file models.File) g.Node {
 			h.Span(
 				h.Class("files-type-icon files-card-icon"),
 				g.Attr("data-file-field", "icon"),
-				fileTypeGlyph(file),
+				fileTypeGlyph(),
 			),
 		),
 		h.Div(
@@ -563,27 +563,8 @@ func formatTime(value time.Time) string {
 	return value.Format("Jan 2, 2006 15:04")
 }
 
-func fileTypeIcon(file models.File) string {
-	return "file"
-}
-
-func fileTypeGlyph(file models.File) g.Node {
-	switch fileTypeIcon(file) {
-	case "file-image":
-		return lucide.Image(h.Class("files-lucide files-lucide-type"), g.Attr("aria-hidden", "true"))
-	case "file-video":
-		return lucide.Film(h.Class("files-lucide files-lucide-type"), g.Attr("aria-hidden", "true"))
-	case "file-audio":
-		return lucide.Music4(h.Class("files-lucide files-lucide-type"), g.Attr("aria-hidden", "true"))
-	case "file-archive":
-		return lucide.Archive(h.Class("files-lucide files-lucide-type"), g.Attr("aria-hidden", "true"))
-	case "file-doc":
-		return lucide.FileText(h.Class("files-lucide files-lucide-type"), g.Attr("aria-hidden", "true"))
-	case "file-text":
-		return lucide.Code(h.Class("files-lucide files-lucide-type"), g.Attr("aria-hidden", "true"))
-	default:
-		return lucide.File(h.Class("files-lucide files-lucide-type"), g.Attr("aria-hidden", "true"))
-	}
+func fileTypeGlyph() g.Node {
+	return lucide.File(h.Class("files-lucide files-lucide-type"), g.Attr("aria-hidden", "true"))
 }
 
 func renderActionLink(label, href, kind string, attrs g.Node, icon g.Node) g.Node {
