@@ -378,10 +378,6 @@ func (s *Service) MoveEntries(ctx context.Context, input MoveEntriesInput) error
 	return tx.Commit(ctx)
 }
 
-func (s *Service) ResolveDeleteScope(ctx context.Context, input ResolveDeleteScopeInput) (DeleteScope, error) {
-	return s.resolveDeleteScope(ctx, s.db, input)
-}
-
 func (s *Service) resolveDeleteScope(ctx context.Context, db database.PgExecutor, input ResolveDeleteScopeInput) (DeleteScope, error) {
 	userID := strings.TrimSpace(input.UserID)
 	if userID == "" {

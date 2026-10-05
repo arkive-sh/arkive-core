@@ -18,20 +18,6 @@ type Service struct {
 	repo *syncrepo.Repository
 }
 
-type ListEntriesInput struct {
-	UserID         string
-	FolderID       *string
-	IncludeDeleted bool
-	Limit          int
-	Cursor         *models.SyncEntriesCursor
-}
-
-type ListEntriesResult struct {
-	Entries    []models.SyncEntry
-	NextCursor *string
-	HasMore    bool
-}
-
 func NewService(db database.PgPool, repo *syncrepo.Repository) *Service {
 	return &Service{
 		db:   db,

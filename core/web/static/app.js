@@ -15,7 +15,6 @@ import { initRenameEntries } from "./features/rename_entries.js";
 import { initSidebar } from "./features/sidebar.js";
 import { initContextMenu } from "./features/context_menu.js";
 import { initToast } from "./features/toast.js";
-import { initTooltips } from "./features/tooltip.js";
 import { initUploads } from "./features/uploads.js";
 import { getVaultState, initVault, lockVault, onVaultLock, waitUntilReady } from "./features/vault.js";
 
@@ -175,7 +174,6 @@ initToast();
 initVaultAccessGuard();
 initDialogs();
 initDropdowns();
-initTooltips();
 initCopyButtons();
 initSidebar();
 initSearchPalette();

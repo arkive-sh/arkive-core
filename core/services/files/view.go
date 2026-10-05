@@ -136,18 +136,6 @@ func (s *Service) PresignDownload(ctx context.Context, userID, fileID string) (s
 	return s.storage.PresignDownload(ctx, objectKey, file.ID, "attachment", s.downloadExpire)
 }
 
-func (s *Service) PresignView(ctx context.Context, userID, fileID string) (string, error) {
-	file, err := s.GetFileForDisplay(ctx, userID, fileID)
-	if err != nil {
-		return "", err
-	}
-	objectKey, err := storage.BuildObjectKey(userID, file.ID)
-	if err != nil {
-		return "", err
-	}
-	return s.storage.PresignDownload(ctx, objectKey, file.ID, "inline", s.downloadExpire)
-}
-
 func (s *Service) PresignThumbnailDownload(ctx context.Context, userID, fileID string) (string, error) {
 	file, err := s.GetFileForDisplay(ctx, userID, fileID)
 	if err != nil {

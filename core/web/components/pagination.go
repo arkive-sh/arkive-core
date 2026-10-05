@@ -112,3 +112,15 @@ func Pagination(props PaginationProps) g.Node {
 		),
 	})
 }
+
+func cloneQuery(values url.Values) url.Values {
+	return values.Clone()
+}
+
+func buildURL(baseURL string, query url.Values) string {
+	baseURL = strings.TrimSpace(baseURL)
+	if encoded := query.Encode(); encoded != "" {
+		return baseURL + "?" + encoded
+	}
+	return baseURL
+}

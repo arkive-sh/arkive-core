@@ -7,64 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"arkive/core/models"
-	"arkive/pkg/storage"
 )
-
-func (s *Service) DeleteFile(ctx context.Context, userID, fileID string) error {
-	var err error
-	userID, err = validateUserID(userID)
-	if err != nil {
-		return err
-	}
-	fileID, err = validateUploadID(fileID)
-	if err != nil {
-		return err
-	}
-
-	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	if _, err := s.DeleteFilesWithinTx(ctx, tx, userID, []string{fileID}); err != nil {
-		return err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (s *Service) DeleteFiles(ctx context.Context, userID string, fileIDs []string) (int, error) {
-	var err error
-	userID, err = validateUserID(userID)
-	if err != nil {
-		return 0, err
-	}
-	uniqueIDs, err := normalizeDeleteFileIDs(fileIDs)
-	if err != nil {
-		return 0, err
-	}
-	if len(uniqueIDs) == 0 {
-		return 0, ErrInvalidInput
-	}
-
-	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	files, err := s.DeleteFilesWithinTx(ctx, tx, userID, uniqueIDs)
-	if err != nil {
-		return 0, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return 0, err
-	}
-	return len(files), nil
-}
 
 func (s *Service) DeleteFilesWithinTx(ctx context.Context, tx pgx.Tx, userID string, fileIDs []string) ([]models.File, error) {
 	var err error
@@ -114,17 +57,6 @@ func (s *Service) deleteFilesWithinTx(ctx context.Context, tx pgx.Tx, userID str
 		files = append(files, file)
 	}
 	return files, nil
-}
-
-func (s *Service) CleanupDeletedFiles(ctx context.Context, userID string, files []models.File) {
-	for _, file := range files {
-		if objectKey, keyErr := storage.BuildObjectKey(userID, file.ID); keyErr == nil {
-			_ = s.storage.DeleteObject(ctx, objectKey)
-		}
-		if thumbnailKey, keyErr := storage.BuildThumbnailObjectKey(userID, file.ID); keyErr == nil {
-			_ = s.storage.DeleteObject(ctx, thumbnailKey)
-		}
-	}
 }
 
 func normalizeDeleteFileIDs(fileIDs []string) ([]string, error) {

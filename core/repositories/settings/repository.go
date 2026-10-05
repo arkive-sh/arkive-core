@@ -6,8 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
-
 	"arkive/core/database"
 	"arkive/core/models"
 )
@@ -204,13 +202,4 @@ func (r *Repository) SaveStorageSettings(ctx context.Context, db database.PgExec
 		}
 	}
 	return nil
-}
-
-func (r *Repository) HasStorageSettings(ctx context.Context, db database.PgExecutor) (bool, error) {
-	var exists bool
-	err := db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM instance_settings WHERE key = 'storage.provider')`).Scan(&exists)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return false, nil
-	}
-	return exists, err
 }

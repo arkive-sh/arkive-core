@@ -16,12 +16,6 @@ type UploadStartResponse struct {
 	UploadPartCount  int
 }
 
-type SingleStartResponse struct {
-	FileID    string
-	UploadURL string
-	ExpiresAt time.Time
-}
-
 type UploadSession struct {
 	ID               string
 	FileID           string
