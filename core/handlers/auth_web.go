@@ -146,7 +146,7 @@ func WebLogout(svc *auth.Service) gin.HandlerFunc {
 			return
 		}
 
-		cookies.ClearSession(c, false)
+		cookies.ClearSession(c)
 		c.Redirect(http.StatusSeeOther, "/")
 	}
 }

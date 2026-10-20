@@ -238,13 +238,13 @@ docker compose up -d --build
 
 ### 5. Open app
 
-Visit:
+Put a TLS reverse proxy in front of port `8080`, and visit the HTTPS domain configured in `BASE_URL`:
 
 ```text
-http://your-server-ip:8080
+https://your-domain.com
 ```
 
-If you want domain + HTTPS, put a reverse proxy in front of port `8080` and point `BASE_URL` to the public HTTPS URL.
+The app listens on HTTP behind the proxy. Production session cookies require HTTPS.
 
 ### 6. Update
 

@@ -326,7 +326,7 @@ func setRecoveryPending(c *gin.Context, svc *setup.Service, userID string) error
 	if err != nil {
 		return err
 	}
-	cookies.SetCustom(c, recoveryPendingCookie, token, time.Now().Add(recoveryCookieTTL), false)
+	cookies.SetCustom(c, recoveryPendingCookie, token, time.Now().Add(recoveryCookieTTL))
 	return nil
 }
 
@@ -351,6 +351,6 @@ func clearRecoveryPending(c *gin.Context, svc *setup.Service) error {
 			}
 		}
 	}
-	cookies.ClearCustom(c, recoveryPendingCookie, false)
+	cookies.ClearCustom(c, recoveryPendingCookie)
 	return nil
 }
