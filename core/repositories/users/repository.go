@@ -106,17 +106,19 @@ func (r *Repository) SetRecoveryWrappedMasterKey(
 	tx pgx.Tx,
 	userID string,
 	encryptedMasterKeyRecovery []byte,
+	recoveryProofPublicKey []byte,
 ) error {
 	query := `UPDATE
 		users
 	SET
 		encrypted_master_key_recovery = $2,
+		recovery_proof_public_key = $3,
 		recovery_setup_token = NULL,
 		recovery_setup_token_expires_at = NULL,
 		updated_at = now()
 	WHERE
 		id = $1`
-	_, err := tx.Exec(ctx, query, userID, encryptedMasterKeyRecovery)
+	_, err := tx.Exec(ctx, query, userID, encryptedMasterKeyRecovery, recoveryProofPublicKey)
 	return err
 }
 
@@ -164,6 +166,7 @@ func (r *Repository) FindByPasswordResetTokenHash(
 	var user models.User
 	query := `SELECT
 		id, email, vault_salt, encrypted_master_key_recovery,
+		recovery_proof_public_key,
 		password_reset_token_expires_at, password_reset_consumed_at
 	FROM
 		users
@@ -177,6 +180,7 @@ func (r *Repository) FindByPasswordResetTokenHash(
 		&user.Email,
 		&user.VaultSalt,
 		&user.EncryptedMasterKeyRecovery,
+		&user.RecoveryProofPublicKey,
 		&user.PasswordResetTokenExpiresAt,
 		&user.PasswordResetConsumedAt,
 	); err != nil {

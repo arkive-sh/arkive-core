@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"crypto/ed25519"
 	"encoding/base64"
 	"errors"
 	"net/http"
@@ -47,6 +48,7 @@ type setupForm struct {
 type setupRecoveryForm struct {
 	ConfirmBackup              string `form:"confirm_backup"`
 	EncryptedMasterKeyRecovery string `form:"encrypted_master_key_recovery"`
+	RecoveryProofPublicKey     string `form:"recovery_proof_public_key"`
 }
 
 func WebRoot(authSvc *auth.Service, setupSvc *setup.Service) gin.HandlerFunc {
@@ -269,9 +271,28 @@ func WebSetupRecoveryPost(svc *setup.Service) gin.HandlerFunc {
 			}))
 			return
 		}
+		recoveryProofPublicKey, err := decodeBase64Field(strings.TrimSpace(form.RecoveryProofPublicKey))
+		if err != nil || len(recoveryProofPublicKey) != ed25519.PublicKeySize {
+			web.Render(c, pages.SetupRecoveryPage(pages.SetupRecoveryPageProps{
+				Ctx:          pages.PageContext{},
+				UserID:       recoveryUserID(c, svc),
+				Error:        "Recovery key setup failed. Reload the page and try again.",
+				Acknowledged: true,
+			}))
+			return
+		}
 
 		token := recoveryPendingToken(c)
-		if err := svc.SaveRecoveryWrappedMasterKey(c.Request.Context(), token, encryptedMasterKeyRecovery); err != nil {
+		if err := svc.SaveRecoveryWrappedMasterKey(c.Request.Context(), token, encryptedMasterKeyRecovery, recoveryProofPublicKey); err != nil {
+			if errors.Is(err, setup.ErrInvalidRecoverySetup) {
+				web.Render(c, pages.SetupRecoveryPage(pages.SetupRecoveryPageProps{
+					Ctx:          pages.PageContext{},
+					UserID:       recoveryUserID(c, svc),
+					Error:        "Recovery key setup failed. Reload the page and try again.",
+					Acknowledged: true,
+				}))
+				return
+			}
 			_ = c.Error(errs.WithStack(err))
 			c.Status(http.StatusInternalServerError)
 			return

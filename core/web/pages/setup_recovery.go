@@ -118,6 +118,11 @@ func setupRecoveryBody(props SetupRecoveryPageProps) g.Node {
 								h.Name("encrypted_master_key_recovery"),
 								g.Attr("data-recovery-master-key-input", "true"),
 							),
+							h.Input(
+								h.Type("hidden"),
+								h.Name("recovery_proof_public_key"),
+								g.Attr("data-recovery-proof-public-key-input", "true"),
+							),
 							h.P(
 								h.Class("form-error recovery-form-error"),
 								g.Attr("data-recovery-runtime-error", "true"),

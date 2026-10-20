@@ -9,6 +9,7 @@ type User struct {
 	VaultSalt                   []byte
 	EncryptedMasterKey          []byte
 	EncryptedMasterKeyRecovery  []byte
+	RecoveryProofPublicKey      []byte
 	UsedBytes                   int64
 	ReservedBytes               int64
 	LastLoginAt                 *time.Time

@@ -21,9 +21,11 @@ Arkive Core is designed to provide modern cloud storage functionality while pres
 - Client-side folder encryption
 - Vault unlock, lock, and re-unlock flow
 - Recovery keys
-- Password reset and master-key rewrapping
+- Password reset and master-key rewrapping using a recovery-key proof
 - Zero-knowledge share links
 - Privacy-preserving trigram search
+
+Core has no mailer, so its API returns the reset link to the requester; the link does not prove mailbox ownership. Changing the password also requires a signature derived from the recovery key, which never leaves the browser.
 
 ### Storage
 

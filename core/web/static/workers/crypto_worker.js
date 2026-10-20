@@ -1,4 +1,10 @@
 import initArkiveCrypto, * as arkiveCrypto from "../vendor/arkive-crypto/arkive_crypto.js";
+import { signRecoveryProof } from "../lib/recovery_proof.js";
+
+/*
+Refactor this file to remove nested try catch finally with async await
+and moving each case condition into it's seperate function
+*/
 
 let readyPromise = null;
 let unlockedMasterKey = null;
@@ -201,27 +207,37 @@ async function handleMessage(message) {
               throw new Error("Invalid recovery key");
             }
             try {
-              // Keep vault wrapping consistent with setup/login: password-derived KEK + AAD.
-              const kek = crypto.derive_password_kek(
-                String(message.params.newPassword || ""),
-                salt,
+              const recoveryProof = await signRecoveryProof(
+                recoveryKey,
+                String(message.params.userID || ""),
+                String(message.params.resetToken || ""),
               );
               try {
-                const wrappedMasterKey = crypto.wrap_master_key(
-                  masterKey,
-                  kek,
-                  aadBytes("arkive:master-key:v1"),
+                // Keep vault wrapping consistent with setup/login: password-derived KEK + AAD.
+                const kek = crypto.derive_password_kek(
+                  String(message.params.newPassword || ""),
+                  salt,
                 );
                 try {
-                  return {
-                    vaultSalt: encodeBase64(salt),
-                    encryptedMasterKey: encodeBase64(wrappedMasterKey),
-                  };
+                  const wrappedMasterKey = crypto.wrap_master_key(
+                    masterKey,
+                    kek,
+                    aadBytes("arkive:master-key:v1"),
+                  );
+                  try {
+                    return {
+                      vaultSalt: encodeBase64(salt),
+                      encryptedMasterKey: encodeBase64(wrappedMasterKey),
+                      recoveryProof: encodeBase64(recoveryProof),
+                    };
+                  } finally {
+                    crypto.zeroize(wrappedMasterKey);
+                  }
                 } finally {
-                  crypto.zeroize(wrappedMasterKey);
+                  crypto.zeroize(kek);
                 }
               } finally {
-                crypto.zeroize(kek);
+                crypto.zeroize(recoveryProof);
               }
             } finally {
               crypto.zeroize(masterKey);

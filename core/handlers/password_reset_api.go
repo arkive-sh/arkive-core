@@ -21,6 +21,7 @@ type completePasswordResetRequest struct {
 	NewPassword        string `json:"newPassword"`
 	VaultSalt          string `json:"vaultSalt"`
 	EncryptedMasterKey string `json:"encryptedMasterKey"`
+	RecoveryProof      string `json:"recoveryProof"`
 }
 
 func APIForgotPassword(svc *auth.Service) gin.HandlerFunc {
@@ -41,10 +42,11 @@ func APIForgotPassword(svc *auth.Service) gin.HandlerFunc {
 		// Arkive Core does not ship with email delivery.
 		// When no mailer is configured, we return the `resetURL` directly so self-hosters can use
 		// password recovery without extra infrastructure.
+		// Completing this link still requires a valid recovery-key signature.
 		c.JSON(http.StatusOK, gin.H{
-			"ok":         true,
-			"resetURL":   result.ResetURL,
-			"expiresAt":  result.ExpiresAt,
+			"ok":        true,
+			"resetURL":  result.ResetURL,
+			"expiresAt": result.ExpiresAt,
 		})
 	}
 }
@@ -92,6 +94,11 @@ func APICompletePasswordReset(svc *auth.Service) gin.HandlerFunc {
 			apierror.InvalidPayload(c)
 			return
 		}
+		recoveryProof, err := decodeBase64Field(strings.TrimSpace(req.RecoveryProof))
+		if err != nil {
+			apierror.InvalidPayload(c)
+			return
+		}
 
 		validationErrors, err := svc.CompletePasswordRecovery(
 			c.Request.Context(),
@@ -99,6 +106,7 @@ func APICompletePasswordReset(svc *auth.Service) gin.HandlerFunc {
 			req.NewPassword,
 			vaultSalt,
 			encryptedMasterKey,
+			recoveryProof,
 		)
 		if validationErrors != nil && validationErrors.HasAny() {
 			apierror.Validation(c, validationErrors)
