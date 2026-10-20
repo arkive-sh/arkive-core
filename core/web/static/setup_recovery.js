@@ -1,4 +1,5 @@
 import { getArkiveCrypto } from "./features/crypto.js";
+import { deriveRecoveryProofPublicKey } from "./lib/recovery_proof.js";
 
 (function() {
   const SETUP_MASTER_KEY_STORAGE = "arkive:setup-master-key:v1";
@@ -9,6 +10,7 @@ import { getArkiveCrypto } from "./features/crypto.js";
   const grid = document.querySelector("[data-recovery-grid]");
   const valueInput = document.querySelector("[data-recovery-value]");
   const wrappedMasterKeyInput = document.querySelector("[data-recovery-master-key-input]");
+  const recoveryProofPublicKeyInput = document.querySelector("[data-recovery-proof-public-key-input]");
   const runtimeError = document.querySelector("[data-recovery-runtime-error]");
   const form = document.querySelector(".recovery-form");
   const userID = form ? String(form.getAttribute("data-recovery-user-id") || "").trim() : "";
@@ -204,12 +206,12 @@ import { getArkiveCrypto } from "./features/crypto.js";
       })
       .catch(function(error) {
         console.error(error);
-        setRuntimeError("Recovery key generation is unavailable. Reload the page and try again.");
+        setRuntimeError(error && error.message ? error.message : "Recovery key generation is unavailable. Reload the page and try again.");
       });
   }
 
   async function prepareRecoveryWrapper() {
-    if (!wrappedMasterKeyInput) {
+    if (!wrappedMasterKeyInput || !recoveryProofPublicKeyInput) {
       throw new Error("Recovery wrapper field is missing");
     }
     const storedMasterKey = sessionStorage.getItem(SETUP_MASTER_KEY_STORAGE);
@@ -231,6 +233,12 @@ import { getArkiveCrypto } from "./features/crypto.js";
           wrappedMasterKeyInput.value = bytesToBase64(wrapped);
         } finally {
           crypto.zeroize(wrapped);
+        }
+        const proofPublicKey = await deriveRecoveryProofPublicKey(recoveryKeyBytes, userID);
+        try {
+          recoveryProofPublicKeyInput.value = bytesToBase64(proofPublicKey);
+        } finally {
+          crypto.zeroize(proofPublicKey);
         }
       } finally {
         crypto.zeroize(recoveryKeyBytes);
@@ -259,7 +267,7 @@ import { getArkiveCrypto } from "./features/crypto.js";
         })
         .catch(function(error) {
           console.error(error);
-          setRuntimeError("Recovery key setup failed. Reload the page and try again.");
+          setRuntimeError(error && error.message ? error.message : "Recovery key setup failed. Reload the page and try again.");
         });
     });
   }

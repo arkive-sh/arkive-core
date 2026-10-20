@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -243,14 +244,14 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) (Passw
 		return PasswordResetRequestResult{}, nil
 	}
 
-	user, err := s.authRepo.GetUserByEmail(ctx, s.db, email)
+	user, err := s.authRepo.GetPasswordRecoveryInfoByEmail(ctx, s.db, email)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return PasswordResetRequestResult{}, nil
 		}
 		return PasswordResetRequestResult{}, err
 	}
-	if len(user.EncryptedMasterKeyRecovery) == 0 {
+	if len(user.EncryptedMasterKeyRecovery) == 0 || len(user.RecoveryProofPublicKey) != ed25519.PublicKeySize {
 		return PasswordResetRequestResult{}, nil
 	}
 
@@ -291,6 +292,7 @@ func (s *Service) CompletePasswordRecovery(
 	newPassword string,
 	newVaultSalt []byte,
 	newEncryptedMasterKey []byte,
+	recoveryProof []byte,
 ) (validation.Errors, error) {
 	resetToken = strings.TrimSpace(resetToken)
 	newPassword = strings.TrimSpace(newPassword)
@@ -321,6 +323,9 @@ func (s *Service) CompletePasswordRecovery(
 	if len(newEncryptedMasterKey) == 0 {
 		validationErrors.Add("encryptedMasterKey", "encrypted master key is missing")
 	}
+	if len(recoveryProof) != ed25519.SignatureSize {
+		validationErrors.Add("recoveryProof", "recovery key proof is missing or invalid")
+	}
 	if validationErrors.HasAny() {
 		return validationErrors, nil
 	}
@@ -342,6 +347,11 @@ func (s *Service) CompletePasswordRecovery(
 		}
 		return nil, err
 	}
+	if !verifyPasswordRecoveryProof(user.ID, resetToken, user.RecoveryProofPublicKey, recoveryProof) {
+		validationErrors := validation.New()
+		validationErrors.Add("recoveryProof", "recovery key proof is invalid")
+		return validationErrors, nil
+	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
@@ -362,6 +372,14 @@ func (s *Service) CompletePasswordRecovery(
 		return nil, err
 	}
 	return nil, nil
+}
+
+func verifyPasswordRecoveryProof(userID, resetToken string, publicKey, proof []byte) bool {
+	if len(publicKey) != ed25519.PublicKeySize || len(proof) != ed25519.SignatureSize {
+		return false
+	}
+	message := []byte(fmt.Sprintf("arkive:recovery-proof:v1\npassword-reset\n%s\n%s", userID, resetToken))
+	return ed25519.Verify(ed25519.PublicKey(publicKey), message, proof)
 }
 
 func (s *Service) authenticateUser(ctx context.Context, db database.PgExecutor, email, password string) (models.User, error) {

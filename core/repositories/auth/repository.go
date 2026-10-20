@@ -42,7 +42,25 @@ func (r *Repository) GetUserByEmail(ctx context.Context, db database.PgExecutor,
 		users
 	WHERE
 		email = $1`
-	if err := db.QueryRow(ctx, query, email).Scan(&user.ID, &user.BrandName, &user.Email, &user.VaultSalt, &user.EncryptedMasterKey, &user.EncryptedMasterKeyRecovery); err != nil {
+	if err := db.QueryRow(ctx, query, email).Scan(
+		&user.ID,
+		&user.BrandName,
+		&user.Email,
+		&user.VaultSalt,
+		&user.EncryptedMasterKey,
+		&user.EncryptedMasterKeyRecovery,
+	); err != nil {
+		return models.User{}, err
+	}
+	return user, nil
+}
+
+func (r *Repository) GetPasswordRecoveryInfoByEmail(ctx context.Context, db database.PgExecutor, email string) (models.User, error) {
+	var user models.User
+	query := `SELECT encrypted_master_key_recovery, recovery_proof_public_key
+		FROM users
+		WHERE email = $1`
+	if err := db.QueryRow(ctx, query, email).Scan(&user.EncryptedMasterKeyRecovery, &user.RecoveryProofPublicKey); err != nil {
 		return models.User{}, err
 	}
 	return user, nil

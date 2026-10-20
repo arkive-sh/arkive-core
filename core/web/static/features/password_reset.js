@@ -133,6 +133,7 @@ import { clearSessionUnlock } from "./vault.js";
             recoveryKey: recoveryKey ? recoveryKey.value : "",
             newPassword: newPassword ? newPassword.value : "",
             userID: vaultData.userID,
+            resetToken: token,
           });
         })
         .then(function(material) {
@@ -144,6 +145,7 @@ import { clearSessionUnlock } from "./vault.js";
               newPassword: newPassword ? newPassword.value : "",
               vaultSalt: material.vaultSalt,
               encryptedMasterKey: material.encryptedMasterKey,
+              recoveryProof: material.recoveryProof,
             }),
           }, {
             message: "Password reset failed.",

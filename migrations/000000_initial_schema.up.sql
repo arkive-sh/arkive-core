@@ -15,6 +15,7 @@ CREATE TABLE users (
   recovery_setup_token TEXT UNIQUE,
   recovery_setup_token_expires_at TIMESTAMPTZ,
   encrypted_master_key_recovery BYTEA,
+  recovery_proof_public_key BYTEA,
   password_reset_token_hash TEXT UNIQUE,
   password_reset_token_expires_at TIMESTAMPTZ,
   password_reset_consumed_at TIMESTAMPTZ,

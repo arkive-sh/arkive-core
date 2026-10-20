@@ -2,6 +2,7 @@ package setup
 
 import (
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"strings"
 	"time"
@@ -20,6 +21,7 @@ import (
 )
 
 var ErrAlreadyInitialized = errors.New("instance already initialized")
+var ErrInvalidRecoverySetup = errors.New("invalid recovery key setup")
 
 type Service struct {
 	db           database.PgPool
@@ -146,10 +148,13 @@ func (s *Service) GetRecoverySetupUser(ctx context.Context, token string) (model
 	return s.userRepo.GetByRecoverySetupToken(ctx, s.db, token, time.Now())
 }
 
-func (s *Service) SaveRecoveryWrappedMasterKey(ctx context.Context, token string, encryptedMasterKeyRecovery []byte) error {
+func (s *Service) SaveRecoveryWrappedMasterKey(ctx context.Context, token string, encryptedMasterKeyRecovery, recoveryProofPublicKey []byte) error {
 	token = strings.TrimSpace(token)
 	if token == "" {
 		return pgx.ErrNoRows
+	}
+	if len(encryptedMasterKeyRecovery) == 0 || len(recoveryProofPublicKey) != ed25519.PublicKeySize {
+		return ErrInvalidRecoverySetup
 	}
 
 	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
@@ -164,7 +169,7 @@ func (s *Service) SaveRecoveryWrappedMasterKey(ctx context.Context, token string
 	if err != nil {
 		return err
 	}
-	if err := s.userRepo.SetRecoveryWrappedMasterKey(ctx, tx, user.ID, encryptedMasterKeyRecovery); err != nil {
+	if err := s.userRepo.SetRecoveryWrappedMasterKey(ctx, tx, user.ID, encryptedMasterKeyRecovery, recoveryProofPublicKey); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
