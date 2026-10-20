@@ -105,12 +105,12 @@ func loginBody(props LoginPageProps) g.Node {
 								),
 							}),
 							components.Button(components.ButtonProps{
-								Text:     "Unlock Vault",
+								Text:     "Login",
 								Type:     "submit",
 								Variant:  "primary",
 								Class:    "auth-submit auth-submit-login",
 								Icon:     "key",
-								BusyText: "Unlocking...",
+								BusyText: "Logging in...",
 							}),
 							h.P(
 								h.Class("auth-message"),

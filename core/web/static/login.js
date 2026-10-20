@@ -1,4 +1,5 @@
 import { apiRequest } from "./lib/api.js";
+import { setButtonBusy } from "./features/button_state.js";
 import { clearSessionUnlock, persistSessionUnlock, unlockVault } from "./features/vault.js";
 
 (function() {
@@ -90,6 +91,7 @@ import { clearSessionUnlock, persistSessionUnlock, unlockVault } from "./feature
       .finally(function() {
         submitting = false;
         if (submitButton) {
+          setButtonBusy(submitButton, false, { restoreDisabled: false });
           submitButton.disabled = false;
         }
       });

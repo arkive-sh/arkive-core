@@ -1,4 +1,5 @@
 import { apiRequest } from "./lib/api.js";
+import { setButtonBusy } from "./features/button_state.js";
 import { getVaultState, persistSessionUnlock, unlockVault, waitUntilReady } from "./features/vault.js";
 
 (function() {
@@ -87,6 +88,7 @@ import { getVaultState, persistSessionUnlock, unlockVault, waitUntilReady } from
       .finally(function() {
         submitting = false;
         if (submitButton) {
+          setButtonBusy(submitButton, false, { restoreDisabled: false });
           submitButton.disabled = false;
         }
       });
