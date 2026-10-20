@@ -18,13 +18,13 @@ func LoadUser(c *gin.Context, svc *auth.Service) (models.User, bool, error) {
 
 	userID, err := svc.ValidateSession(c.Request.Context(), cookie.Value)
 	if err != nil {
-		cookies.ClearSession(c, false)
+		cookies.ClearSession(c)
 		return models.User{}, false, nil
 	}
 
 	user, err := svc.GetUserByID(c.Request.Context(), userID)
 	if err != nil {
-		cookies.ClearSession(c, false)
+		cookies.ClearSession(c)
 		return models.User{}, false, err
 	}
 

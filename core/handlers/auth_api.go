@@ -45,7 +45,7 @@ func APILogin(svc *auth.Service) gin.HandlerFunc {
 			return
 		}
 
-		cookies.SetSession(c, result.SessionID, result.ExpiresAt, false)
+		cookies.SetSession(c, result.SessionID, result.ExpiresAt)
 		c.JSON(http.StatusOK, gin.H{
 			"salt":               base64.StdEncoding.EncodeToString(result.VaultSalt),
 			"encryptedMasterKey": base64.StdEncoding.EncodeToString(result.EncryptedMasterKey),

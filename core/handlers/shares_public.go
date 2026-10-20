@@ -442,7 +442,7 @@ func setShareAccess(c *gin.Context, share models.Share, cookieSecret string) {
 	expiresAt := time.Now().Add(shareAccessTTL)
 	payload := share.Token + ":" + strconv.FormatInt(expiresAt.Unix(), 10)
 	value := base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." + signShareAccessPayload(payload, cookieSecret)
-	cookies.SetCustom(c, shareAccessCookieName, value, expiresAt, isSecureRequest(c))
+	cookies.SetCustom(c, shareAccessCookieName, value, expiresAt)
 }
 
 func signShareAccessPayload(payload, secret string) string {
@@ -453,14 +453,6 @@ func signShareAccessPayload(payload, secret string) string {
 
 func isJSONShareRequest(c *gin.Context) bool {
 	return strings.EqualFold(strings.TrimSpace(c.GetHeader("X-Requested-With")), "XMLHttpRequest")
-}
-
-func isSecureRequest(c *gin.Context) bool {
-	if c.Request.TLS != nil {
-		return true
-	}
-	forwarded := strings.ToLower(strings.TrimSpace(strings.Split(c.GetHeader("X-Forwarded-Proto"), ",")[0]))
-	return forwarded == "https"
 }
 
 func buildShareURL(c *gin.Context, token string) string {
