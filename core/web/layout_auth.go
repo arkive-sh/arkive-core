@@ -149,16 +149,6 @@ func renderUserMenu(user *models.User) g.Node {
 			),
 			h.Div(h.Class("dropdown-divider")),
 			h.A(h.Class("dropdown-item"), h.Href("/settings"), g.Attr("role", "menuitem"), g.Text("Settings")),
-			h.Form(
-				h.Method("post"),
-				h.Action("/logout"),
-				h.Button(
-					h.Class("dropdown-item is-danger"),
-					h.Type("submit"),
-					g.Attr("role", "menuitem"),
-					g.Text("Logout"),
-				),
-			),
 		),
 	})
 }

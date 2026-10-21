@@ -13,6 +13,7 @@ type Config struct {
 	SessionTTL            time.Duration
 	PasswordResetTokenTTL time.Duration
 	BaseURL               string
+	CORSAllowedOrigins    []string
 	CookieSecret          string
 	Env                   string
 }
@@ -54,12 +55,20 @@ func Load() (Config, error) {
 		}
 	}
 
+	var corsAllowedOrigins []string
+	for _, origin := range strings.Split(os.Getenv("CORS_ALLOWED_ORIGINS"), ",") {
+		if origin = strings.TrimSpace(origin); origin != "" {
+			corsAllowedOrigins = append(corsAllowedOrigins, origin)
+		}
+	}
+
 	return Config{
 		DatabaseURL:           dsn,
 		Port:                  addr,
 		SessionTTL:            sessionTTL,
 		PasswordResetTokenTTL: passwordResetTTL,
 		BaseURL:               baseURL,
+		CORSAllowedOrigins:    corsAllowedOrigins,
 		CookieSecret:          cookieSecret,
 		Env:                   env,
 	}, nil

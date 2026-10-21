@@ -53,7 +53,6 @@ function transferList(values) {
   return transfers;
 }
 
-let logoutBound = false;
 let worker = null;
 let requestID = 0;
 let unlocked = false;
@@ -302,27 +301,6 @@ function ensureRestored() {
     });
   }
   return restorePromise;
-}
-
-function bindLogoutHandler() {
-  if (logoutBound) {
-    return;
-  }
-  logoutBound = true;
-  document.addEventListener("submit", function(event) {
-    const form = event.target;
-    if (!(form instanceof HTMLFormElement)) {
-      return;
-    }
-    const action = form.getAttribute("action") || "";
-    if (action !== "/logout") {
-      return;
-    }
-    clearSessionUnlock();
-    unlocked = false;
-    emitVaultState();
-    callWorker("lockVault", {}).catch(function() {});
-  });
 }
 
 export const vault = {
@@ -702,7 +680,6 @@ export function onVaultLock(callback) {
 }
 
 export function initVault() {
-  bindLogoutHandler();
   ensureRestored();
   window.ArkiveVault = vault;
 }
