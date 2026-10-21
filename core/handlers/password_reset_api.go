@@ -118,8 +118,6 @@ func APICompletePasswordReset(svc *auth.Service) gin.HandlerFunc {
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{
-			"redirectTo": "/login?msg=password-reset-complete",
-		})
+		c.Status(http.StatusNoContent)
 	}
 }

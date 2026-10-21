@@ -49,7 +49,6 @@ func APILogin(svc *auth.Service) gin.HandlerFunc {
 		c.JSON(http.StatusOK, gin.H{
 			"salt":               base64.StdEncoding.EncodeToString(result.VaultSalt),
 			"encryptedMasterKey": base64.StdEncoding.EncodeToString(result.EncryptedMasterKey),
-			"redirectTo":         "/dashboard",
 		})
 	}
 }

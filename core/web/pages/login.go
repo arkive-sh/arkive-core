@@ -1,8 +1,6 @@
 package pages
 
 import (
-	"strings"
-
 	lucide "github.com/eduardolat/gomponents-lucide"
 	g "maragu.dev/gomponents"
 	h "maragu.dev/gomponents/html"
@@ -13,10 +11,9 @@ import (
 )
 
 type LoginPageProps struct {
-	Ctx     PageContext
-	Errors  validation.Errors
-	Message string
-	Email   string
+	Ctx    PageContext
+	Errors validation.Errors
+	Email  string
 }
 
 func LoginPage(props LoginPageProps) web.Page {
@@ -32,7 +29,6 @@ func LoginPage(props LoginPageProps) web.Page {
 
 func loginBody(props LoginPageProps) g.Node {
 	generalError := validation.FieldError(props.Errors, validation.GeneralKey)
-	message := strings.TrimSpace(props.Message)
 
 	return h.Div(
 		h.Class("auth-page"),
@@ -62,13 +58,6 @@ func loginBody(props LoginPageProps) g.Node {
 							h.Class("auth-form"),
 							g.Attr("method", "POST"),
 							g.Attr("data-login-form", "true"),
-							g.If(
-								message != "",
-								h.P(
-									h.Class("auth-message"),
-									g.Text(message),
-								),
-							),
 							g.If(
 								generalError != "",
 								h.P(

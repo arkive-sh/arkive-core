@@ -5,6 +5,8 @@
 .DS_Store
 coverage.out
 node_modules/
+web/.svelte-kit/
+web/build/
 playwright/.auth/
 playwright-report/
 test-results/

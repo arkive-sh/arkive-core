@@ -75,7 +75,7 @@ import { clearSessionUnlock, persistSessionUnlock, unlockVault } from "./feature
             if (passwordInput) {
               passwordInput.value = "";
             }
-            window.location.href = data.redirectTo || "/dashboard";
+            window.location.href = "/dashboard";
           })
           .catch(function(error) {
             clearSessionUnlock();
