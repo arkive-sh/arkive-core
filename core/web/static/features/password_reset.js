@@ -151,10 +151,10 @@ import { clearSessionUnlock } from "./vault.js";
             message: "Password reset failed.",
           });
         })
-        .then(function(data) {
+        .then(function() {
           clearSessionUnlock();
           sessionStorage.clear();
-          window.location.href = (data && data.redirectTo) || "/login";
+          window.location.href = "/login";
         })
         .catch(function(error) {
           console.error(error);

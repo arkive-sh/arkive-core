@@ -1,0 +1,9 @@
+@import "tailwindcss";
+@import "../../core/web/static/reset.css";
+@import "../../core/web/static/globals.css";
+@import "../../core/web/pages/login.css";
+@import "../../core/web/pages/not_found.css";
+@import "../../core/web/pages/forbidden.css";
+@import "../../core/web/components/card.css";
+@import "../../core/web/components/input.css";
+@import "../../core/web/components/button.css";

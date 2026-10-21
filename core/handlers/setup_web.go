@@ -303,7 +303,7 @@ func WebSetupRecoveryPost(svc *setup.Service) gin.HandlerFunc {
 			c.Status(http.StatusInternalServerError)
 			return
 		}
-		c.Redirect(http.StatusSeeOther, "/login?msg=instance-ready")
+		c.Redirect(http.StatusSeeOther, "/login")
 	}
 }
 

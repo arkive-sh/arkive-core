@@ -1,60 +1,17 @@
-import { AppError, defaultCodeForStatus, firstValidationMessage, toAppError } from "./errors.js";
+import { AppError } from "./errors.js";
 
 export const APIError = AppError;
 
 export function parseAPIErrorPayload(data, fallback, status) {
-  const baseFallback = String(fallback || "Request failed");
-  if (data && typeof data === "object") {
-    const payloadError = data.error;
-    if (payloadError && typeof payloadError === "object" && !Array.isArray(payloadError)) {
-      // Our API encodes validation failures as `{ error: { code, message, details: { fields }}}`.
-      // Prefer a concrete field message over the generic "Validation failed".
-      if (
-        payloadError.code === "validation_failed" &&
-        payloadError.details &&
-        typeof payloadError.details === "object" &&
-        payloadError.details.fields &&
-        typeof payloadError.details.fields === "object"
-      ) {
-        return new AppError(firstValidationMessage(payloadError.details.fields) || payloadError.message || baseFallback, {
-          code: payloadError.code || defaultCodeForStatus(status),
-          details: { fields: payloadError.details.fields },
-          status: status
-        });
-      }
-      return new AppError(payloadError.message || baseFallback, {
-        code: payloadError.code || defaultCodeForStatus(status),
-        details: payloadError.details || null,
-        status: status
-      });
-    }
-    if (data.errors && typeof data.errors === "object") {
-      return new AppError(firstValidationMessage(data.errors) || baseFallback, {
-        code: "validation_failed",
-        details: { fields: data.errors },
-        status: status
-      });
-    }
-    if (typeof payloadError === "string" && payloadError) {
-      return new AppError(payloadError, {
-        code: defaultCodeForStatus(status),
-        status: status
-      });
-    }
-  }
-  return new AppError(baseFallback, {
-    code: defaultCodeForStatus(status),
+  const payloadError = data?.error;
+  const fields = payloadError?.code === "validation_failed" ? payloadError.details?.fields : null;
+  const fallbackMessage = String(fallback?.message || fallback || "Request failed");
+
+  return new AppError(fields?.general || payloadError?.message || fallbackMessage, {
+    code: payloadError?.code || "http_error",
+    details: fields ? { fields } : payloadError?.details || null,
     status: status
   });
-}
-
-async function parseJSONBody(response) {
-  const text = await response.text();
-  let data = null;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch (_) {}
-  return { text: text, data: data };
 }
 
 export async function apiRequest(url, options, fallback) {
@@ -62,17 +19,16 @@ export async function apiRequest(url, options, fallback) {
   try {
     response = await fetch(url, options || {});
   } catch (error) {
-    if (error && error.name === "AbortError") {
+    if (error?.name === "AbortError") {
       throw error;
     }
-    throw toAppError(error, {
-      code: "network_error",
-      message: fallback && fallback.message ? fallback.message : "Network error",
+    throw new AppError(fallback?.message || fallback || "Network error", {
+      code: "network_error"
     });
   }
-  const parsed = await parseJSONBody(response);
+  const data = await response.json().catch(() => null);
   if (!response.ok) {
-    throw parseAPIErrorPayload(parsed.data, parsed.text || (fallback && fallback.message) || "Request failed", response.status);
+    throw parseAPIErrorPayload(data, fallback, response.status);
   }
-  return parsed.data;
+  return data;
 }

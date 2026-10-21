@@ -38,16 +38,8 @@ func WebLoginGet(svc *auth.Service, setupSvc *setup.Service) gin.HandlerFunc {
 			return
 		}
 
-		msg := ""
-		switch strings.TrimSpace(c.Query("msg")) {
-		case "instance-ready":
-			msg = "Setup complete. Sign in to continue."
-		case "password-reset-complete":
-			msg = "Password reset complete. Sign in with new password."
-		}
 		webPage := pages.LoginPage(pages.LoginPageProps{
-			Ctx:     pages.PageContext{},
-			Message: msg,
+			Ctx: pages.PageContext{},
 		})
 		web.Render(c, webPage)
 	}

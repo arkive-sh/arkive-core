@@ -44,7 +44,7 @@ export async function bootstrapInstance(page: Page) {
 
   await page.getByLabel(/I have written down/i).check();
   await page.getByRole('button', { name: 'Confirm & Secure Vault' }).click();
-  await expect(page).toHaveURL(/\/login\?msg=account-created$/);
+  await expect(page).toHaveURL(/\/login$/);
   return 'setup';
 }
 
