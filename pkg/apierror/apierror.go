@@ -2,6 +2,7 @@ package apierror
 
 import (
 	"net/http"
+	"sort"
 
 	"github.com/gin-gonic/gin"
 
@@ -51,6 +52,19 @@ func Internal(c *gin.Context, message string) {
 }
 
 func Validation(c *gin.Context, errors validation.Errors) {
+	if errors[validation.GeneralKey] == "" && len(errors) > 0 {
+		keys := make([]string, 0, len(errors))
+		for key := range errors {
+			if key != validation.GeneralKey {
+				keys = append(keys, key)
+			}
+		}
+		sort.Strings(keys)
+		if len(keys) > 0 {
+			errors[validation.GeneralKey] = errors[keys[0]]
+		}
+	}
+
 	Write(c, http.StatusBadRequest, "validation_failed", "Validation failed", gin.H{
 		"fields": errors,
 	})
