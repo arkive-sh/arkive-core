@@ -11,7 +11,6 @@ import (
 	"arkive/core/web"
 	"arkive/core/web/pages"
 	appcontext "arkive/pkg/context"
-	"arkive/pkg/cookies"
 	"arkive/pkg/errs"
 )
 
@@ -130,23 +129,4 @@ func redirectIfUninitialized(c *gin.Context, setupSvc *setup.Service) bool {
 		return true
 	}
 	return false
-}
-
-func WebLogout(svc *auth.Service) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		sessionID := ""
-		cookie, err := c.Request.Cookie(cookies.SessionName)
-		if err == nil && cookie.Value != "" {
-			sessionID = cookie.Value
-		}
-
-		if err := svc.LogoutSession(c.Request.Context(), sessionID); err != nil {
-			_ = c.Error(errs.WithStack(err))
-			c.Status(http.StatusInternalServerError)
-			return
-		}
-
-		cookies.ClearSession(c)
-		c.Redirect(http.StatusSeeOther, "/")
-	}
 }

@@ -28,6 +28,7 @@ import (
 
 func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, filesService *filessvc.Service, folderService *folderssvc.Service, localStorage *localclient.Client) *gin.Engine {
 	r := gin.Default()
+	r.Use(middleware.CORS(cfg.CORSAllowedOrigins))
 	r.Use(middleware.ErrorLogger())
 	r.Use(middleware.SecurityHeaders())
 
@@ -77,12 +78,11 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 	protected.POST("/settings/storage", handlers.WebSettingsStoragePost(settingsService))
 	protected.POST("/settings/uploads", handlers.WebSettingsUploadPost(settingsService))
 	protected.POST("/settings/previews", handlers.WebSettingsPreviewPost(settingsService))
-	protected.POST("/logout", handlers.WebLogout(authService))
-
 	// Public api endpoints
 	api := r.Group("/api")
 	{
 		api.POST("/auth/login", handlers.APILogin(authService))
+		api.POST("/auth/logout", handlers.APILogout(authService))
 		api.POST("/auth/forgot-password", handlers.APIForgotPassword(authService))
 		api.GET("/auth/password-reset/vault", handlers.APIPasswordResetVault(authService))
 		api.POST("/auth/password-reset/complete", handlers.APICompletePasswordReset(authService))

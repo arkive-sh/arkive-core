@@ -54,6 +54,25 @@ func APILogin(svc *auth.Service) gin.HandlerFunc {
 	}
 }
 
+func APILogout(svc *auth.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		sessionID := ""
+		cookie, err := c.Request.Cookie(cookies.SessionName)
+		if err == nil && cookie.Value != "" {
+			sessionID = cookie.Value
+		}
+
+		if err := svc.LogoutSession(c.Request.Context(), sessionID); err != nil {
+			_ = c.Error(errs.WithStack(err))
+			apierror.Internal(c, "Logout failed")
+			return
+		}
+
+		cookies.ClearSession(c)
+		c.Status(http.StatusNoContent)
+	}
+}
+
 func APIUnlockVault(svc *auth.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req apiUnlockRequest

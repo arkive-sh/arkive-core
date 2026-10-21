@@ -43,7 +43,7 @@ import { clearSessionUnlock, persistSessionUnlock, unlockVault } from "./feature
 
   async function rollbackSession() {
     try {
-      await fetch("/logout", {
+      await fetch("/api/auth/logout", {
         method: "POST"
       });
     } catch (_) {}
