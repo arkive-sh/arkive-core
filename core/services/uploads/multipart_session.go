@@ -764,5 +764,5 @@ func (s *Service) PresignThumbnailUpload(ctx context.Context, userID, uploadSess
 	if err != nil {
 		return "", err
 	}
-	return s.storage.PresignUpload(ctx, objectKey, "application/octet-stream", input.EncryptedSize, s.uploadExpiry(ctx))
+	return s.storage.PresignUpload(ctx, objectKey, input.Mime, input.EncryptedSize, s.uploadExpiry(ctx))
 }

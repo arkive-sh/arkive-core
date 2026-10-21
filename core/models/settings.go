@@ -24,3 +24,12 @@ type PreviewSettings struct {
 	VideoMaxBytes int64
 	TextMaxBytes  int64
 }
+
+// Max preview sizes (in MB) that the browser can realistically render in-place.
+// These are the single source of truth for both the settings form bounds and
+// server-side validation.
+const (
+	MaxImagePreviewMB = 128
+	MaxVideoPreviewMB = 512
+	MaxTextPreviewMB  = 8
+)

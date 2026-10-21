@@ -470,7 +470,11 @@ export const filesActions = {};
     if (!dateValue) {
       return "";
     }
-    return timeValue ? dateValue + "T" + timeValue + ":00" : dateValue + "T00:00:00";
+    const local = new Date(dateValue + "T" + (timeValue || "00:00") + ":00");
+    if (Number.isNaN(local.getTime())) {
+      return "";
+    }
+    return local.toISOString();
   }
 
   function syncModePicker() {
@@ -580,13 +584,19 @@ export const filesActions = {};
     }
 
     if (expiresAt && expiryCustomInput) {
-      const parts = expiresAt.split("T");
-      expiryCustomInput.value = parts[0] || "";
-      if (expiryTimeInput) {
-        expiryTimeInput.value = parts[1] ? parts[1].slice(0, 5) : "00:00";
-      }
-      if (expirySelect) {
-        expirySelect.value = "custom";
+      const parsedExpiry = new Date(expiresAt);
+      if (!Number.isNaN(parsedExpiry.getTime())) {
+        const pad = function(n) { return String(n).padStart(2, "0"); };
+        expiryCustomInput.value =
+          parsedExpiry.getFullYear() +
+          "-" + pad(parsedExpiry.getMonth() + 1) +
+          "-" + pad(parsedExpiry.getDate());
+        if (expiryTimeInput) {
+          expiryTimeInput.value = pad(parsedExpiry.getHours()) + ":" + pad(parsedExpiry.getMinutes());
+        }
+        if (expirySelect) {
+          expirySelect.value = "custom";
+        }
       }
     } else {
       if (expiryCustomInput) {

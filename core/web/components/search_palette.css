@@ -72,6 +72,30 @@
   justify-content: center;
 }
 
+.search-panel-close {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: rgba(48, 53, 57, 0.85);
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.search-panel-close:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
+.search-panel-close .search-panel-icon {
+  width: 18px;
+  height: 18px;
+}
+
 .search-panel-results {
   max-height: min(60vh, 560px);
   overflow-y: auto;

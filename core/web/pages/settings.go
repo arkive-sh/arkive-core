@@ -259,14 +259,19 @@ func SettingsPage(props SettingsPageProps) web.Page {
 										),
 									},
 								}),
-								components.Card(components.CardProps{
-									Title:    "Configuration",
-									Subtitle: "Update upload queue settings for this Core instance.",
-									Class:    "settings-card",
-									Body: []g.Node{
-										uploadSettingsForm(uploadSettings, props.Errors),
-									},
-								}),
+								h.Details(
+									h.Class("settings-advanced"),
+									g.If(uploadFormHasErrors(props.Errors), g.Attr("open", "open")),
+									h.Summary(g.Text("Advanced — edit upload queue limits")),
+									components.Card(components.CardProps{
+										Title:    "Configuration",
+										Subtitle: "Update upload queue settings for this Core instance.",
+										Class:    "settings-card",
+										Body: []g.Node{
+											uploadSettingsForm(uploadSettings, props.Errors),
+										},
+									}),
+								),
 							),
 						),
 						h.Section(
@@ -295,14 +300,19 @@ func SettingsPage(props SettingsPageProps) web.Page {
 										),
 									},
 								}),
-								components.Card(components.CardProps{
-									Title:    "Configuration",
-									Subtitle: "Update preview-size limits without changing encrypted file formats. Video limit applies only when browser streaming preview falls back to full-file playback.",
-									Class:    "settings-card",
-									Body: []g.Node{
-										previewSettingsForm(previewSettings, props.Errors),
-									},
-								}),
+								h.Details(
+									h.Class("settings-advanced"),
+									g.If(previewFormHasErrors(props.Errors), g.Attr("open", "open")),
+									h.Summary(g.Text("Advanced — edit preview limits")),
+									components.Card(components.CardProps{
+										Title:    "Configuration",
+										Subtitle: "Update preview-size limits without changing encrypted file formats. Video limit applies only when browser streaming preview falls back to full-file playback.",
+										Class:    "settings-card",
+										Body: []g.Node{
+											previewSettingsForm(previewSettings, props.Errors),
+										},
+									}),
+								),
 							),
 						),
 						h.Section(
@@ -352,6 +362,18 @@ func settingsInfoTile(label, value, hint string) g.Node {
 		h.Strong(g.Text(value)),
 		h.P(g.Text(hint)),
 	)
+}
+
+func uploadFormHasErrors(errors validation.Errors) bool {
+	return validation.FieldError(errors, "max_queue_items") != "" ||
+		validation.FieldError(errors, "part_concurrency") != "" ||
+		validation.FieldError(errors, "stale_upload_hours") != ""
+}
+
+func previewFormHasErrors(errors validation.Errors) bool {
+	return validation.FieldError(errors, "image_max_mb") != "" ||
+		validation.FieldError(errors, "video_max_mb") != "" ||
+		validation.FieldError(errors, "text_max_mb") != ""
 }
 
 func storageProviderSummary(settings models.StorageSettings) g.Node {

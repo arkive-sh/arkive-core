@@ -247,10 +247,38 @@ func renderEntriesList(props FilesPageProps) g.Node {
 func renderEntriesBrowserToolbar(pagination *components.PaginationProps) g.Node {
 	return h.Div(
 		h.Class("files-browser-toolbar"),
+		renderSelectionActions(),
 		h.Div(
 			h.Class("files-browser-pagination"),
 			components.Pagination(*pagination),
 		),
+	)
+}
+
+func renderSelectionActions() g.Node {
+	return h.Div(
+		h.Class("files-browser-actions"),
+		h.ID("files-selection-actions"),
+		g.Attr("hidden", "hidden"),
+		g.Attr("role", "toolbar"),
+		g.Attr("aria-label", "Selection actions"),
+		h.Span(
+			h.Class("files-selection-count"),
+			g.Attr("id", "files-selection-count"),
+			g.Text("0 selected"),
+		),
+		components.Button(components.ButtonProps{
+			Text:    "Move",
+			Variant: "secondary",
+			ID:      "files-selection-move",
+			Icon:    "move",
+		}),
+		components.Button(components.ButtonProps{
+			Text:    "Delete",
+			Variant: "danger",
+			ID:      "files-selection-delete",
+			Icon:    "trash",
+		}),
 	)
 }
 

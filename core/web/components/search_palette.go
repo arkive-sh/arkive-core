@@ -35,7 +35,16 @@ func SearchPalette(placeholder string) g.Node {
 						g.Attr("aria-label", placeholder),
 						g.Attr("autocomplete", "off"),
 					),
-					h.Kbd(h.Class("search-panel-kbd"), g.Text("ESC")),
+					h.Button(
+						h.Class("search-panel-close"),
+						h.Type("button"),
+						h.ID("search-panel-close"),
+						g.Attr("aria-label", "Close search"),
+						lucide.X(
+							h.Class("search-panel-icon"),
+							g.Attr("aria-hidden", "true"),
+						),
+					),
 				),
 				h.Div(
 					h.Class("search-panel-results"),

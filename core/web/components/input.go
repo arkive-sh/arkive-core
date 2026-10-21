@@ -22,6 +22,8 @@ type InputProps struct {
 	Type        inputType
 	Placeholder string
 	Value       string
+	Min         string
+	Max         string
 	Required    bool
 	HelperText  string
 	HasError    bool
@@ -68,6 +70,14 @@ func InputField(props InputProps) g.Node {
 		g.If(
 			props.Value != "",
 			g.Attr("value", props.Value),
+		),
+		g.If(
+			props.Min != "",
+			g.Attr("min", props.Min),
+		),
+		g.If(
+			props.Max != "",
+			g.Attr("max", props.Max),
 		),
 		g.If(
 			props.Required,

@@ -320,13 +320,13 @@ func BuildPreviewSettings(input PreviewInput) (models.PreviewSettings, validatio
 }
 
 func ValidatePreviewSettings(settings models.PreviewSettings, validationErrors validation.Errors) {
-	if settings.ImageMaxBytes < 1*1024*1024 || settings.ImageMaxBytes > 512*1024*1024 {
-		validationErrors.Add("image_max_mb", "must be between 1 and 512")
+	if settings.ImageMaxBytes < 1*1024*1024 || settings.ImageMaxBytes > models.MaxImagePreviewMB*1024*1024 {
+		validationErrors.Add("image_max_mb", "must be between 1 and "+strconv.Itoa(models.MaxImagePreviewMB))
 	}
-	if settings.VideoMaxBytes < 1*1024*1024 || settings.VideoMaxBytes > 2048*1024*1024 {
-		validationErrors.Add("video_max_mb", "must be between 1 and 2048")
+	if settings.VideoMaxBytes < 1*1024*1024 || settings.VideoMaxBytes > models.MaxVideoPreviewMB*1024*1024 {
+		validationErrors.Add("video_max_mb", "must be between 1 and "+strconv.Itoa(models.MaxVideoPreviewMB))
 	}
-	if settings.TextMaxBytes < 1*1024 || settings.TextMaxBytes > 32*1024*1024 {
-		validationErrors.Add("text_max_mb", "must be between 1 and 32")
+	if settings.TextMaxBytes < 1*1024 || settings.TextMaxBytes > models.MaxTextPreviewMB*1024*1024 {
+		validationErrors.Add("text_max_mb", "must be between 1 and "+strconv.Itoa(models.MaxTextPreviewMB))
 	}
 }

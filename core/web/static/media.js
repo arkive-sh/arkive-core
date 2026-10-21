@@ -462,9 +462,10 @@ import { thumbnailCache } from "./upload/thumbnail_cache.js";
         return;
       }
       setButtonBusy(deleteButton, true, { busyText: "Deleting..." });
-      apiRequest("/api/files/" + encodeURIComponent(fileId), {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" }
+      apiRequest("/api/entries/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileIds: [fileId], folderIds: [] })
       }, {
         code: "conflict",
         message: "Delete failed",

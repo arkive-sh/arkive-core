@@ -596,6 +596,33 @@ function bindShortcuts() {
   });
 }
 
+function bindSelectionActions() {
+  const bar = document.getElementById("files-selection-actions");
+  if (!bar || bar.hasAttribute("data-selection-actions-bound")) {
+    return;
+  }
+  bar.setAttribute("data-selection-actions-bound", "true");
+
+  const countLabel = document.getElementById("files-selection-count");
+  const moveButton = document.getElementById("files-selection-move");
+  const deleteButton = document.getElementById("files-selection-delete");
+
+  if (moveButton) {
+    moveButton.addEventListener("click", requestMoveSelected);
+  }
+  if (deleteButton) {
+    deleteButton.addEventListener("click", requestDeleteSelected);
+  }
+
+  document.addEventListener("arkive:selection-change", function(event) {
+    const selected = (event && event.detail && event.detail.selectedEntries) || [];
+    bar.hidden = selected.length === 0;
+    if (countLabel) {
+      countLabel.textContent = selected.length + (selected.length === 1 ? " item selected" : " items selected");
+    }
+  });
+}
+
 export function initFileSelection() {
   const entries = selectableEntries();
   if (!entries.length) {
@@ -605,6 +632,7 @@ export function initFileSelection() {
   entries.forEach(bindEntry);
   bindEmptySpaceClear();
   bindShortcuts();
+  bindSelectionActions();
 
   const selectAll = document.getElementById("entries-select-all");
   if (selectAll && !selectAll.hasAttribute("data-entries-select-all-bound")) {

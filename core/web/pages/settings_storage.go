@@ -78,12 +78,14 @@ func storageSettingsForm(settings models.StorageSettings, storageGB string, erro
 				HasError:   validation.FieldError(errors, "s3_bucket") != "",
 			}),
 			components.InputField(components.InputProps{
-				Label:      "S3 endpoint",
-				Name:       "s3_endpoint",
-				Type:       components.InputTypeText,
-				Value:      settings.S3Endpoint,
-				HelperText: validation.FieldError(errors, "s3_endpoint"),
-				HasError:   validation.FieldError(errors, "s3_endpoint") != "",
+				Label:       "S3 endpoint",
+				Name:        "s3_endpoint",
+				Type:        components.InputTypeText,
+				Value:       settings.S3Endpoint,
+				Placeholder: "https://s3.eu-north-1.amazonaws.com (leave blank for AWS)",
+				Description: "Leave blank for AWS S3, or specify your endpoint for S3-compatible providers (R2, MinIO, Wasabi, etc.)",
+				HelperText:  validation.FieldError(errors, "s3_endpoint"),
+				HasError:    validation.FieldError(errors, "s3_endpoint") != "",
 			}),
 			components.InputField(components.InputProps{
 				Label: "S3 region",
@@ -91,6 +93,15 @@ func storageSettingsForm(settings models.StorageSettings, storageGB string, erro
 				Type:  components.InputTypeText,
 				Value: settings.S3Region,
 			}),
+			h.Label(
+				h.Class("setup-checkbox"),
+				h.Input(
+					g.Attr("type", "checkbox"),
+					g.Attr("name", "s3_use_path_style"),
+					g.If(settings.S3UsePathStyle, g.Attr("checked", "checked")),
+				),
+				h.Span(g.Text("Use path-style addressing")),
+			),
 		),
 		components.Button(components.ButtonProps{
 			Text:     "Save storage settings",
@@ -119,9 +130,9 @@ func previewSettingsForm(settings models.PreviewSettings, errors validation.Erro
 		h.Class("settings-form"),
 		g.Attr("method", "POST"),
 		g.Attr("action", "/settings/previews"),
-		components.InputField(components.InputProps{Label: "Image preview max MB", Name: "image_max_mb", Type: components.InputTypeNumber, Value: strconv.FormatInt(settings.ImageMaxBytes/(1024*1024), 10), HelperText: validation.FieldError(errors, "image_max_mb"), HasError: validation.FieldError(errors, "image_max_mb") != ""}),
-		components.InputField(components.InputProps{Label: "Video preview max MB", Name: "video_max_mb", Type: components.InputTypeNumber, Value: strconv.FormatInt(settings.VideoMaxBytes/(1024*1024), 10), Description: "Used only for non-streaming fallback preview. Streaming playback is not capped by this value.", HelperText: validation.FieldError(errors, "video_max_mb"), HasError: validation.FieldError(errors, "video_max_mb") != ""}),
-		components.InputField(components.InputProps{Label: "Text preview max MB", Name: "text_max_mb", Type: components.InputTypeNumber, Value: strconv.FormatInt(settings.TextMaxBytes/(1024*1024), 10), HelperText: validation.FieldError(errors, "text_max_mb"), HasError: validation.FieldError(errors, "text_max_mb") != ""}),
+		components.InputField(components.InputProps{Label: "Image preview max MB", Name: "image_max_mb", Type: components.InputTypeNumber, Min: "1", Max: strconv.Itoa(models.MaxImagePreviewMB), Description: "Largest image the browser will render in-place. Larger files show a download prompt.", Value: strconv.FormatInt(settings.ImageMaxBytes/(1024*1024), 10), HelperText: validation.FieldError(errors, "image_max_mb"), HasError: validation.FieldError(errors, "image_max_mb") != ""}),
+		components.InputField(components.InputProps{Label: "Video preview max MB", Name: "video_max_mb", Type: components.InputTypeNumber, Min: "1", Max: strconv.Itoa(models.MaxVideoPreviewMB), Value: strconv.FormatInt(settings.VideoMaxBytes/(1024*1024), 10), Description: "Used only for non-streaming fallback preview. Streaming playback is not capped by this value.", HelperText: validation.FieldError(errors, "video_max_mb"), HasError: validation.FieldError(errors, "video_max_mb") != ""}),
+		components.InputField(components.InputProps{Label: "Text preview max MB", Name: "text_max_mb", Type: components.InputTypeNumber, Min: "1", Max: strconv.Itoa(models.MaxTextPreviewMB), Value: strconv.FormatInt(settings.TextMaxBytes/(1024*1024), 10), HelperText: validation.FieldError(errors, "text_max_mb"), HasError: validation.FieldError(errors, "text_max_mb") != ""}),
 		components.Button(components.ButtonProps{Text: "Save preview settings", Type: "submit", Variant: "primary", Class: "auth-submit", BusyText: "Saving..."}),
 	)
 }

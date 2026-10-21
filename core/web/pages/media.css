@@ -6,8 +6,11 @@
 }
 
 .media-view .container {
-  width: min(1440px, calc(100% - 40px));
+  width: 100%;
+  max-width: none;
   margin: 0 auto;
+  padding: 0 16px;
+  box-sizing: border-box;
 }
 
 .media-shell {
@@ -17,6 +20,8 @@
   border: 1px solid var(--border);
   background: var(--surface);
   min-height: calc(100vh - 105px);
+  border-radius: 8px;
+  overflow: hidden;
 }
 
 .media-main {
@@ -24,7 +29,7 @@
   gap: 16px;
   min-width: 0;
   min-height: 0;
-  padding: 16px;
+  padding: 12px;
   background: #11161b;
 }
 
@@ -42,11 +47,11 @@
 
 .media-frame-inner {
   width: 100%;
-  height: calc(100vh - 170px);
-  min-height: 0;
-  max-height: calc(100vh - 170px);
+  height: calc(100vh - 162px);
+  max-height: calc(100vh - 162px);
   background: #0c1115;
   border: 1px solid rgba(56, 189, 248, 0.18);
+  border-radius: 6px;
   display: flex;
   align-items: stretch;
   justify-content: stretch;
@@ -578,7 +583,7 @@
 
 @media (max-width: 1024px) {
   .media-view .container {
-    width: calc(100% - 24px);
+    padding: 0 12px;
   }
 
   .media-shell {

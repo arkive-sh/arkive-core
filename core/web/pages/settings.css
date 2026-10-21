@@ -132,6 +132,88 @@
   gap: 24px;
 }
 
+.settings-advanced {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.settings-advanced > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  cursor: pointer;
+  color: var(--text);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-lh);
+  font-weight: var(--text-button-wt);
+  list-style: none;
+  border-radius: 6px;
+  transition: background-color 160ms ease;
+}
+
+.settings-advanced > summary::-webkit-details-marker,
+.settings-advanced > summary::marker {
+  display: none;
+  content: "";
+}
+
+.settings-advanced > summary:hover {
+  background: var(--surface-raised);
+}
+
+.settings-advanced > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.settings-advanced > summary::after {
+  content: "";
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-top: -3px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg);
+  transition: transform 160ms ease;
+}
+
+.settings-advanced[open] > summary {
+  border-bottom: 1px solid var(--border);
+  border-radius: 6px 6px 0 0;
+}
+
+.settings-advanced[open] > summary::after {
+  transform: rotate(225deg);
+}
+
+/* Flatten the nested card so the <details> reads as a single bordered card. */
+.settings-advanced .card {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+  padding: 0;
+}
+
+.settings-advanced .card-header {
+  margin-bottom: 12px;
+  padding: 16px 16px 0;
+}
+
+.settings-advanced .card-header h3 {
+  display: none;
+}
+
+.settings-advanced .card-body {
+  padding: 0 16px 16px;
+}
+
 .settings-card .card-body {
   display: grid;
   gap: 16px;

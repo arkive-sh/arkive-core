@@ -77,15 +77,23 @@ export async function initUploads() {
 	});
 	runner.onEvent(function (event) {
 		if (event && event.type === "error") {
-			const message = event.error || "Upload failed.";
+			const message = friendlyUploadError(event);
 			setStatus(message);
-			showUploadErrorToast(event);
+			showUploadErrorToast(event, message);
 			return;
 		}
 		if (event && event.type === "batch-complete") {
 			if (event.batchId && !completedBatches.has(event.batchId)) {
 				completedBatches.add(event.batchId);
-				Toast.success((event.total || 0) + " file(s) uploaded.", { title: "Upload complete" });
+				const uploaded = event.total || 0;
+				Toast.success(uploaded + " file(s) uploaded.", { title: "Upload complete" });
+				const filesCount = document.querySelector(".summary-value-files");
+				if (filesCount) {
+					const current = Number.parseInt(filesCount.textContent.replace(/[^0-9]/g, ""), 10);
+					if (Number.isFinite(current)) {
+						filesCount.textContent = (current + uploaded).toLocaleString("en-US");
+					}
+				}
 			}
 		}
 	});
@@ -218,10 +226,28 @@ export async function initUploads() {
 	});
 
 	function setStatus(text) { status.textContent = text; }
-	function showUploadErrorToast(event) {
+	function friendlyUploadError(event) {
+		switch (String((event && event.code) || "")) {
+			case "storage_limit_exceeded":
+				return "You're out of storage. Free up space or raise your limit, then try again.";
+			case "unauthorized":
+			case "forbidden":
+				return "You don't have permission to upload. Please sign in and try again.";
+			case "validation_failed":
+				return "That file couldn't be accepted. Check the file and try again.";
+			case "upload_not_found":
+			case "not_found":
+				return "The upload session expired. Please try the upload again.";
+			case "conflict":
+				return "This upload was already cancelled or is in progress. Please try again.";
+			default:
+				return "Upload failed. Please try again.";
+		}
+	}
+	function showUploadErrorToast(event, message) {
 		showAppError(event, {
-			code: "upload_failed",
-			message: "Upload failed",
+			code: String((event && event.code) || "upload_failed"),
+			message: message || "Upload failed",
 		});
 	}
 	function hideDialog() { confirmBackdrop && confirmBackdrop.classList.add("is-hidden"); }
@@ -286,6 +312,7 @@ export async function initUploads() {
 			uploadControls.classList.toggle("is-hidden", !hasCancelableJobs);
 		}
 		if (!jobs.length) {
+			queueList.replaceChildren();
 			queueEmpty && queueEmpty.classList.remove("is-hidden");
 			queueMeta && (queueMeta.textContent = "0 items active");
 			if (!state.activeJobId) setStatus("No uploads in progress.");

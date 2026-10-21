@@ -95,6 +95,7 @@ export function initSearchPalette() {
   const settingsRoot = document.getElementById("search-results-settings");
   const loading = document.getElementById("search-loading");
   const empty = document.getElementById("search-empty");
+  const closeButton = document.getElementById("search-panel-close");
 
   if (!trigger || !panel || !input || !resultsRoot || !sharesRoot || !settingsRoot || !loading || !empty || trigger.hasAttribute("data-search-bound")) {
     return;
@@ -424,6 +425,10 @@ export function initSearchPalette() {
 
   panel.addEventListener("mousedown", function(event) {
     event.stopPropagation();
+  });
+
+  closeButton.addEventListener("click", function() {
+    closePanel();
   });
 
   panel.addEventListener("click", function(event) {
