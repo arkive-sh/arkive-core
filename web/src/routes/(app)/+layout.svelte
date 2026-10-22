@@ -3,12 +3,14 @@
 	import { page } from '$app/state';
 	import AppHeader from '#lib/components/AppHeader.svelte';
 	import AppSidebar from '#lib/components/AppSidebar.svelte';
+	import SearchPalette from '#lib/components/SearchPalette.svelte';
 	import type { LayoutProps } from './$types';
 
 	let { data, children }: LayoutProps = $props();
 	let mobileView = $state(false);
 	let mobileOpen = $state(false);
 	let desktopCollapsed = $state(false);
+	let searchOpen = $state(false);
 
 	function setMobileOpen(open: boolean) {
 		mobileOpen = open;
@@ -25,6 +27,14 @@
 		else desktopCollapsed = true;
 	}
 
+	function openSearch() {
+		searchOpen = true;
+	}
+
+	function closeSearch() {
+		searchOpen = false;
+	}
+
 	onMount(() => {
 		const media = window.matchMedia('(max-width: 960px)');
 		const syncView = () => {
@@ -33,7 +43,7 @@
 			setMobileOpen(false);
 		};
 		const closeOnEscape = (event: KeyboardEvent) => {
-			if (event.key === 'Escape') closeSidebar();
+			if (event.key === 'Escape' && !document.querySelector('[data-modal-open="true"]')) closeSidebar();
 		};
 
 		syncView();
@@ -58,7 +68,9 @@
 		{mobileOpen}
 		{desktopCollapsed}
 		onToggleSidebar={toggleSidebar}
+		onOpenSearch={openSearch}
 	/>
+	<SearchPalette open={searchOpen} vaultId={data.user.id} onOpen={openSearch} onClose={closeSearch} />
 	<AppSidebar
 		user={data.user}
 		currentPath={page.url.pathname}
