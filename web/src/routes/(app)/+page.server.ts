@@ -1,5 +1,5 @@
 import { apiRequest } from '#lib/api.ts';
-import type { DashboardResponse } from '#lib/dashboard.ts';
+import type { DashboardResponse } from './dashboard';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ parent, request }) => {

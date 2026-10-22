@@ -3,6 +3,7 @@
 	import { Bell, CircleUser, Lock, Menu, Search } from '@lucide/svelte';
 	import { logoutAndLock } from '#lib/auth.ts';
 	import Dropdown from '#lib/components/Dropdown.svelte';
+	import { toast } from '#lib/toast.ts';
 
 	type Props = {
 		user: { brand_name: string; email: string };
@@ -15,17 +16,14 @@
 
 	let { user, mobileView, mobileOpen, desktopCollapsed, onToggleSidebar, onOpenSearch }: Props = $props();
 	let loggingOut = $state(false);
-	let logoutError = $state('');
 
-	async function logout(event: MouseEvent) {
-		event.stopPropagation();
-		logoutError = '';
+	async function logout() {
 		loggingOut = true;
 		try {
 			await logoutAndLock();
 			await goto('/login');
 		} catch (error) {
-			logoutError = error instanceof Error ? error.message : 'Logout failed. Please try again.';
+			toast.error(error instanceof Error ? error.message : 'Logout failed. Please try again.');
 		} finally {
 			loggingOut = false;
 		}
@@ -94,9 +92,6 @@
 					aria-busy={loggingOut}
 					onclick={logout}
 				>{loggingOut ? 'Logging out…' : 'Log out'}</button>
-				{#if logoutError}
-					<p class="m-0 px-2.5 pt-1 text-xs text-(--danger)" role="alert">{logoutError}</p>
-				{/if}
 			</Dropdown>
 		</div>
 	</div>

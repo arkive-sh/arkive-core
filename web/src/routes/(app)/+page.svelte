@@ -2,7 +2,7 @@
 	import { onMount, untrack } from 'svelte';
 	import { File, Lock } from '@lucide/svelte';
 	import { apiRequest } from '#lib/api.ts';
-	import type { DashboardRecentFile, DashboardResponse } from '#lib/dashboard.ts';
+	import type { DashboardRecentFile, DashboardResponse } from './dashboard';
 	import FileUploader from '#lib/components/FileUploader.svelte';
 	import { decryptSearchFile } from '#lib/vault/search.ts';
 	import { waitUntilReady } from '#lib/vault/session.ts';
