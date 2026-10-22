@@ -12,7 +12,8 @@ import { initLightbox } from "./features/lightbox.js";
 import { initMoveEntries } from "./features/move_entries.js";
 import { initSearchPalette } from "./features/search_palette.js";
 import { initRenameEntries } from "./features/rename_entries.js";
-import { initSidebar } from "./features/sidebar.js";
+import { initSidebar, refreshSidebarActive } from "./features/sidebar.js";
+import { initSoftNav, onAfterSwap } from "./features/soft_nav.js";
 import { initContextMenu } from "./features/context_menu.js";
 import { initToast } from "./features/toast.js";
 import { initUploads } from "./features/uploads.js";
@@ -165,8 +166,21 @@ function initVaultAccessGuard() {
   });
 }
 
+// Page-scoped inits: re-run after every soft navigation because the nodes they
+// bind live inside the swapped .app-content.
+function initPageInits() {
+  initPasswordToggles();
+  initCopyButtons();
+  initFileListHydrator();
+  initFileSelection();
+  initFolders();
+  initMoveEntries();
+  initDragSelect();
+  initEntryDragMove();
+  initLightbox();
+}
+
 initTheme();
-initPasswordToggles();
 initSubmitButtonStates();
 initCrypto();
 initVault();
@@ -174,19 +188,20 @@ initToast();
 initVaultAccessGuard();
 initDialogs();
 initDropdowns();
-initCopyButtons();
 initSidebar();
 initSearchPalette();
-initLightbox();
-initFileListHydrator();
-initFileSelection();
-initFolders();
-initMoveEntries();
 initRenameEntries();
 initContextMenu();
-initDragSelect();
-initEntryDragMove();
 initUploads();
+
+initPageInits();
+
+onAfterSwap(function(newDoc) {
+  initPageInits();
+  refreshSidebarActive(newDoc);
+});
+
+initSoftNav();
 
 if ("serviceWorker" in navigator && window.isSecureContext) {
   navigator.serviceWorker.register("/sw.js").catch(function(error) {

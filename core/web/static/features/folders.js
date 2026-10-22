@@ -3,6 +3,7 @@ import { Dialog } from "./dialog.js";
 import { vault, waitUntilReady } from "./vault.js";
 import { apiRequest } from "../lib/api.js";
 import { showAppError } from "../lib/toasts.js";
+import { navigate } from "./soft_nav.js";
 
 async function decryptFolderItem(item) {
   const metaValue = String(item.getAttribute("data-folder-meta-b64") || "");
@@ -82,7 +83,7 @@ export function initFolders() {
         }
         const href = String(item.getAttribute("data-folder-open") || "");
         if (href) {
-          window.location.href = href;
+          navigate(href, { push: true });
         }
       });
       item.addEventListener("keydown", function(event) {
@@ -91,7 +92,7 @@ export function initFolders() {
         }
         const href = String(item.getAttribute("data-folder-open") || "");
         if (href) {
-          window.location.href = href;
+          navigate(href, { push: true });
         }
       });
     }

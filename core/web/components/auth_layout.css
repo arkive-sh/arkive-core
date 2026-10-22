@@ -137,8 +137,58 @@
   overflow-x: clip;
 }
 
+/* Mounted in the shell on every auth page (so uploads survive navigation), but
+   only visible on the dashboard. data-page is the current page path. */
+.app-upload-tray {
+  display: none;
+  margin-left: 240px;
+  padding: 24px 20px 40px;
+  border-top: 1px solid var(--border);
+}
+
+body[data-page="/dashboard"] .app-upload-tray {
+  display: block;
+}
+
+/* Download status also lives in the shell, so a running transfer survives soft
+   navigation. Hidden by default; shown while a download is active (any page, so
+   it can be watched and cancelled after navigating away) or on the file preview
+   page, the only page that starts downloads. */
+.app-download-tray {
+  display: none;
+  margin-left: 240px;
+  padding: 16px 20px 0;
+}
+
+body[data-downloading="true"] .app-download-tray,
+body[data-page^="/files/"][data-page$="/view"] .app-download-tray {
+  display: block;
+}
+
+.app-download-tray .arkive-download-warning {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+  background: var(--surface);
+}
+
+.app-download-tray .arkive-download-warning h3 {
+  margin: 0 0 8px;
+}
+
+.app-download-tray .arkive-download-warning p {
+  margin: 6px 0;
+}
+
+.app-download-tray .arkive-download-warning .muted {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 body.sidebar-collapsed .app-header,
-body.sidebar-collapsed .app-content {
+body.sidebar-collapsed .app-content,
+body.sidebar-collapsed .app-upload-tray,
+body.sidebar-collapsed .app-download-tray {
   margin-left: 0;
 }
 
@@ -148,6 +198,14 @@ body.sidebar-collapsed .app-content {
   }
 
   .app-content {
+    margin-left: 0;
+  }
+
+  .app-upload-tray {
+    margin-left: 0;
+  }
+
+  .app-download-tray {
     margin-left: 0;
   }
 

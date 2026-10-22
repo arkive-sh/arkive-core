@@ -109,7 +109,7 @@ func renderPublicShareCard(props PublicShareViewProps) g.Node {
 					),
 					h.Span(g.Text("Download File")),
 				),
-				renderDownloadStatus("public-share-download-queue"),
+				components.DownloadStatus("public-share-download-queue"),
 			),
 		),
 	)

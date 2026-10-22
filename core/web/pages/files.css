@@ -265,10 +265,18 @@
 .files-browser-actions {
   display: flex;
   align-items: center;
+  gap: 10px;
 }
 
 .files-browser-actions[hidden] {
   display: none;
+}
+
+.files-selection-count {
+  color: var(--muted);
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-lh);
+  white-space: nowrap;
 }
 
 .files-view {

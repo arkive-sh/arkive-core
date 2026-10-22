@@ -37,6 +37,8 @@ func AuthLayout(data LayoutData, content ...g.Node) g.Node {
 		h.Head(headNodes...),
 		h.Body(
 			components.InlineStyle(components.AuthLayoutCSS),
+			// data-page keys the upload-tray visibility rule in auth_layout.css.
+			g.If(data.PagePath != "", g.Attr("data-page", data.PagePath)),
 			g.If(data.RequireVaultUnlock, g.Attr("data-require-vault-unlock", "true")),
 			g.If(data.User != nil && strings.TrimSpace(data.User.ID) != "", g.Attr("data-vault-id", strings.TrimSpace(data.User.ID))),
 			h.Div(
@@ -48,6 +50,25 @@ func AuthLayout(data LayoutData, content ...g.Node) g.Node {
 				}),
 				h.Div(h.Class("sidebar-scrim"), g.Attr("aria-hidden", "true")),
 				h.Div(h.Class("app-content"), g.Group(content)),
+				// The upload panel lives in the shell (outside .app-content) so an
+				// in-progress upload survives soft navigation between pages.
+				h.Section(
+					h.Class("app-upload-tray"),
+					h.ID("upload-panel"),
+					components.UploadControls(components.UploadControlsProps{
+						InputRequired: true,
+						InputLabel:    "Secure Upload",
+						InputHelper:   "Drag and drop files here to begin encrypted upload. Data is encrypted in browser before transfer.",
+						StatusText:    "Select files manually to start a secure upload.",
+					}),
+				),
+				// The download status panel lives in the shell for the same reason:
+				// a running download survives soft navigation between pages.
+				// auth_layout.css keeps it hidden until a download is active.
+				h.Section(
+					h.Class("app-download-tray"),
+					components.DownloadStatus("app-download-queue"),
+				),
 			),
 			components.SearchPalette(data.SearchPlaceholder),
 			components.ToastHost(),

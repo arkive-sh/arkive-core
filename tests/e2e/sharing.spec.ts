@@ -19,7 +19,8 @@ test('public share opens in a fresh browser context and downloads', async ({ bro
   const row = await waitForFile(page, imageFile.name);
   await row.locator('[data-entry-menu-trigger="true"]').click();
   await page.getByRole('button', { name: 'Share' }).click();
-  await expect(page.getByText('Share Link')).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Share Resource' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Share Resource' })).toBeVisible();
   await page.getByRole('button', { name: 'Save Link' }).click();
 
   const shareLink = page.locator('#share-link-input');
@@ -50,7 +51,8 @@ test('one-time public share is burned after first view', async ({ browser, page 
   const row = await waitForFile(page, imageFile.name);
   await row.locator('[data-entry-menu-trigger="true"]').click();
   await page.getByRole('button', { name: 'Share' }).click();
-  await expect(page.getByText('Share Link')).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Share Resource' })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Public access link' })).toBeVisible();
   await page.getByLabel('One-time link').check();
   await page.getByRole('button', { name: 'Save Link' }).click();
 

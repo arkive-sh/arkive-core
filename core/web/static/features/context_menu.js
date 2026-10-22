@@ -10,6 +10,12 @@ const state = {
   currentSelection: [],
 };
 
+// Scroll adjustments smaller than this (e.g. the browser's ~8px scroll
+// anchoring tweak when a row gets selected) must not close the menu;
+// real user scrolls always exceed it.
+const SCROLL_CLOSE_THRESHOLD_PX = 24;
+let menuOpenScroll = null;
+
 function menuState() {
   return state;
 }
@@ -45,6 +51,21 @@ function closeMenu() {
   state.root.innerHTML = "";
   state.currentEntry = null;
   state.currentSelection = [];
+  menuOpenScroll = null;
+}
+
+// A scroll closes the menu only if it moved the window (or the menu's own
+// scroll container) further than the threshold since the menu opened.
+function scrollClosesMenu(event) {
+  const anchor = menuOpenScroll;
+  if (!anchor) {
+    return true;
+  }
+  const target = event.target;
+  if (anchor.container && target === anchor.container) {
+    return Math.abs(target.scrollTop - anchor.containerTop) > SCROLL_CLOSE_THRESHOLD_PX;
+  }
+  return Math.abs(window.scrollY - anchor.windowY) > SCROLL_CLOSE_THRESHOLD_PX;
 }
 
 function menuButton(item, action) {
@@ -298,9 +319,17 @@ function showMenu(items, x, y, entry, selection) {
   state.currentEntry = entry;
   state.currentSelection = selection;
   positionMenu(root, x, y);
+  const scrollContainer = entry && entry.closest
+    ? entry.closest(".files-grid-wrap, .files-table-wrap")
+    : null;
+  menuOpenScroll = {
+    windowY: window.scrollY,
+    container: scrollContainer,
+    containerTop: scrollContainer ? scrollContainer.scrollTop : 0,
+  };
   const firstButton = root.querySelector(".files-context-menu-item:not(:disabled)");
   if (firstButton) {
-    firstButton.focus();
+    firstButton.focus({ preventScroll: true });
   }
 }
 
@@ -351,6 +380,10 @@ export function initContextMenu() {
     showMenu(emptyMenuItems(), event.clientX, event.clientY, null, selectedEntries());
   });
 
-  document.addEventListener("scroll", closeMenu, true);
+  document.addEventListener("scroll", function(event) {
+    if (scrollClosesMenu(event)) {
+      closeMenu();
+    }
+  }, true);
   window.addEventListener("resize", closeMenu);
 }

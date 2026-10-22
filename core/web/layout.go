@@ -12,6 +12,7 @@ type LayoutData struct {
 	Title              string
 	Description        string
 	CanonicalURL       string
+	PagePath           string
 	Robots             string
 	OGTitle            string
 	OGDescription      string

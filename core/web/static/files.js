@@ -1,6 +1,7 @@
+import { markModuleLoaded, navigate } from "./features/soft_nav.js";
 import { setButtonBusy } from "./features/button_state.js";
 import { Dialog } from "./features/dialog.js";
-import { ArkiveFileReader } from "./features/file_reader.js";
+import { downloadFile } from "./features/download_manager.js";
 import { entrySelection } from "./features/file_selection.js";
 import { Toast } from "./features/toast.js";
 import { vault, waitUntilReady } from "./features/vault.js";
@@ -10,30 +11,17 @@ import { thumbnailCache } from "./upload/thumbnail_cache.js";
 
 export const filesActions = {};
 
-(function() {
-  async function downloadFile(fileId, trigger) {
-    if (!fileId) {
-      return;
-    }
-    if (trigger) {
-      trigger.disabled = true;
-    }
-    const reader = new ArkiveFileReader({ fileId: fileId });
-    try {
-      await reader.download();
-    } catch (error) {
-      showAppError(error, {
-        code: "download_failed",
-        message: "Download failed.",
-      });
-    } finally {
-      if (trigger) {
-        trigger.disabled = false;
-      }
-      await reader.dispose();
-    }
-  }
+let pageSignal = new AbortController();
 
+export function cleanupPage() {
+  pageSignal.abort();
+  pageSignal = new AbortController();
+}
+
+export function initPage() {
+  cleanupPage();
+
+  (function() {
   filesActions.downloadFile = downloadFile;
 
   document.addEventListener("click", async function(event) {
@@ -42,8 +30,8 @@ export const filesActions = {};
       return;
     }
     event.preventDefault();
-    await downloadFile(target.getAttribute("data-file-id"), target);
-  });
+    await downloadFile(target.getAttribute("data-file-id"), { trigger: target });
+  }, { signal: pageSignal.signal });
 })();
 
 (function() {
@@ -56,7 +44,7 @@ export const filesActions = {};
     }
     const href = node.getAttribute("data-file-open") || node.getAttribute("data-folder-open") || "";
     if (href) {
-      window.location.href = href;
+      navigate(href, { push: true });
     }
   }
 
@@ -264,7 +252,7 @@ export const filesActions = {};
       return;
     }
     openDialog([{ id: fileId, type: "file" }]);
-  });
+  }, { signal: pageSignal.signal });
 
   if (cancelButton) {
     cancelButton.addEventListener("click", function() {
@@ -329,7 +317,7 @@ export const filesActions = {};
       return;
     }
     openDialog(selectedEntries);
-  });
+  }, { signal: pageSignal.signal });
 })();
 
 (function() {
@@ -470,7 +458,11 @@ export const filesActions = {};
     if (!dateValue) {
       return "";
     }
-    return timeValue ? dateValue + "T" + timeValue + ":00" : dateValue + "T00:00:00";
+    const local = new Date(dateValue + "T" + (timeValue || "00:00") + ":00");
+    if (Number.isNaN(local.getTime())) {
+      return "";
+    }
+    return local.toISOString();
   }
 
   function syncModePicker() {
@@ -580,13 +572,19 @@ export const filesActions = {};
     }
 
     if (expiresAt && expiryCustomInput) {
-      const parts = expiresAt.split("T");
-      expiryCustomInput.value = parts[0] || "";
-      if (expiryTimeInput) {
-        expiryTimeInput.value = parts[1] ? parts[1].slice(0, 5) : "00:00";
-      }
-      if (expirySelect) {
-        expirySelect.value = "custom";
+      const parsedExpiry = new Date(expiresAt);
+      if (!Number.isNaN(parsedExpiry.getTime())) {
+        const pad = function(n) { return String(n).padStart(2, "0"); };
+        expiryCustomInput.value =
+          parsedExpiry.getFullYear() +
+          "-" + pad(parsedExpiry.getMonth() + 1) +
+          "-" + pad(parsedExpiry.getDate());
+        if (expiryTimeInput) {
+          expiryTimeInput.value = pad(parsedExpiry.getHours()) + ":" + pad(parsedExpiry.getMinutes());
+        }
+        if (expirySelect) {
+          expirySelect.value = "custom";
+        }
       }
     } else {
       if (expiryCustomInput) {
@@ -776,7 +774,7 @@ export const filesActions = {};
       return;
     }
     openShareDialog(fileId, button.getAttribute("data-file-name") || "");
-  });
+  }, { signal: pageSignal.signal });
 
   if (copyButton) {
     copyButton.addEventListener("click", async function() {
@@ -1021,4 +1019,9 @@ export const filesActions = {};
       closeShareDialog();
     });
   }
-})();
+  })();
+}
+
+initPage();
+
+markModuleLoaded(new URL(import.meta.url).pathname);

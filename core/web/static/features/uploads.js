@@ -72,20 +72,27 @@ export async function initUploads() {
 
 	runner.onState(function (nextState) {
 		state = nextState || state;
-		syncUploadPageRetention();
 		scheduleRender();
 	});
 	runner.onEvent(function (event) {
 		if (event && event.type === "error") {
-			const message = event.error || "Upload failed.";
+			const message = friendlyUploadError(event);
 			setStatus(message);
-			showUploadErrorToast(event);
+			showUploadErrorToast(event, message);
 			return;
 		}
 		if (event && event.type === "batch-complete") {
 			if (event.batchId && !completedBatches.has(event.batchId)) {
 				completedBatches.add(event.batchId);
-				Toast.success((event.total || 0) + " file(s) uploaded.", { title: "Upload complete" });
+				const uploaded = event.total || 0;
+				Toast.success(uploaded + " file(s) uploaded.", { title: "Upload complete" });
+				const filesCount = document.querySelector(".summary-value-files");
+				if (filesCount) {
+					const current = Number.parseInt(filesCount.textContent.replace(/[^0-9]/g, ""), 10);
+					if (Number.isFinite(current)) {
+						filesCount.textContent = (current + uploaded).toLocaleString("en-US");
+					}
+				}
 			}
 		}
 	});
@@ -102,10 +109,18 @@ export async function initUploads() {
 		if (!input.files || !input.files.length) return;
 		selectedFiles = Array.from(input.files);
 		showSelectedFiles(selectedFiles);
-		syncUploadPageRetention();
 		showStartDialog(selectedFiles.length);
 		input.value = "";
 	});
+	// Files may have been set on the input before this listener was bound
+	// (the limits fetch above is async); the change event is lost but the
+	// selection persists, so replay it now that the panel is ready.
+	if (input.files && input.files.length) {
+		selectedFiles = Array.from(input.files);
+		showSelectedFiles(selectedFiles);
+		showStartDialog(selectedFiles.length);
+		input.value = "";
+	}
 
 	dropzone && dropzone.addEventListener("dragover", function (e) { e.preventDefault(); dropzone.classList.add("is-dragover"); });
 	dropzone && dropzone.addEventListener("dragleave", function () { dropzone.classList.remove("is-dragover"); });
@@ -115,7 +130,6 @@ export async function initUploads() {
 		if (e.dataTransfer.files && e.dataTransfer.files.length) {
 			selectedFiles = Array.from(e.dataTransfer.files);
 			showSelectedFiles(selectedFiles);
-			syncUploadPageRetention();
 			showStartDialog(selectedFiles.length);
 		}
 	});
@@ -123,7 +137,6 @@ export async function initUploads() {
 	uploadChipClear && uploadChipClear.addEventListener("click", function () {
 		selectedFiles = [];
 		hideSelectedFiles();
-		syncUploadPageRetention();
 	});
 
 	confirmStart && confirmStart.addEventListener("click", function () {
@@ -135,7 +148,6 @@ export async function initUploads() {
 			});
 			selectedFiles = [];
 			hideSelectedFiles();
-			syncUploadPageRetention();
 		}
 	});
 
@@ -143,7 +155,6 @@ export async function initUploads() {
 		hideDialog();
 		selectedFiles = [];
 		hideSelectedFiles();
-		syncUploadPageRetention();
 	});
 
 	abortButton && abortButton.addEventListener("click", function () {
@@ -176,7 +187,6 @@ export async function initUploads() {
 		hideSelectedFiles();
 		clearInputSelection();
 		runner.cancelActiveUploadsBestEffort();
-		syncUploadPageRetention();
 	});
 
 	window.addEventListener("pageshow", function (event) {
@@ -184,44 +194,31 @@ export async function initUploads() {
 		selectedFiles = [];
 		hideSelectedFiles();
 		clearInputSelection();
-		syncUploadPageRetention();
-	});
-
-	document.addEventListener("click", function (event) {
-		const target = event.target;
-		if (!target || !target.closest || !pageRetainsUploadData()) return;
-		const link = target.closest("a[href]");
-		if (!link) return;
-		if (link.hasAttribute("download")) return;
-		if (link.target && link.target !== "_self") return;
-		if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-		const href = link.getAttribute("href") || "";
-		if (!href || href.charAt(0) === "#") return;
-		let url = null;
-		try {
-			url = new URL(link.href, window.location.href);
-		} catch (_) {
-			return;
-		}
-		if (url.origin !== window.location.origin) return;
-		if (url.pathname === window.location.pathname && url.search === window.location.search && url.hash === window.location.hash) return;
-		const ok = window.confirm("Upload in progress. Leaving this page will cancel it.");
-		if (!ok) {
-			event.preventDefault();
-			return;
-		}
-		selectedFiles = [];
-		hideSelectedFiles();
-		clearInputSelection();
-		runner.cancelActiveUploadsBestEffort();
-		syncUploadPageRetention();
 	});
 
 	function setStatus(text) { status.textContent = text; }
-	function showUploadErrorToast(event) {
+	function friendlyUploadError(event) {
+		switch (String((event && event.code) || "")) {
+			case "storage_limit_exceeded":
+				return "You're out of storage. Free up space or raise your limit, then try again.";
+			case "unauthorized":
+			case "forbidden":
+				return "You don't have permission to upload. Please sign in and try again.";
+			case "validation_failed":
+				return "That file couldn't be accepted. Check the file and try again.";
+			case "upload_not_found":
+			case "not_found":
+				return "The upload session expired. Please try the upload again.";
+			case "conflict":
+				return "This upload was already cancelled or is in progress. Please try again.";
+			default:
+				return "Upload failed. Please try again.";
+		}
+	}
+	function showUploadErrorToast(event, message) {
 		showAppError(event, {
-			code: "upload_failed",
-			message: "Upload failed",
+			code: String((event && event.code) || "upload_failed"),
+			message: message || "Upload failed",
 		});
 	}
 	function hideDialog() { confirmBackdrop && confirmBackdrop.classList.add("is-hidden"); }
@@ -258,9 +255,6 @@ export async function initUploads() {
 		return selectedFiles.length > 0 || runner.hasActiveUploads();
 	}
 
-	function syncUploadPageRetention() {
-		window.uploadPageHasLargeFile = pageRetainsUploadData();
-	}
 
 	function scheduleRender() {
 		if (renderScheduled) return;
@@ -286,6 +280,7 @@ export async function initUploads() {
 			uploadControls.classList.toggle("is-hidden", !hasCancelableJobs);
 		}
 		if (!jobs.length) {
+			queueList.replaceChildren();
 			queueEmpty && queueEmpty.classList.remove("is-hidden");
 			queueMeta && (queueMeta.textContent = "0 items active");
 			if (!state.activeJobId) setStatus("No uploads in progress.");

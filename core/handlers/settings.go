@@ -62,6 +62,7 @@ func WebSettings(filesService *filessvc.Service, settingsService *settingssvc.Se
 			StorageSettings: storageSettings,
 			UploadSettings:  uploadSettings,
 			PreviewSettings: previewSettings,
+			Message:         c.Query("msg"),
 		}))
 	}
 }
@@ -76,13 +77,13 @@ func WebSettingsStoragePost(settingsService *settingssvc.Service) gin.HandlerFun
 
 		var form storageSettingsForm
 		if err := c.ShouldBind(&form); err != nil {
-			renderSettingsStorage(c, user, models.StorageSettings{}, validation.Errors{validation.GeneralKey: "Please fill out the form."})
+			renderSettingsStorage(c, settingsService, user, models.StorageSettings{}, validation.Errors{validation.GeneralKey: "Please fill out the form."})
 			return
 		}
 
 		settings, validationErrors, err := settingsService.UpdateStorageSettings(c.Request.Context(), user.ID, settingsInputFromForm(form))
 		if validationErrors != nil && validationErrors.HasAny() {
-			renderSettingsStorage(c, user, settings, validationErrors)
+			renderSettingsStorage(c, settingsService, user, settings, validationErrors)
 			return
 		}
 		if err != nil {
@@ -91,7 +92,7 @@ func WebSettingsStoragePost(settingsService *settingssvc.Service) gin.HandlerFun
 			return
 		}
 
-		c.Redirect(http.StatusSeeOther, "/settings?msg=storage-updated")
+		c.Redirect(http.StatusSeeOther, "/settings?msg=storage-updated#settings-provider")
 	}
 }
 
@@ -105,13 +106,13 @@ func WebSettingsUploadPost(settingsService *settingssvc.Service) gin.HandlerFunc
 
 		var form uploadSettingsForm
 		if err := c.ShouldBind(&form); err != nil {
-			renderSettingsUpload(c, user, models.UploadSettings{}, validation.Errors{validation.GeneralKey: "Please fill out the form."})
+			renderSettingsUpload(c, settingsService, user, models.UploadSettings{}, validation.Errors{validation.GeneralKey: "Please fill out the form."})
 			return
 		}
 
 		settings, validationErrors, err := settingsService.UpdateUploadSettings(c.Request.Context(), user.ID, uploadSettingsFromForm(form))
 		if validationErrors != nil && validationErrors.HasAny() {
-			renderSettingsUpload(c, user, settings, validationErrors)
+			renderSettingsUpload(c, settingsService, user, settings, validationErrors)
 			return
 		}
 		if err != nil {
@@ -120,7 +121,7 @@ func WebSettingsUploadPost(settingsService *settingssvc.Service) gin.HandlerFunc
 			return
 		}
 
-		c.Redirect(http.StatusSeeOther, "/settings?msg=upload-updated")
+		c.Redirect(http.StatusSeeOther, "/settings?msg=upload-updated#settings-upload")
 	}
 }
 
@@ -134,13 +135,13 @@ func WebSettingsPreviewPost(settingsService *settingssvc.Service) gin.HandlerFun
 
 		var form previewSettingsForm
 		if err := c.ShouldBind(&form); err != nil {
-			renderSettingsPreview(c, user, models.PreviewSettings{}, validation.Errors{validation.GeneralKey: "Please fill out the form."})
+			renderSettingsPreview(c, settingsService, user, models.PreviewSettings{}, validation.Errors{validation.GeneralKey: "Please fill out the form."})
 			return
 		}
 
 		settings, validationErrors, err := settingsService.UpdatePreviewSettings(c.Request.Context(), user.ID, previewSettingsFromForm(form))
 		if validationErrors != nil && validationErrors.HasAny() {
-			renderSettingsPreview(c, user, settings, validationErrors)
+			renderSettingsPreview(c, settingsService, user, settings, validationErrors)
 			return
 		}
 		if err != nil {
@@ -149,7 +150,7 @@ func WebSettingsPreviewPost(settingsService *settingssvc.Service) gin.HandlerFun
 			return
 		}
 
-		c.Redirect(http.StatusSeeOther, "/settings?msg=preview-updated")
+		c.Redirect(http.StatusSeeOther, "/settings?msg=preview-updated#settings-preview")
 	}
 }
 
@@ -184,28 +185,43 @@ func previewSettingsFromForm(form previewSettingsForm) settingssvc.PreviewInput 
 	}
 }
 
-func renderSettingsStorage(c *gin.Context, user models.User, settings models.StorageSettings, validationErrors validation.Errors) {
+func renderSettingsStorage(c *gin.Context, settingsService *settingssvc.Service, user models.User, settings models.StorageSettings, validationErrors validation.Errors) {
+	uploadSettings, _ := settingsService.UploadSettings(c.Request.Context())
+	previewSettings, _ := settingsService.PreviewSettings(c.Request.Context())
 	web.Render(c, pages.SettingsPage(pages.SettingsPageProps{
 		Ctx:             pages.ContextWithUser(user),
 		StorageSettings: settings,
+		UploadSettings:  uploadSettings,
+		PreviewSettings: previewSettings,
 		StorageGB:       storageGB(settings.MaxStorageBytes),
 		Errors:          validationErrors,
+		ActiveTab:       "settings-provider",
 	}))
 }
 
-func renderSettingsUpload(c *gin.Context, user models.User, settings models.UploadSettings, validationErrors validation.Errors) {
-	web.Render(c, pages.SettingsPage(pages.SettingsPageProps{
-		Ctx:            pages.ContextWithUser(user),
-		UploadSettings: settings,
-		Errors:         validationErrors,
-	}))
-}
-
-func renderSettingsPreview(c *gin.Context, user models.User, settings models.PreviewSettings, validationErrors validation.Errors) {
+func renderSettingsUpload(c *gin.Context, settingsService *settingssvc.Service, user models.User, settings models.UploadSettings, validationErrors validation.Errors) {
+	storageSettings, _ := settingsService.StorageSettings(c.Request.Context())
+	previewSettings, _ := settingsService.PreviewSettings(c.Request.Context())
 	web.Render(c, pages.SettingsPage(pages.SettingsPageProps{
 		Ctx:             pages.ContextWithUser(user),
+		StorageSettings: storageSettings,
+		UploadSettings:  settings,
+		PreviewSettings: previewSettings,
+		Errors:          validationErrors,
+		ActiveTab:       "settings-upload",
+	}))
+}
+
+func renderSettingsPreview(c *gin.Context, settingsService *settingssvc.Service, user models.User, settings models.PreviewSettings, validationErrors validation.Errors) {
+	storageSettings, _ := settingsService.StorageSettings(c.Request.Context())
+	uploadSettings, _ := settingsService.UploadSettings(c.Request.Context())
+	web.Render(c, pages.SettingsPage(pages.SettingsPageProps{
+		Ctx:             pages.ContextWithUser(user),
+		StorageSettings: storageSettings,
+		UploadSettings:  uploadSettings,
 		PreviewSettings: settings,
 		Errors:          validationErrors,
+		ActiveTab:       "settings-preview",
 	}))
 }
 

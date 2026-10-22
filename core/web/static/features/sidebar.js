@@ -1,10 +1,60 @@
+// The sidebar lives outside the swapped .app-content, so its active link goes
+// stale after a soft navigation. Prefer what the server rendered for the new
+// page; fall back to matching the current path.
+export function refreshSidebarActive(newDoc) {
+  const links = Array.from(document.querySelectorAll(".sidebar-link"));
+  if (!links.length) {
+    return;
+  }
+
+  const source = newDoc || document;
+  const serverActive = source.querySelector(".sidebar-link.is-active");
+  let activeLink = null;
+
+  if (serverActive) {
+    const serverHref = serverActive.getAttribute("href");
+    activeLink = links.find(function(link) {
+      return link.getAttribute("href") === serverHref;
+    }) || null;
+  }
+
+  if (!activeLink) {
+    const normalizePath = function(pathname) {
+      if (!pathname) {
+        return "/";
+      }
+      const trimmed = pathname.replace(/\/$/, "");
+      return trimmed === "" ? "/" : trimmed;
+    };
+    const currentPath = normalizePath(window.location.pathname);
+    let activeLength = -1;
+
+    links.forEach(function(link) {
+      const linkPath = normalizePath(new URL(link.getAttribute("href"), window.location.origin).pathname);
+      const matches = currentPath === linkPath || (linkPath !== "/" && currentPath.indexOf(linkPath + "/") === 0);
+      if (matches && linkPath.length > activeLength) {
+        activeLink = link;
+        activeLength = linkPath.length;
+      }
+    });
+  }
+
+  links.forEach(function(link) {
+    link.classList.remove("is-active");
+    link.removeAttribute("aria-current");
+  });
+  if (activeLink) {
+    activeLink.classList.add("is-active");
+    activeLink.setAttribute("aria-current", "page");
+  }
+}
+
 export function initSidebar() {
   const body = document.body;
   const toggle = document.getElementById("sidebar-toggle");
   const sidebar = document.getElementById("dashboard-sidebar");
   const scrim = document.querySelector(".sidebar-scrim");
   const closeBtn = document.querySelector(".sidebar-close");
-  const links = Array.from(document.querySelectorAll(".sidebar-link"));
 
   if (!toggle || !sidebar || !scrim || toggle.hasAttribute("data-sidebar-bound")) {
     return;
@@ -15,35 +65,7 @@ export function initSidebar() {
     return window.innerWidth > 960;
   };
 
-  const normalizePath = function(pathname) {
-    if (!pathname) {
-      return "/";
-    }
-    const trimmed = pathname.replace(/\/$/, "");
-    return trimmed === "" ? "/" : trimmed;
-  };
-
-  const currentPath = normalizePath(window.location.pathname);
-  let activeLink = null;
-  let activeLength = -1;
-
-  links.forEach(function(link) {
-    const linkPath = normalizePath(new URL(link.getAttribute("href"), window.location.origin).pathname);
-    const matches = currentPath === linkPath || (linkPath !== "/" && currentPath.indexOf(linkPath + "/") === 0);
-    if (matches && linkPath.length > activeLength) {
-      activeLink = link;
-      activeLength = linkPath.length;
-    }
-  });
-
-  if (activeLink) {
-    links.forEach(function(link) {
-      link.classList.remove("is-active");
-      link.removeAttribute("aria-current");
-    });
-    activeLink.classList.add("is-active");
-    activeLink.setAttribute("aria-current", "page");
-  }
+  refreshSidebarActive();
 
   const setState = function(isOpen) {
     if (isDesktop()) {

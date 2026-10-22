@@ -5,7 +5,9 @@ import { Dialog } from "./features/dialog.js";
 import { Toast } from "./features/toast.js";
 import { vault, waitUntilReady } from "./features/vault.js";
 
-(function() {
+export function initPage() {
+
+  (function() {
   const actionButtons = document.querySelectorAll("[data-share-action]");
   const copyButtons = document.querySelectorAll("[data-share-copy]");
   const manageButtons = document.querySelectorAll("[data-share-manage]");
@@ -207,4 +209,7 @@ import { vault, waitUntilReady } from "./features/vault.js";
       });
     });
   }
-})();
+  })();
+}
+
+initPage();

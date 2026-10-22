@@ -90,15 +90,11 @@ func DashboardPage(props DashboardPageProps) web.Page {
 						)),
 					),
 				),
-				h.Section(
-					h.Class("dashboard-upload"),
-					h.ID("upload-panel"),
-					components.UploadControls(components.UploadControlsProps{
-						InputRequired:   true,
-						InputLabel:      "Secure Upload",
-						InputHelper:     "Drag and drop files here to begin encrypted upload. Data is encrypted in browser before transfer.",
-						StatusText:      "Select files manually to start a secure upload.",
-					}),
+				// The shell upload panel is moved into this slot by dashboard.js
+				// (same DOM node, keeps listeners) so the dashboard keeps its
+				// summary → upload → recent files order.
+				h.Div(
+					h.ID("dashboard-upload-slot"),
 				),
 				h.Section(
 					h.Class("dashboard-activity"),

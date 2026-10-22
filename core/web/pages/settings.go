@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	lucide "github.com/eduardolat/gomponents-lucide"
 	g "maragu.dev/gomponents"
 	h "maragu.dev/gomponents/html"
 
@@ -23,13 +24,13 @@ type SettingsPageProps struct {
 	StorageGB       string
 	Errors          validation.Errors
 	Message         string
+	ActiveTab       string
 }
 
 func SettingsPage(props SettingsPageProps) web.Page {
 	user := props.Ctx.User
 	brandName := ""
 	email := ""
-	instanceLabel := "Core"
 	memberSince := "Unavailable"
 	lastLogin := "Unavailable"
 	usedStorage := "0 B"
@@ -38,6 +39,7 @@ func SettingsPage(props SettingsPageProps) web.Page {
 	storageSettings := props.StorageSettings
 	uploadSettings := props.UploadSettings
 	previewSettings := props.PreviewSettings
+
 	if storageSettings.Provider == "" {
 		storageSettings.Provider = "local"
 	}
@@ -59,11 +61,13 @@ func SettingsPage(props SettingsPageProps) web.Page {
 	if previewSettings.TextMaxBytes == 0 {
 		previewSettings.TextMaxBytes = 2 * 1024 * 1024
 	}
+
 	storageProviderLabel := strings.ToUpper(storageSettings.Provider)
 	storageGB := props.StorageGB
 	if storageGB == "" {
 		storageGB = settingsStorageGB(storageSettings.MaxStorageBytes)
 	}
+
 	if user != nil {
 		brandName = strings.TrimSpace(user.BrandName)
 		email = strings.TrimSpace(user.Email)
@@ -85,6 +89,24 @@ func SettingsPage(props SettingsPageProps) web.Page {
 		}
 	}
 
+	activeTab := props.ActiveTab
+	if activeTab == "" {
+		if uploadFormHasErrors(props.Errors) {
+			activeTab = "settings-upload"
+		} else if previewFormHasErrors(props.Errors) {
+			activeTab = "settings-preview"
+		} else if storageFormHasErrors(props.Errors) {
+			activeTab = "settings-provider"
+		} else {
+			activeTab = "settings-account"
+		}
+	}
+
+	contentClasses := "settings-content"
+	if activeTab != "" {
+		contentClasses += " active-tab-" + activeTab
+	}
+
 	return web.Page{
 		Title:              "Arkive · Settings",
 		Robots:             RobotsNoIndex,
@@ -98,134 +120,94 @@ func SettingsPage(props SettingsPageProps) web.Page {
 			h.Div(
 				h.Class("container"),
 				h.Div(
-					h.Class("page-header"),
+					h.Class("page-header settings-header"),
 					h.Div(
 						h.Class("page-title"),
+						h.Div(
+							h.Class("settings-badge-row"),
+							h.Span(
+								h.Class("settings-node-badge"),
+								h.Span(h.Class("node-badge-dot")),
+								g.Text("Core Single-Tenant Node"),
+							),
+							h.Span(h.Class("settings-encryption-chip"), g.Text("Zero-Knowledge Enforced")),
+						),
 						h.H1(g.Text("Settings")),
-						h.P(g.Text("Manage this self-hosted encrypted file server.")),
+						h.P(g.Text("Manage node identity, storage backend engines, upload concurrency, and media viewer limits.")),
 					),
 				),
+				g.If(props.Message != "", settingsNotification(props.Message)),
 				h.Div(
 					h.Class("settings-grid"),
 					h.Aside(
 						h.Class("settings-tabs"),
-						settingsTabLink("settings-account", "Instance"),
-						settingsTabLink("settings-provider", "Storage Provider"),
-						settingsTabLink("settings-upload", "Uploads"),
-						settingsTabLink("settings-preview", "Previews"),
-						settingsTabLink("settings-security", "Security"),
+						settingsTabLink("settings-account", "Instance", lucide.Server),
+						settingsTabLink("settings-provider", "Storage Provider", lucide.HardDrive),
+						settingsTabLink("settings-upload", "Uploads", lucide.CloudUpload),
+						settingsTabLink("settings-preview", "Previews", lucide.Eye),
+						settingsTabLink("settings-security", "Security", lucide.ShieldCheck),
 					),
 					h.Div(
-						h.Class("settings-content"),
+						h.Class(contentClasses),
+						// Tab 1: Instance
 						h.Section(
-							h.Class("settings-panel settings-panel-default"),
+							h.Class("settings-panel settings-panel-default"+panelActiveClass("settings-account", activeTab)),
 							g.Attr("id", "settings-account"),
 							h.Div(
 								h.Class("settings-panel-header"),
 								h.Div(
 									h.Class("settings-panel-title"),
+									h.Span(h.Class("panel-overline"), g.Text("CORE NODE · IDENTITY & QUOTA")),
 									h.H2(g.Text("Instance Overview")),
-									h.P(g.Text("Current admin, instance, and storage details for this Core deployment.")),
+									h.P(g.Text("Administrator identity, deployment details, and encrypted vault storage quota.")),
 								),
 							),
 							h.Div(
 								h.Class("settings-stack"),
 								components.Card(components.CardProps{
-									Title:    "Admin details",
-									Subtitle: "Identity and session details for current Core administrator.",
+									Title:    "Admin Profile",
+									Subtitle: "Primary instance administrator credentials and activity.",
 									Class:    "settings-card",
 									Body: []g.Node{
-										h.Div(
-											h.Class("settings-meta"),
-											h.Div(
-												h.Class("settings-meta-row"),
-												h.Span(g.Text("Instance")),
-												h.Span(g.Text(displayOrDash(brandName))),
-											),
-											h.Div(
-												h.Class("settings-meta-row"),
-												h.Span(g.Text("Email")),
-												h.Span(g.Text(displayOrDash(email))),
-											),
-											h.Div(
-												h.Class("settings-meta-row"),
-												h.Span(g.Text("Member since")),
-												h.Span(g.Text(displayOrDash(memberSince))),
-											),
-											h.Div(
-												h.Class("settings-meta-row"),
-												h.Span(g.Text("Last login")),
-												h.Span(g.Text(displayOrDash(lastLogin))),
-											),
-										),
+										settingsAdminCard(user, brandName, email, memberSince, lastLogin),
 									},
 								}),
 								components.Card(components.CardProps{
-									Title:    "Storage limit",
-									Subtitle: "Usage and limits for this single-user Core deployment.",
+									Title:    "Storage Capacity",
+									Subtitle: "Total storage usage across encrypted vaults against configured limit.",
 									Class:    "settings-card",
 									Body: []g.Node{
-										h.Div(
-											h.Class("settings-quota-head"),
-											h.Div(
-												h.Class("settings-quota-copy"),
-												h.Span(h.Class("settings-overline"), g.Text("Current usage")),
-												h.Strong(g.Text(usedStorage)),
-											),
-											h.Div(
-												h.Class("settings-quota-total"),
-												h.Strong(g.Text(quotaStorage)),
-												h.Span(g.Text("configured limit")),
-											),
-										),
-										h.Div(
-											h.Class("settings-progress"),
-											h.Div(
-												h.Class("settings-progress-track"),
-												h.Span(
-													h.Class("settings-progress-bar"),
-													g.Attr("style", "width: "+formatPercent(usagePercent)),
-												),
-											),
-										),
-										h.Div(
-											h.Class("settings-info-grid"),
-											settingsInfoTile("Instance", instanceLabel, "Self-hosted mode"),
-											settingsInfoTile("Provider", storageProviderLabel, "Active upload backend"),
-											settingsInfoTile("Utilization", formatPercent(usagePercent), "Based on configured storage limit"),
-										),
-										h.P(
-											h.Class("settings-note"),
-											g.Text("Storage limits are controlled by instance configuration. Set the limit to 0 to allow unlimited storage."),
-										),
+										settingsCapacityCard(usedStorage, quotaStorage, usagePercent, storageSettings.MaxStorageBytes, storageProviderLabel),
 									},
 								}),
 							),
 						),
+						// Tab 2: Storage Provider
 						h.Section(
-							h.Class("settings-panel"),
+							h.Class("settings-panel"+panelActiveClass("settings-provider", activeTab)),
 							g.Attr("id", "settings-provider"),
 							h.Div(
 								h.Class("settings-panel-header"),
 								h.Div(
 									h.Class("settings-panel-title"),
+									h.Span(h.Class("panel-overline"), g.Text("PERSISTENCE BACKEND · ENCRYPTED BLOBS")),
 									h.H2(g.Text("Storage Provider")),
-									h.P(g.Text("Choose between local disk and S3-compatible storage for new uploads.")),
+									h.P(g.Text("Configure storage location for encrypted blobs. Supports local host filesystem and any S3-compatible cloud object store.")),
 								),
 							),
 							h.Div(
 								h.Class("settings-stack"),
 								components.Card(components.CardProps{
-									Title:    "Provider status",
-									Subtitle: "The active backend determines where encrypted blobs are stored.",
+									Title:    "Active Engine Status",
+									Subtitle: "Current persistence backend and cryptographic security status.",
 									Class:    "settings-card",
 									Body: []g.Node{
-										storageProviderSummary(storageSettings),
+										storageProviderStatusCard(storageSettings),
 									},
 								}),
 								components.Card(components.CardProps{
-									Title:    "Configuration",
-									Subtitle: "Update provider settings for this Core instance.",
+									Title:    "Backend Configuration",
+									Subtitle: "Select storage provider and configure connection credentials.",
 									Class:    "settings-card",
 									Body: []g.Node{
 										storageSettingsForm(storageSettings, storageGB, props.Errors),
@@ -233,99 +215,147 @@ func SettingsPage(props SettingsPageProps) web.Page {
 								}),
 							),
 						),
+						// Tab 3: Uploads
 						h.Section(
-							h.Class("settings-panel"),
+							h.Class("settings-panel"+panelActiveClass("settings-upload", activeTab)),
 							g.Attr("id", "settings-upload"),
 							h.Div(
 								h.Class("settings-panel-header"),
 								h.Div(
 									h.Class("settings-panel-title"),
+									h.Span(h.Class("panel-overline"), g.Text("CLIENT CONCURRENCY · WORKER PIPELINE")),
 									h.H2(g.Text("Uploads")),
-									h.P(g.Text("Configure upload queue behavior for this instance.")),
+									h.P(g.Text("Configure upload queue behavior and concurrency limits for this instance.")),
 								),
 							),
 							h.Div(
 								h.Class("settings-stack"),
-								components.Card(components.CardProps{
-									Title:    "Current limits",
-									Subtitle: "Upload limits applied by the server.",
-									Class:    "settings-card",
-									Body: []g.Node{
-										h.Div(
-											h.Class("settings-meta"),
-											h.Div(h.Class("settings-meta-row"), h.Span(g.Text("Queue items")), h.Span(g.Text(strconv.Itoa(uploadSettings.MaxQueueItems)))),
-											h.Div(h.Class("settings-meta-row"), h.Span(g.Text("Part concurrency")), h.Span(g.Text(strconv.Itoa(uploadSettings.PartConcurrency)))),
-											h.Div(h.Class("settings-meta-row"), h.Span(g.Text("Stale upload window")), h.Span(g.Text(strconv.Itoa(uploadSettings.StaleUploadHours)+" hour(s)"))),
-										),
-									},
-								}),
-								components.Card(components.CardProps{
-									Title:    "Configuration",
-									Subtitle: "Update upload queue settings for this Core instance.",
-									Class:    "settings-card",
-									Body: []g.Node{
-										uploadSettingsForm(uploadSettings, props.Errors),
-									},
-								}),
+								h.Div(
+									h.Class("settings-stats-grid"),
+									settingsStatCard(
+										lucide.Layers,
+										strconv.Itoa(uploadSettings.MaxQueueItems),
+										"items",
+										"Queue Depth",
+										"Maximum files queued concurrently in the upload tray",
+										"Staging Limit",
+									),
+									settingsStatCard(
+										lucide.Zap,
+										strconv.Itoa(uploadSettings.PartConcurrency),
+										"threads",
+										"Chunk Concurrency",
+										"Simultaneous chunk transfers per file via Web Workers",
+										"Parallelism",
+									),
+									settingsStatCard(
+										lucide.Timer,
+										strconv.Itoa(uploadSettings.StaleUploadHours),
+										"hour(s)",
+										"Session Window",
+										"Validity duration for unfinished multipart uploads",
+										"Cleanup TTL",
+									),
+								),
+								h.Details(
+									h.Class("settings-advanced"),
+									g.If(uploadFormHasErrors(props.Errors), g.Attr("open", "open")),
+									h.Summary(
+										g.Text("Advanced — edit upload queue limits"),
+									),
+									components.Card(components.CardProps{
+										Title:    "Configuration",
+										Subtitle: "Update upload queue settings for this Core instance.",
+										Class:    "settings-card",
+										Body: []g.Node{
+											uploadSettingsForm(uploadSettings, props.Errors),
+										},
+									}),
+								),
 							),
 						),
+						// Tab 4: Previews
 						h.Section(
-							h.Class("settings-panel"),
+							h.Class("settings-panel"+panelActiveClass("settings-preview", activeTab)),
 							g.Attr("id", "settings-preview"),
 							h.Div(
 								h.Class("settings-panel-header"),
 								h.Div(
 									h.Class("settings-panel-title"),
+									h.Span(h.Class("panel-overline"), g.Text("CLIENT DECRYPTION · MEDIA VIEWER")),
 									h.H2(g.Text("Previews")),
 									h.P(g.Text("Configure browser preview limits for image, video, and text files.")),
 								),
 							),
 							h.Div(
 								h.Class("settings-stack"),
-								components.Card(components.CardProps{
-									Title:    "Current limits",
-									Subtitle: "Preview caps applied in the browser before rendering file content. Streaming video playback is controlled separately.",
-									Class:    "settings-card",
-									Body: []g.Node{
-										h.Div(
-											h.Class("settings-meta"),
-											h.Div(h.Class("settings-meta-row"), h.Span(g.Text("Image preview")), h.Span(g.Text(strconv.FormatInt(previewSettings.ImageMaxBytes/(1024*1024), 10)+" MB"))),
-											h.Div(h.Class("settings-meta-row"), h.Span(g.Text("Video preview")), h.Span(g.Text(strconv.FormatInt(previewSettings.VideoMaxBytes/(1024*1024), 10)+" MB"))),
-											h.Div(h.Class("settings-meta-row"), h.Span(g.Text("Text preview")), h.Span(g.Text(strconv.FormatInt(previewSettings.TextMaxBytes/(1024*1024), 10)+" MB"))),
-										),
-									},
-								}),
-								components.Card(components.CardProps{
-									Title:    "Configuration",
-									Subtitle: "Update preview-size limits without changing encrypted file formats. Video limit applies only when browser streaming preview falls back to full-file playback.",
-									Class:    "settings-card",
-									Body: []g.Node{
-										previewSettingsForm(previewSettings, props.Errors),
-									},
-								}),
+								h.Div(
+									h.Class("settings-media-grid"),
+									settingsMediaCategoryCard(
+										lucide.Image,
+										strconv.FormatInt(previewSettings.ImageMaxBytes/(1024*1024), 10),
+										"MB",
+										"Image Previews",
+										[]string{"PNG", "JPEG", "WEBP", "GIF", "SVG"},
+										"Decrypted directly in browser memory for instant lightbox rendering.",
+									),
+									settingsMediaCategoryCard(
+										lucide.Film,
+										strconv.FormatInt(previewSettings.VideoMaxBytes/(1024*1024), 10),
+										"MB",
+										"Video Fallback",
+										[]string{"MP4", "WEBM", "Streaming"},
+										"Fallback cap for non-streaming players. Native range streaming is uncapped.",
+									),
+									settingsMediaCategoryCard(
+										lucide.FileText,
+										strconv.FormatInt(previewSettings.TextMaxBytes/(1024*1024), 10),
+										"MB",
+										"Text & Code Viewer",
+										[]string{"TXT", "MD", "JSON", "Code"},
+										"High-performance syntax viewer cap to prevent browser thread locking.",
+									),
+								),
+								h.Details(
+									h.Class("settings-advanced"),
+									g.If(previewFormHasErrors(props.Errors), g.Attr("open", "open")),
+									h.Summary(
+										g.Text("Advanced — edit preview limits"),
+									),
+									components.Card(components.CardProps{
+										Title:    "Configuration",
+										Subtitle: "Update preview-size limits without changing encrypted file formats. Video limit applies only when browser streaming preview falls back to full-file playback.",
+										Class:    "settings-card",
+										Body: []g.Node{
+											previewSettingsForm(previewSettings, props.Errors),
+										},
+									}),
+								),
 							),
 						),
+						// Tab 5: Security
 						h.Section(
-							h.Class("settings-panel"),
+							h.Class("settings-panel"+panelActiveClass("settings-security", activeTab)),
 							g.Attr("id", "settings-security"),
 							h.Div(
 								h.Class("settings-panel-header"),
 								h.Div(
 									h.Class("settings-panel-title"),
-									h.H2(g.Text("Security")),
-									h.P(g.Text("Reserved for future authentication and instance hardening controls.")),
+									h.Span(h.Class("panel-overline"), g.Text("CRYPTOGRAPHY · ACCESS HARDENING")),
+									h.H2(g.Text("Security Controls")),
+									h.P(g.Text("Core security posture, master vault credentials, and instance protection.")),
 								),
 							),
 							components.Card(components.CardProps{
-								Title:    "Coming soon",
-								Subtitle: "This section will hold security-focused settings as Core expands.",
+								Title:    "Upcoming Hardening Controls",
+								Subtitle: "Planned self-host security features in upcoming Core milestones.",
 								Class:    "settings-card",
 								Body: []g.Node{
 									h.Ul(
 										h.Class("settings-list"),
-										h.Li(g.Text("Password and session controls")),
-										h.Li(g.Text("Vault recovery and access controls")),
-										h.Li(g.Text("Instance access and audit details")),
+										h.Li(g.Text("Master password rotation and vault re-wrapping")),
+										h.Li(g.Text("Session idle-timeout and biometric WebAuthn unlock")),
+										h.Li(g.Text("Immutable audit trail for file creation and share access")),
 									),
 								},
 							}),
@@ -337,59 +367,30 @@ func SettingsPage(props SettingsPageProps) web.Page {
 	}
 }
 
-func settingsTabLink(target, label string) g.Node {
-	return h.A(
-		h.Class("settings-tab"),
-		h.Href("#"+target),
-		g.Text(label),
-	)
+func panelActiveClass(panelId, activeTab string) string {
+	if activeTab == panelId {
+		return " settings-panel-active"
+	}
+	return ""
 }
 
-func settingsInfoTile(label, value, hint string) g.Node {
-	return h.Div(
-		h.Class("settings-info-tile"),
-		h.Span(h.Class("settings-info-label"), g.Text(label)),
-		h.Strong(g.Text(value)),
-		h.P(g.Text(hint)),
-	)
+func uploadFormHasErrors(errors validation.Errors) bool {
+	return validation.FieldError(errors, "max_queue_items") != "" ||
+		validation.FieldError(errors, "part_concurrency") != "" ||
+		validation.FieldError(errors, "stale_upload_hours") != ""
 }
 
-func storageProviderSummary(settings models.StorageSettings) g.Node {
-	provider := strings.ToLower(strings.TrimSpace(settings.Provider))
-	if provider == "" {
-		provider = "local"
-	}
-
-	if provider == "s3" {
-		return h.Div(
-			h.Class("settings-provider-status"),
-			h.Span(h.Class("settings-badge"), g.Text("S3")),
-			h.H4(g.Text("S3-compatible storage is active")),
-			h.P(g.Text("Uploads are stored through the configured S3-compatible provider without exposing provider-specific identifiers here.")),
-		)
-	}
-
-	return h.Div(
-		h.Class("settings-provider-status"),
-		h.Span(h.Class("settings-badge"), g.Text("LOCAL")),
-		h.H4(g.Text("Local storage is active")),
-		h.P(g.Text("Uploads are stored on the instance filesystem without exposing path-level details in this overview.")),
-	)
+func previewFormHasErrors(errors validation.Errors) bool {
+	return validation.FieldError(errors, "image_max_mb") != "" ||
+		validation.FieldError(errors, "video_max_mb") != "" ||
+		validation.FieldError(errors, "text_max_mb") != ""
 }
 
-func formatPercent(value int) string {
-	if value <= 0 {
-		return "0%"
-	}
-	if value >= 100 {
-		return "100%"
-	}
-	return strconv.Itoa(value) + "%"
-}
-
-func displayOrDash(value string) string {
-	if strings.TrimSpace(value) == "" {
-		return "Unavailable"
-	}
-	return value
+func storageFormHasErrors(errors validation.Errors) bool {
+	return validation.FieldError(errors, "storage_gb") != "" ||
+		validation.FieldError(errors, "local_path") != "" ||
+		validation.FieldError(errors, "s3_access_key_id") != "" ||
+		validation.FieldError(errors, "s3_secret_access_key") != "" ||
+		validation.FieldError(errors, "s3_bucket") != "" ||
+		validation.FieldError(errors, "s3_endpoint") != ""
 }

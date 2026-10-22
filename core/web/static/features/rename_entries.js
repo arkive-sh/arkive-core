@@ -455,7 +455,13 @@ function requestRename(entry) {
   beginRename(target);
 }
 
+let renameListenerBound = false;
+
 export function initRenameEntries() {
+  if (renameListenerBound) {
+    return;
+  }
+  renameListenerBound = true;
   document.addEventListener("arkive:rename-request", function(event) {
     const detail = event && event.detail ? event.detail : {};
     requestRename(detail.entry || null);

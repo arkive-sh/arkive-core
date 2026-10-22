@@ -100,6 +100,11 @@ func renderButtonIcon(name string) g.Node {
 			h.Class("button-lucide"),
 			g.Attr("aria-hidden", "true"),
 		)
+	case "move":
+		return lucide.FolderInput(
+			h.Class("button-lucide"),
+			g.Attr("aria-hidden", "true"),
+		)
 	default:
 		return Icon(IconProps{
 			Name:       name,

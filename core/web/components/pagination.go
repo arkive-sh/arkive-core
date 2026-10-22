@@ -114,7 +114,14 @@ func Pagination(props PaginationProps) g.Node {
 }
 
 func cloneQuery(values url.Values) url.Values {
-	return values.Clone()
+	if values == nil {
+		return nil
+	}
+	cloned := make(url.Values, len(values))
+	for k, v := range values {
+		cloned[k] = append([]string(nil), v...)
+	}
+	return cloned
 }
 
 func buildURL(baseURL string, query url.Values) string {

@@ -1,4 +1,4 @@
-package pages
+package components
 
 import (
 	lucide "github.com/eduardolat/gomponents-lucide"
@@ -6,7 +6,10 @@ import (
 	h "maragu.dev/gomponents/html"
 )
 
-func renderDownloadStatus(queueClass string) g.Node {
+// DownloadStatus renders the download status panel. The ids are a contract
+// with features/download_manager.js and the e2e helpers, so they must not
+// change. queueClass scopes the panel to its host (auth shell or share page).
+func DownloadStatus(queueClass string) g.Node {
 	return g.Group([]g.Node{
 		h.Div(g.Attr("id", "download-warning")),
 		h.Div(

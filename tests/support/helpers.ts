@@ -27,7 +27,7 @@ export async function bootstrapInstance(page: Page) {
     return 'login';
   }
 
-  await expect(page.getByRole('heading', { name: 'Arkive Core Initialization' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Initialize Arkive Core' })).toBeVisible();
 
   await page.getByLabel('Instance name').fill(e2eAccount.brandName);
   await page.getByLabel('Admin email').fill(e2eAccount.email);

@@ -66,7 +66,6 @@ func MediaViewPage(props MediaViewPageProps) web.Page {
 						),
 						h.Aside(
 							h.Class("media-sidebar"),
-							renderDownloadStatus("media-download-queue"),
 							h.Div(
 								h.Class("media-actions-panel"),
 								g.Attr("data-media-file-id", file.ID),

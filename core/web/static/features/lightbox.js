@@ -1,10 +1,19 @@
+let pageSignal = new AbortController();
+
+export function cleanupPage() {
+  pageSignal.abort();
+  pageSignal = new AbortController();
+}
+
 export function initLightbox() {
-  if (document.body.hasAttribute("data-lightbox-ready")) {
-    return;
-  }
-  document.body.setAttribute("data-lightbox-ready", "true");
+  cleanupPage();
 
   const backdrop = document.getElementById("lightbox-backdrop");
+  if (!backdrop || backdrop.hasAttribute("data-lightbox-bound")) {
+    return;
+  }
+  backdrop.setAttribute("data-lightbox-bound", "true");
+
   const imageEl = document.getElementById("lightbox-image");
   const titleEl = document.getElementById("lightbox-title");
   const closeButton = document.querySelector(".lightbox-close");
@@ -212,7 +221,7 @@ export function initLightbox() {
       trigger.getAttribute("data-lightbox-src"),
       trigger.getAttribute("data-lightbox-title"),
     );
-  });
+  }, { signal: pageSignal.signal });
 
   if (closeButton) closeButton.addEventListener("click", closeLightbox);
 
@@ -222,7 +231,7 @@ export function initLightbox() {
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeLightbox();
-  });
+  }, { signal: pageSignal.signal });
 
   // Buttons
   actionButtons.forEach((button) => {
