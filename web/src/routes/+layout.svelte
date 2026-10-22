@@ -23,4 +23,6 @@
 	<link rel="manifest" href="/static/assets/images/site.webmanifest" />
 </svelte:head>
 
-{@render children()}
+<div class="min-h-screen bg-(--bg) font-sans text-sm leading-5 text-(--text) antialiased">
+	{@render children()}
+</div>

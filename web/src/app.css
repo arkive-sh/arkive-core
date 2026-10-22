@@ -1,9 +1,46 @@
 @import "tailwindcss";
-@import "../../core/web/static/reset.css";
-@import "../../core/web/static/globals.css";
-@import "../../core/web/pages/login.css";
-@import "../../core/web/pages/not_found.css";
-@import "../../core/web/pages/forbidden.css";
-@import "../../core/web/components/card.css";
-@import "../../core/web/components/input.css";
-@import "../../core/web/components/button.css";
+
+@theme {
+	--font-sans: "Inter", system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+	--font-mono: "Inter", system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+
+:root {
+	color-scheme: dark;
+	--bg: #0b0e11;
+	--surface: #161b22;
+	--surface-raised: #22272e;
+	--surface-highest: #303539;
+	--text: #dee3e8;
+	--muted: #bdc8d1;
+	--muted-strong: #87929a;
+	--accent: #38bdf8;
+	--accent-ink: #001e2c;
+	--accent-strong: #8ed5ff;
+	--accent-cool: #7bd0ff;
+	--danger: #ffb4ab;
+	--border: #30363d;
+	--border-soft: #2a3137;
+	--bg-soft: #161b22;
+	--shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="light"] {
+	color-scheme: light;
+	--bg: #f5f6fb;
+	--surface: #ffffff;
+	--surface-raised: #f2f4f8;
+	--surface-highest: #e7ebf1;
+	--text: #111522;
+	--muted: #4f576b;
+	--muted-strong: #6b7689;
+	--accent: #38bdf8;
+	--accent-ink: #082433;
+	--accent-strong: #00668a;
+	--accent-cool: #0b8dc2;
+	--danger: #d93025;
+	--border: #d7dce4;
+	--border-soft: #e3e7ee;
+	--bg-soft: #ffffff;
+	--shadow: 0 4px 12px rgba(17, 21, 34, 0.08);
+}

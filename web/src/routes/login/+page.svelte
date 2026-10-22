@@ -22,7 +22,7 @@
 		try {
 			await loginAndUnlock(email, password);
 			passwordInput.value = '';
-			window.location.assign('/dashboard');
+			window.location.assign('/');
 		} catch (cause) {
 			generalError = cause instanceof Error ? cause.message : 'Unlock failed. Try again.';
 		} finally {
@@ -36,39 +36,68 @@
 	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
-<div class="auth-page">
-	<div class="auth-container">
-		<div class="auth-shell">
-			<header class="auth-header">
-				<span class="auth-mark">
-					<Lock class="auth-lucide auth-lucide-lock" aria-hidden="true" />
+<div class="flex h-screen flex-col overflow-hidden">
+	<div class="flex min-h-0 flex-1 items-center justify-center bg-(--bg) px-4.5 py-10">
+		<div class="grid w-[min(420px,92vw)] gap-7">
+			<header class="grid justify-items-center gap-2.5 text-center">
+				<span class="inline-flex items-center justify-center text-(--accent-cool)">
+					<Lock class="size-8 stroke-2" aria-hidden="true" />
 				</span>
-				<h1>Arkive Core</h1>
-				<p class="auth-subtitle">Sign in to your self-hosted encrypted file server.</p>
+				<h1 class="m-0 text-2xl leading-8 font-semibold">Arkive Core</h1>
+				<p class="m-0 text-[13px] leading-4.5 text-(--muted)">Sign in to your self-hosted encrypted file server.</p>
 			</header>
 
-			<Card class="auth-card auth-card-login">
-				<form class="auth-form" method="POST" onsubmit={submit}>
-					{#if generalError}<p class="form-error" role="alert">{generalError}</p>{/if}
+			<Card class="w-full! rounded-lg! border-[color-mix(in_srgb,var(--border)_88%,white_8%)]! bg-[color-mix(in_srgb,var(--surface)_88%,black)]! p-7.5! shadow-[0_10px_30px_rgba(0,0,0,0.32)]!">
+				<form class="grid gap-4" method="POST" onsubmit={submit}>
+					{#if generalError}
+						<p class="m-0 rounded border border-[rgba(147,0,10,0.3)] bg-[rgba(147,0,10,0.18)] px-3.5 py-3 text-[13px] leading-4.5 text-(--danger)" role="alert">{generalError}</p>
+					{/if}
 
-					<InputField label="Email" name="email" type="email" placeholder="user@local.node" required inputClass="form-input-auth mono" />
-					<InputField label="Password" name="password" type="password" placeholder="Enter your password" required inputClass="form-input-auth mono">
+					<InputField
+						label="Email"
+						name="email"
+						type="email"
+						placeholder="user@local.node"
+						required
+						fieldClass="mb-0! gap-2.5!"
+						labelClass="text-[color-mix(in_srgb,var(--muted)_92%,white_12%)]!"
+						inputClass="rounded! border-[color-mix(in_srgb,var(--border)_92%,white_8%)]! bg-[color-mix(in_srgb,var(--bg)_92%,black)]! px-3.5! py-3! font-mono text-[13px]! leading-4.5! shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]! focus:border-(--accent-cool)! focus:shadow-[0_0_0_1px_rgba(107,209,230,0.55)]!"
+					/>
+					<InputField
+						label="Password"
+						name="password"
+						type="password"
+						placeholder="Enter your password"
+						required
+						fieldClass="mb-0! gap-2.5!"
+						labelClass="text-[color-mix(in_srgb,var(--muted)_92%,white_12%)]!"
+						inputClass="rounded! border-[color-mix(in_srgb,var(--border)_92%,white_8%)]! bg-[color-mix(in_srgb,var(--bg)_92%,black)]! px-3.5! py-3! font-mono text-[13px]! leading-4.5! shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]! focus:border-(--accent-cool)! focus:shadow-[0_0_0_1px_rgba(107,209,230,0.55)]!"
+					>
 						{#snippet suffix()}
-							<Shield class="auth-lucide auth-lucide-shield" aria-hidden="true" />
+							<Shield class="size-3.5 stroke-2" aria-hidden="true" />
 						{/snippet}
 					</InputField>
 
-					<Button text="Login" variant="primary" type="submit" class="auth-submit auth-submit-login" busyText="Logging in..." busy={submitting}>
+					<Button
+						text="Login"
+						variant="primary"
+						type="submit"
+						class="mt-2! min-h-13! w-full! rounded! border-0! bg-[#38bdf8]! text-[15px]! font-semibold! leading-5! text-[#0d1c2d]! shadow-none! hover:bg-[#63caf9]!"
+						busyText="Logging in..."
+						busy={submitting}
+					>
 						{#snippet icon()}
-							<Key class="button-lucide" aria-hidden="true" />
+							<Key class="size-5 stroke-2" aria-hidden="true" />
 						{/snippet}
 					</Button>
-					<p class="auth-message"><a href="/forgot-password">Forgot password?</a></p>
+					<p class="m-0 rounded bg-[rgba(107,209,230,0.12)] px-3.5 py-3 text-[13px] leading-4.5 text-(--accent-cool)">
+						<a href="/forgot-password" class="underline decoration-current underline-offset-2">Forgot password?</a>
+					</p>
 				</form>
 			</Card>
 
-			<footer class="auth-status">
-				<span class="auth-status-dot"></span>
+			<footer class="inline-flex items-center justify-center gap-2.5 font-mono text-[13px] leading-4.5 text-[color-mix(in_srgb,var(--muted)_82%,white_4%)]">
+				<span class="size-1.5 rounded-full bg-(--accent-cool) shadow-[0_0_0_3px_rgba(107,209,230,0.08)]"></span>
 				<span>System standing by.</span>
 			</footer>
 		</div>
