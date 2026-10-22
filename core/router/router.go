@@ -26,9 +26,8 @@ import (
 	"arkive/pkg/storage/localclient"
 )
 
-func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, filesService *filessvc.Service, folderService *folderssvc.Service, localStorage *localclient.Client) *gin.Engine {
+func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, filesService *filessvc.Service, folderService *foldersvc.Service, localStorage *localclient.Client, corsMiddleware gin.HandlerFunc) *gin.Engine {
 	r := gin.Default()
-	r.Use(middleware.CORS(cfg.CORSAllowedOrigins))
 	r.Use(middleware.ErrorLogger())
 	r.Use(middleware.SecurityHeaders())
 
@@ -52,8 +51,13 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 	r.GET("/favicon.ico", handlers.FaviconICO())
 	r.GET("/robots.txt", handlers.RobotsTxt())
 	r.GET("/sitemap.xml", handlers.SitemapXML())
-	r.PUT("/local-storage/upload/:token", handlers.LocalStorageUpload(localStorage))
-	r.GET("/local-storage/download/:token", handlers.LocalStorageDownload(localStorage))
+	localStorageRoutes := r.Group("/local-storage")
+	if corsMiddleware != nil {
+		localStorageRoutes.Use(corsMiddleware)
+		r.OPTIONS("/local-storage/*path", corsMiddleware)
+	}
+	localStorageRoutes.PUT("/upload/:token", handlers.LocalStorageUpload(localStorage))
+	localStorageRoutes.GET("/download/:token", handlers.LocalStorageDownload(localStorage))
 	r.GET("/", handlers.WebRoot(authService, setupService))
 	r.GET("/setup", handlers.WebSetupGet(setupService))
 	r.POST("/setup", handlers.WebSetupPost(setupService))
@@ -80,6 +84,10 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 	protected.POST("/settings/previews", handlers.WebSettingsPreviewPost(settingsService))
 	// Public api endpoints
 	api := r.Group("/api")
+	if corsMiddleware != nil {
+		api.Use(corsMiddleware)
+		r.OPTIONS("/api/*path", corsMiddleware)
+	}
 	{
 		api.POST("/auth/login", handlers.APILogin(authService))
 		api.POST("/auth/logout", handlers.APILogout(authService))

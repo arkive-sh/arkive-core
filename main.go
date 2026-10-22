@@ -23,6 +23,7 @@ import (
 	"arkive/migrations"
 	"arkive/pkg/jobs"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 )
@@ -101,7 +102,17 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	r := router.New(db, cfg, uploadService, filesService, folderService, localStorage)
+	var corsMiddleware gin.HandlerFunc
+	if len(cfg.CORSAllowedOrigins) > 0 {
+		corsMiddleware = cors.New(cors.Config{
+			AllowOrigins:     cfg.CORSAllowedOrigins,
+			AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+			AllowHeaders:     []string{"Content-Type", "Authorization"},
+			AllowCredentials: true,
+		})
+	}
+
+	r := router.New(db, cfg, uploadService, filesService, folderService, localStorage, corsMiddleware)
 
 	if err := r.Run(cfg.Port); err != nil {
 		log.Fatalf("server failed: %v", err)
