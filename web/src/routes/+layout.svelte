@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { Snippet } from 'svelte';
+	import ToastHost from '#lib/components/ToastHost.svelte';
 	import '../app.css';
 
 	let { children }: { children: Snippet } = $props();
@@ -24,5 +25,6 @@
 </svelte:head>
 
 <div class="min-h-screen bg-(--bg) font-sans text-sm leading-5 text-(--text) antialiased">
+	<ToastHost />
 	{@render children()}
 </div>
