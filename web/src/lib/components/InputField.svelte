@@ -12,6 +12,8 @@
 		required?: boolean;
 		helperText?: string;
 		hasError?: boolean;
+		fieldClass?: string;
+		labelClass?: string;
 		inputClass?: string;
 		suffix?: Snippet;
 	};
@@ -26,6 +28,8 @@
 		required = false,
 		helperText = '',
 		hasError = false,
+		fieldClass = '',
+		labelClass = '',
 		inputClass = '',
 		suffix
 	}: Props = $props();
@@ -35,10 +39,10 @@
 	let invalid = $derived(hasError || helperText !== '');
 	let inputClasses = $derived(
 		[
-			'form-input',
-			type === 'password' && 'password-input',
+			'min-h-10 w-full rounded-md border border-(--border) bg-(--surface) px-3 py-2.5 text-sm leading-5 text-(--text) outline-none [transition:border-color_0.2s_ease,box-shadow_0.2s_ease] placeholder:text-(--muted) focus:border-(--accent)',
+			type === 'password' && 'pr-13.5',
 			inputClass,
-			invalid && 'is-invalid'
+			invalid && 'border-(--danger)!'
 		]
 			.filter(Boolean)
 			.join(' ')
@@ -46,14 +50,14 @@
 	let helperID = $derived(helperText ? `${name}-helper` : undefined);
 </script>
 
-<div class="form-field">
-	<label class="form-label" for={name}>
+<div class={`mb-4 flex flex-col gap-2 ${fieldClass}`}>
+	<label class={`flex items-center justify-between gap-2 text-[11px] font-semibold uppercase leading-4 tracking-wider text-(--muted) ${labelClass}`} for={name}>
 		<span>{label}</span>
-		{#if suffix}<span class="form-label-suffix">{@render suffix()}</span>{/if}
+		{#if suffix}<span class="inline-flex items-center text-(--accent-cool)">{@render suffix()}</span>{/if}
 	</label>
-	{#if description}<p class="form-subtitle">{description}</p>{/if}
+	{#if description}<p class="m-0 text-[13px] leading-4.5 text-(--muted)">{description}</p>{/if}
 	{#if type === 'password'}
-		<div class="password-wrapper">
+		<div class="relative">
 			<input
 				class={inputClasses}
 				id={name}
@@ -66,19 +70,17 @@
 				aria-describedby={helperID}
 			/>
 			<button
-				class="password-toggle"
+				class="absolute right-2 top-1/2 inline-flex -translate-y-1/2 cursor-pointer items-center justify-center rounded bg-transparent p-1.5 text-(--muted) hover:text-(--text)"
 				type="button"
 				aria-label={showPassword ? 'Hide password' : 'Show password'}
 				aria-pressed={showPassword}
-				data-visible={showPassword ? 'true' : 'false'}
 				onclick={() => (showPassword = !showPassword)}
 			>
-				<span class="icon-eye">
-					<Eye class="input-lucide" aria-hidden="true" />
-				</span>
-				<span class="icon-eye-off">
-					<EyeOff class="input-lucide" aria-hidden="true" />
-				</span>
+				{#if showPassword}
+					<EyeOff class="size-5" aria-hidden="true" />
+				{:else}
+					<Eye class="size-5" aria-hidden="true" />
+				{/if}
 			</button>
 		</div>
 	{:else}
@@ -94,5 +96,5 @@
 			aria-describedby={helperID}
 		/>
 	{/if}
-	{#if helperText}<p class="form-helper" id={helperID}>{helperText}</p>{/if}
+	{#if helperText}<p class="m-0 text-[13px] leading-4.5 text-(--danger)" id={helperID}>{helperText}</p>{/if}
 </div>
