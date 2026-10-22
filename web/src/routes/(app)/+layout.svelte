@@ -4,6 +4,7 @@
 	import AppHeader from '#lib/components/AppHeader.svelte';
 	import AppSidebar from '#lib/components/AppSidebar.svelte';
 	import SearchPalette from '#lib/components/SearchPalette.svelte';
+	import { waitUntilReady } from '#lib/vault/session.ts';
 	import type { LayoutProps } from './$types';
 
 	let { data, children }: LayoutProps = $props();
@@ -36,6 +37,7 @@
 	}
 
 	onMount(() => {
+		void waitUntilReady();
 		const media = window.matchMedia('(max-width: 960px)');
 		const syncView = () => {
 			mobileView = media.matches;

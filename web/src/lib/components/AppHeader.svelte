@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { Bell, CircleUser, Lock, Menu, Search } from '@lucide/svelte';
+	import { logoutAndLock } from '#lib/auth.ts';
 	import Dropdown from '#lib/components/Dropdown.svelte';
 
 	type Props = {
@@ -12,6 +14,22 @@
 	};
 
 	let { user, mobileView, mobileOpen, desktopCollapsed, onToggleSidebar, onOpenSearch }: Props = $props();
+	let loggingOut = $state(false);
+	let logoutError = $state('');
+
+	async function logout(event: MouseEvent) {
+		event.stopPropagation();
+		logoutError = '';
+		loggingOut = true;
+		try {
+			await logoutAndLock();
+			await goto('/login');
+		} catch (error) {
+			logoutError = error instanceof Error ? error.message : 'Logout failed. Please try again.';
+		} finally {
+			loggingOut = false;
+		}
+	}
 </script>
 
 <header class={`sticky top-0 z-15 border-b border-(--border) bg-(--bg) ${desktopCollapsed ? '' : 'min-[961px]:ml-60'}`}>
@@ -68,6 +86,17 @@
 					href="/settings"
 					role="menuitem"
 				>Settings</a>
+				<button
+					class="flex w-full cursor-pointer items-center rounded-[10px] border border-transparent px-2.5 py-2 text-left text-[13px] leading-4.5 text-(--text) transition-[background,border-color] duration-200 hover:border-(--border) hover:bg-(--bg-soft) disabled:cursor-wait disabled:opacity-60"
+					type="button"
+					role="menuitem"
+					disabled={loggingOut}
+					aria-busy={loggingOut}
+					onclick={logout}
+				>{loggingOut ? 'Logging out…' : 'Log out'}</button>
+				{#if logoutError}
+					<p class="m-0 px-2.5 pt-1 text-xs text-(--danger)" role="alert">{logoutError}</p>
+				{/if}
 			</Dropdown>
 		</div>
 	</div>

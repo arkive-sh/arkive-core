@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { Key, Lock, Shield } from '@lucide/svelte';
 	import { loginAndUnlock } from '#lib/auth.ts';
 	import Button from '#lib/components/Button.svelte';
@@ -22,7 +23,7 @@
 		try {
 			await loginAndUnlock(email, password);
 			passwordInput.value = '';
-			window.location.assign('/');
+			await goto('/');
 		} catch (cause) {
 			generalError = cause instanceof Error ? cause.message : 'Unlock failed. Try again.';
 		} finally {

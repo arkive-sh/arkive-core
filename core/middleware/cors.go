@@ -13,7 +13,7 @@ func CORS(origins []string) gin.HandlerFunc {
 	}
 
 	return func(c *gin.Context) {
-		if !strings.HasPrefix(c.Request.URL.Path, "/api/") {
+		if !strings.HasPrefix(c.Request.URL.Path, "/api/") && !strings.HasPrefix(c.Request.URL.Path, "/local-storage/") {
 			c.Next()
 			return
 		}
