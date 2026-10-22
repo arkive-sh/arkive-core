@@ -1,15 +1,13 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { Search } from '@lucide/svelte';
 	import Modal from '#lib/components/Modal.svelte';
 	import { apiRequest } from '#lib/api.ts';
 	import { getCachedThumbnail } from '#lib/thumbnail-cache.ts';
-	import {
-		loadSearchVault,
-		type EncryptedSearchFile,
-		type EncryptedSearchFolder,
-		type SearchPreview
-	} from '#lib/vault.ts';
+	import type { EncryptedSearchFile, EncryptedSearchFolder, SearchPreview } from '#lib/vault/types.ts';
+	import { decryptSearchFile, decryptSearchFolder, decryptSearchThumbnail, createSearchTokens } from '#lib/vault/search.ts';
+	import { waitUntilReady } from '#lib/vault/session.ts';
 
 	type Category = 'results' | 'shares' | 'settings';
 	type SearchResult = {
@@ -79,7 +77,6 @@
 	}
 
 	async function hydrateThumbnails(items: SearchResult[], query: string, signal: AbortSignal) {
-		const vault = await loadSearchVault();
 		for (const item of items) {
 			const preview = item.preview;
 			const file = item.file;
@@ -90,7 +87,7 @@
 			try {
 				const bytes = await getCachedThumbnail(file.id, version, size);
 				if (!bytes?.length || signal.aborted) continue;
-				const { thumbnailBytes } = await vault.decryptSearchThumbnail(file, bytes);
+				const { thumbnailBytes } = await decryptSearchThumbnail(file, bytes);
 				if (!thumbnailBytes.length || signal.aborted) continue;
 				const url = URL.createObjectURL(new Blob([Uint8Array.from(thumbnailBytes)], { type: preview.thumbnail_mime || 'image/webp' }));
 				if (latestQuery !== query) {
@@ -113,8 +110,8 @@
 		loading = true;
 
 		try {
-			const vault = await loadSearchVault();
-			const tokens = await vault.createSearchTokens(query, vaultId);
+			await waitUntilReady();
+			const tokens = await createSearchTokens(query, vaultId);
 			if (!tokens.length) {
 				if (latestQuery === query) {
 					results = settings;
@@ -133,7 +130,7 @@
 
 			const folders = await Promise.all((data.results?.folders ?? []).map(async (folder): Promise<SearchResult | null> => {
 				try {
-					const opened = await vault.decryptSearchFolder(folder);
+					const opened = await decryptSearchFolder(folder);
 					return {
 						id: folder.id,
 						kind: 'folder',
@@ -149,7 +146,7 @@
 			}));
 			const files = await Promise.all((data.results?.files ?? []).map(async (file): Promise<SearchResult | null> => {
 				try {
-					const opened = await vault.decryptSearchFile(file);
+					const opened = await decryptSearchFile(file);
 					return {
 						id: file.id,
 						kind: 'file',
@@ -213,7 +210,7 @@
 			event.preventDefault();
 			const result = results[activeIndex];
 			onClose();
-			window.location.assign(result.url);
+			void goto(result.url);
 		}
 	}
 
