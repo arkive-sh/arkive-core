@@ -8,9 +8,10 @@
 		mobileOpen: boolean;
 		desktopCollapsed: boolean;
 		onToggleSidebar: () => void;
+		onOpenSearch: () => void;
 	};
 
-	let { user, mobileView, mobileOpen, desktopCollapsed, onToggleSidebar }: Props = $props();
+	let { user, mobileView, mobileOpen, desktopCollapsed, onToggleSidebar, onOpenSearch }: Props = $props();
 </script>
 
 <header class={`sticky top-0 z-15 border-b border-(--border) bg-(--bg) ${desktopCollapsed ? '' : 'min-[961px]:ml-60'}`}>
@@ -33,6 +34,7 @@
 					type="button"
 					id="app-search-trigger"
 					aria-label="Search vault..."
+					onclick={onOpenSearch}
 				>
 					<span class="truncate text-(--muted)">Search vault...</span>
 					<kbd class="inline-flex h-6 min-w-6 shrink-0 items-center justify-center rounded border border-(--border) bg-[rgba(48,53,57,0.85)] px-1.5 text-[0.72rem] text-(--muted)">/</kbd>
