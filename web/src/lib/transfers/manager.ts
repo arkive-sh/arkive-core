@@ -19,11 +19,16 @@ export interface TransferState {
 	open: boolean;
 }
 
+export interface UploadItem {
+	file: File;
+	relativePath: string;
+}
+
 export type TransferRunner = (signal: AbortSignal, onProgress: (transferredBytes: number) => void) => Promise<void>;
 
 export interface TransferManager {
 	state: Readable<TransferState>;
-	enqueueUploads(files: File[]): number;
+	enqueueUploads(files: UploadItem[], vaultId: string): number;
 	enqueueDownload(fileName: string, totalBytes: number, run: TransferRunner): string;
 	setOpen(open: boolean): void;
 	cancel(id: string): void;
@@ -163,15 +168,37 @@ export function createTransferManager(): TransferManager {
 
 	return {
 		state,
-		enqueueUploads(files) {
+		enqueueUploads(files, vaultId) {
 			if (typeof window === 'undefined' || files.length === 0) return 0;
+			const folderIds = new Map<string, Promise<string>>();
+			async function getFolderId(file: UploadItem, signal: AbortSignal): Promise<string | null> {
+				let parentFolderId: string | null = null;
+				let path = '';
+				for (const name of file.relativePath.split('/').filter(Boolean).slice(0, -1)) {
+					path = path ? `${path}/${name}` : name;
+					let folderId = folderIds.get(path);
+					if (!folderId) {
+						const currentParentId = parentFolderId;
+						folderId = import('#lib/uploads/upload-file.ts')
+							.then(({ createUploadFolder }) => createUploadFolder(name, currentParentId, vaultId, signal))
+							.catch((error: unknown) => {
+								folderIds.delete(path);
+								throw error;
+							});
+						folderIds.set(path, folderId);
+					}
+					parentFolderId = await folderId;
+				}
+				return parentFolderId;
+			}
+
 			const jobs = files.map((file): Transfer => {
 				const id = crypto.randomUUID();
 				runners.set(id, async (signal, onProgress) => {
 					const { uploadFile } = await import('#lib/uploads/upload-file.ts');
-					await uploadFile(file, signal, onProgress);
+					await uploadFile(file.file, signal, onProgress, await getFolderId(file, signal));
 				});
-				return { id, kind: 'upload', fileName: file.name, totalBytes: file.size, transferredBytes: 0, status: 'queued' };
+				return { id, kind: 'upload', fileName: file.relativePath || file.file.name, totalBytes: file.file.size, transferredBytes: 0, status: 'queued' };
 			});
 			state.update((current) => ({ ...current, jobs: [...current.jobs, ...jobs], open: true }));
 			void runQueue();

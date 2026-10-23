@@ -142,7 +142,7 @@
 			</article>
 		</section>
 
-		<FileUploader />
+		<FileUploader vaultId={data.user.id} />
 
 		<section class="grid gap-3" id="recent-activity" aria-labelledby="recent-files-heading">
 			<h2 id="recent-files-heading" class="m-0 text-lg leading-6 font-semibold tracking-[0.02em] text-(--muted)">Recent Files</h2>
