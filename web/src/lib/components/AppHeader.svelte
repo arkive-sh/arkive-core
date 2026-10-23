@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import { Bell, CircleUser, Lock, Menu, Search } from '@lucide/svelte';
 	import { logoutAndLock } from '#lib/auth.ts';
 	import Dropdown from '#lib/components/Dropdown.svelte';
+	import { useTransferManager } from '#lib/transfers/manager.ts';
 	import { toast } from '#lib/toast.ts';
 
 	type Props = {
@@ -15,17 +17,23 @@
 	};
 
 	let { user, mobileView, mobileOpen, desktopCollapsed, onToggleSidebar, onOpenSearch }: Props = $props();
-	let loggingOut = $state(false);
+	const transfers = useTransferManager();
+	const queryClient = useQueryClient();
+	const logoutMutation = createMutation(() => ({
+		mutationFn: async () => {
+			await transfers.cancelUploads();
+			await logoutAndLock();
+		}
+	}));
+	let loggingOut = $derived(logoutMutation.isPending);
 
 	async function logout() {
-		loggingOut = true;
 		try {
-			await logoutAndLock();
+			await logoutMutation.mutateAsync();
+			queryClient.clear();
 			await goto('/login');
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'Logout failed. Please try again.');
-		} finally {
-			loggingOut = false;
 		}
 	}
 </script>

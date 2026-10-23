@@ -1,42 +1,24 @@
-import axios, { type AxiosRequestConfig } from 'axios';
+import axios from 'axios';
 import { CORE_API_ORIGIN } from '$app/env/public';
-import { ApiError } from './errors';
 
 interface APIErrorResponse {
 	error?: {
-		code?: string;
 		message?: string;
-		details?: { fields?: Record<string, string> };
+		details?: { fields?: { general?: string } };
 	};
 }
 
-export async function apiRequest<T = unknown>(
-	path: `/api/${string}`,
-	options: AxiosRequestConfig = {},
-	fallback = 'Request failed'
-): Promise<T> {
-	try {
-		const response = await axios.request<T>({
-			...options,
-			url: new URL(path, CORE_API_ORIGIN).toString(),
-			withCredentials: true
-		});
-		return response.data;
-	} catch (error) {
-		if (axios.isCancel(error)) throw error;
-		if (!axios.isAxiosError<APIErrorResponse>(error)) throw error;
+export const api = axios.create({
+	baseURL: CORE_API_ORIGIN,
+	withCredentials: true
+});
 
-		if (!error.response) {
-			throw new ApiError('Unable to connect to the server. Check your connection and try again.', 0, 'network_error');
-		}
-
-		const responseError = error.response.data?.error;
-		const fields = responseError?.code === 'validation_failed' ? responseError.details?.fields : undefined;
-
-		throw new ApiError(
-			fields?.general || responseError?.message || fallback,
-			error.response.status,
-			responseError?.code || 'http_error'
-		);
+api.interceptors.response.use(undefined, (error: unknown) => {
+	if (axios.isAxiosError<APIErrorResponse>(error)) {
+		const responseError = error.response?.data?.error;
+		const message = responseError?.details?.fields?.general || responseError?.message;
+		if (message) error.message = message;
+		else if (!error.response) error.message = 'Unable to connect to the server. Check your connection and try again.';
 	}
-}
+	return Promise.reject(error);
+});

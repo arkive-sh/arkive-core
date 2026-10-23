@@ -1,33 +1,36 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import { Key, Lock, Shield } from '@lucide/svelte';
 	import { loginAndUnlock } from '#lib/auth.ts';
 	import Button from '#lib/components/Button.svelte';
 	import Card from '#lib/components/Card.svelte';
 	import InputField from '#lib/components/InputField.svelte';
 
+	const queryClient = useQueryClient();
+	const loginMutation = createMutation(() => ({
+		mutationFn: ({ email, password }: { email: string; password: string }) => loginAndUnlock(email, password)
+	}));
 	let generalError = $state('');
-	let submitting = $state(false);
+	let submitting = $derived(loginMutation.isPending);
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
-		if (submitting) return;
+		if (loginMutation.isPending) return;
 
 		const form = event.currentTarget as HTMLFormElement;
 		const passwordInput = form.elements.namedItem('password') as HTMLInputElement;
 		const email = String(new FormData(form).get('email') || '').trim();
 		const password = passwordInput.value;
-		submitting = true;
 		generalError = '';
 
 		try {
-			await loginAndUnlock(email, password);
+			queryClient.clear();
+			await loginMutation.mutateAsync({ email, password });
 			passwordInput.value = '';
 			await goto('/');
 		} catch (cause) {
 			generalError = cause instanceof Error ? cause.message : 'Unlock failed. Try again.';
-		} finally {
-			submitting = false;
 		}
 	}
 </script>

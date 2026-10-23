@@ -1,5 +1,5 @@
 import { CORE_API_ORIGIN } from '$app/env/public';
-import { apiRequest } from '../api';
+import { api } from '../api';
 import { createSearchTokens } from '../vault/search';
 import { waitUntilReady } from '../vault/session';
 import type { SearchTokenEntry } from '../vault/types';
@@ -46,10 +46,10 @@ async function getPartURL(started: UploadStart, partNumber: number, signal?: Abo
 		{ length: Math.min(PRESIGN_BATCH_SIZE, started.uploadPartCount - partNumber + 1) },
 		(_, index) => partNumber + index
 	);
-	const result = await apiRequest<{ urls: Record<string, string> }>(
+	const { data: result } = await api.post<{ urls: Record<string, string> }>(
 		`/api/uploads/${encodeURIComponent(started.uploadSessionId)}/parts/presign`,
-		{ method: 'POST', data: { parts }, signal },
-		'Part presign failed'
+		{ parts },
+		{ signal }
 	);
 	const url = result.urls[String(partNumber)];
 	if (!url) throw new Error('Storage did not provide an upload URL.');
@@ -57,11 +57,7 @@ async function getPartURL(started: UploadStart, partNumber: number, signal?: Abo
 }
 
 async function cancelUpload(uploadSessionId: string): Promise<void> {
-	await apiRequest(
-		`/api/uploads/${encodeURIComponent(uploadSessionId)}/cancel`,
-		{ method: 'POST' },
-		'Upload cancel failed'
-	).catch(() => {});
+	await api.post(`/api/uploads/${encodeURIComponent(uploadSessionId)}/cancel`).catch(() => {});
 }
 
 export async function uploadFile(file: File, signal?: AbortSignal, onProgress?: (uploadedBytes: number) => void): Promise<void> {
@@ -73,23 +69,19 @@ export async function uploadFile(file: File, signal?: AbortSignal, onProgress?: 
 	const chunksPerPart = Math.floor(UPLOAD_PART_SIZE / FILE_CHUNK_SIZE);
 	const uploadPartCount = Math.ceil(totalChunks / chunksPerPart);
 	const uploadToken = crypto.randomUUID();
-	const started = await apiRequest<UploadStart>(
+	const { data: started } = await api.post<UploadStart>(
 		'/api/uploads/start',
 		{
-			method: 'POST',
-			data: {
-				originalSize: file.size,
-				fileChunkSize: FILE_CHUNK_SIZE,
-				totalChunks,
-				uploadPartSize: UPLOAD_PART_SIZE,
-				uploadPartCount,
-				encryptionVersion: 1,
-				folderId: null,
-				singlePart: totalChunks === 1
-			},
-			signal
+			originalSize: file.size,
+			fileChunkSize: FILE_CHUNK_SIZE,
+			totalChunks,
+			uploadPartSize: UPLOAD_PART_SIZE,
+			uploadPartCount,
+			encryptionVersion: 1,
+			folderId: null,
+			singlePart: totalChunks === 1
 		},
-		'Upload start failed'
+		{ signal }
 	);
 	let complete = false;
 
@@ -160,14 +152,10 @@ export async function uploadFile(file: File, signal?: AbortSignal, onProgress?: 
 					});
 					if (!response.ok) throw new Error('Encrypted file data upload failed.');
 					if (started.providerUploadId) {
-						await apiRequest(
+						await api.post(
 							`/api/uploads/${encodeURIComponent(started.uploadSessionId)}/parts`,
-							{
-								method: 'POST',
-								data: { partNumber, encryptedHash: hash, etag: response.headers.get('etag') || '' },
-								signal
-							},
-							'Upload part record failed'
+							{ partNumber, encryptedHash: hash, etag: response.headers.get('etag') || '' },
+							{ signal }
 						);
 					}
 				onProgress?.(partEnd);
@@ -205,20 +193,16 @@ export async function uploadFile(file: File, signal?: AbortSignal, onProgress?: 
 			weight: 10 as const
 		}));
 		checkAborted(signal);
-		await apiRequest(
+		await api.post(
 			`/api/uploads/${encodeURIComponent(started.uploadSessionId)}/complete`,
 			{
-				method: 'POST',
-				data: {
-					encryptedMetadata: prepared.encryptedMetadata,
-					encryptedFileKey: prepared.encryptedFileKey,
-					encryptedManifest: finalized.encryptedManifest,
-					encryptedHash: finalized.encryptedHash,
-					searchTokens
-				},
-				signal
+				encryptedMetadata: prepared.encryptedMetadata,
+				encryptedFileKey: prepared.encryptedFileKey,
+				encryptedManifest: finalized.encryptedManifest,
+				encryptedHash: finalized.encryptedHash,
+				searchTokens
 			},
-			'Upload completion failed'
+			{ signal }
 		);
 		complete = true;
 	} finally {

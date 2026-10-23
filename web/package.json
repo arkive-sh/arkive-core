@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@lucide/svelte": "^1.61.0",
+    "@tanstack/svelte-query": "^6.3.5",
     "axios": "^1.20.0"
   }
 }

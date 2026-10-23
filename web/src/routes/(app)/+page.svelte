@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { File, Lock } from '@lucide/svelte';
-	import { apiRequest } from '#lib/api.ts';
+	import { api } from '#lib/api.ts';
 	import type { DashboardRecentFile, DashboardResponse } from './dashboard';
 	import FileUploader from '#lib/components/FileUploader.svelte';
 	import { decryptSearchFile } from '#lib/vault/search.ts';
@@ -11,11 +12,21 @@
 
 	type RecentFile = DashboardRecentFile & { name: string; size?: number; hydrated: boolean };
 	let { data }: PageProps = $props();
-	let dashboard = $state<DashboardResponse>(untrack(() => data.dashboard));
+	const queryClient = useQueryClient();
+	const dashboardQuery = createQuery(() => ({
+		queryKey: ['dashboard'],
+		queryFn: async () => (await api.get<DashboardResponse>('/api/dashboard')).data,
+		initialData: data.dashboard
+	}));
+	let dashboard = $derived(dashboardQuery.data ?? data.dashboard);
 	let recentFiles = $state<RecentFile[]>(untrack(() => dashboard.recentFiles.map((file) => ({ ...file, name: '', hydrated: false }))));
 	let dashboardError = $state('');
 	let vaultError = $state('');
 	let hydration = 0;
+
+	$effect(() => {
+		queryClient.setQueryData(['dashboard'], data.dashboard);
+	});
 
 	const usedPercent = $derived(
 		dashboard.maxStorageBytes > 0
@@ -54,9 +65,8 @@
 		return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
 	}
 
-	async function hydrateRecentFiles(): Promise<void> {
+	async function hydrateRecentFiles(files = dashboard.recentFiles): Promise<void> {
 		const currentHydration = ++hydration;
-		const files = dashboard.recentFiles;
 		recentFiles = files.map((file) => ({ ...file, name: '', hydrated: false }));
 		vaultError = '';
 
@@ -84,16 +94,20 @@
 
 	async function refreshDashboard(): Promise<void> {
 		try {
-			dashboard = await apiRequest<DashboardResponse>('/api/dashboard', {}, 'Could not refresh dashboard');
+			const refreshed = await dashboardQuery.refetch();
+			if (refreshed.error) throw refreshed.error;
 			dashboardError = '';
-			await hydrateRecentFiles();
+			if (refreshed.data) await hydrateRecentFiles(refreshed.data.recentFiles);
 		} catch (error) {
 			dashboardError = error instanceof Error ? error.message : 'Could not refresh dashboard';
 		}
 	}
 
 	onMount(() => {
+		const onUploadComplete = () => void refreshDashboard();
+		window.addEventListener('arkive:upload-complete', onUploadComplete);
 		void hydrateRecentFiles();
+		return () => window.removeEventListener('arkive:upload-complete', onUploadComplete);
 	});
 </script>
 
@@ -128,7 +142,7 @@
 			</article>
 		</section>
 
-		<FileUploader onUploaded={refreshDashboard} />
+		<FileUploader />
 
 		<section class="grid gap-3" id="recent-activity" aria-labelledby="recent-files-heading">
 			<h2 id="recent-files-heading" class="m-0 text-lg leading-6 font-semibold tracking-[0.02em] text-(--muted)">Recent Files</h2>
@@ -139,12 +153,12 @@
 				<p class="m-0 text-sm text-(--muted)" role="status">{vaultError}</p>
 			{/if}
 			<div class="overflow-auto rounded-md border border-(--border) bg-(--surface-raised)">
-				<table class="w-full min-w-[760px] table-fixed border-collapse text-left">
+				<table class="w-full min-w-190 table-fixed border-collapse text-left">
 					<thead class="border-b border-(--border) bg-(--surface-highest)">
 						<tr>
 							<th class="px-4 py-3 text-[11px] leading-4 font-semibold tracking-wider text-(--muted) uppercase">File Name</th>
-							<th class="w-[140px] px-4 py-3 text-[11px] leading-4 font-semibold tracking-wider text-(--muted) uppercase">Size</th>
-							<th class="w-[180px] px-4 py-3 text-[11px] leading-4 font-semibold tracking-wider text-(--muted) uppercase">Modified</th>
+							<th class="w-35 px-4 py-3 text-[11px] leading-4 font-semibold tracking-wider text-(--muted) uppercase">Size</th>
+							<th class="w-45 px-4 py-3 text-[11px] leading-4 font-semibold tracking-wider text-(--muted) uppercase">Modified</th>
 						</tr>
 					</thead>
 					<tbody>
