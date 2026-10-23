@@ -27,7 +27,8 @@ type SettingsPageProps struct {
 
 func SettingsPage(props SettingsPageProps) web.Page {
 	user := props.Ctx.User
-	brandName := ""
+	name := ""
+	username := ""
 	email := ""
 	instanceLabel := "Core"
 	memberSince := "Unavailable"
@@ -65,7 +66,8 @@ func SettingsPage(props SettingsPageProps) web.Page {
 		storageGB = settingsStorageGB(storageSettings.MaxStorageBytes)
 	}
 	if user != nil {
-		brandName = strings.TrimSpace(user.BrandName)
+		name = strings.TrimSpace(user.Name)
+		username = strings.TrimSpace(user.Username)
 		email = strings.TrimSpace(user.Email)
 		if !user.CreatedAt.IsZero() {
 			memberSince = user.CreatedAt.Format("Jan 2, 2006")
@@ -139,8 +141,13 @@ func SettingsPage(props SettingsPageProps) web.Page {
 											h.Class("settings-meta"),
 											h.Div(
 												h.Class("settings-meta-row"),
-												h.Span(g.Text("Instance")),
-												h.Span(g.Text(displayOrDash(brandName))),
+												h.Span(g.Text("Name")),
+												h.Span(g.Text(displayOrDash(name))),
+											),
+											h.Div(
+												h.Class("settings-meta-row"),
+												h.Span(g.Text("Username")),
+												h.Span(g.Text(displayOrDash(username))),
 											),
 											h.Div(
 												h.Class("settings-meta-row"),

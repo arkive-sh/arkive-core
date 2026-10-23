@@ -4,7 +4,8 @@ import "time"
 
 type User struct {
 	ID                          string
-	BrandName                   string
+	Name                        string
+	Username                    string
 	Email                       string
 	VaultSalt                   []byte
 	EncryptedMasterKey          []byte

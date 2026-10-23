@@ -3,8 +3,9 @@ CREATE EXTENSION IF NOT EXISTS citext;
 
 CREATE TABLE users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  brand_name TEXT UNIQUE NOT NULL,
-  email citext UNIQUE NOT NULL,
+  name TEXT NOT NULL,
+  username CITEXT NOT NULL,
+  email CITEXT NOT NULL,
   password_hash TEXT,
   vault_salt BYTEA,
   encrypted_master_key BYTEA,
@@ -21,20 +22,32 @@ CREATE TABLE users (
   password_reset_consumed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT users_username_key UNIQUE (username),
+  CONSTRAINT users_email_key UNIQUE (email),
+  CONSTRAINT users_username_format_chk
+    CHECK (
+      char_length(username) BETWEEN 3 AND 20
+      AND username::text !~ '[^A-Za-z0-9]'
+    ),
+  CONSTRAINT users_name_min_length_chk
+    CHECK (char_length(btrim(name)) >= 3),
   CONSTRAINT users_bytes_nonnegative_chk
     CHECK (used_bytes >= 0 AND reserved_bytes >= 0)
 );
 
+CREATE FUNCTION prevent_username_change() RETURNS trigger AS $$
+BEGIN
+  IF NEW.username IS DISTINCT FROM OLD.username THEN
+    RAISE EXCEPTION 'username cannot be changed';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
+CREATE TRIGGER users_username_immutable
+  BEFORE UPDATE OF username ON users
+  FOR EACH ROW EXECUTE FUNCTION prevent_username_change();
 
-CREATE INDEX users_created_at_idx ON users (created_at);
-CREATE INDEX users_last_active_at_idx ON users (last_active_at);
-CREATE INDEX users_vault_ready_idx
-  ON users (id)
-  WHERE vault_salt IS NOT NULL AND encrypted_master_key IS NOT NULL;
-CREATE INDEX users_password_reset_token_hash_idx
-  ON users (password_reset_token_hash)
-  WHERE password_reset_token_hash IS NOT NULL;
 
 CREATE TABLE sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

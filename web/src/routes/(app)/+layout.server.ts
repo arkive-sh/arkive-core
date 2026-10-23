@@ -6,7 +6,8 @@ import type { SetupStatus } from '../setup/types';
 
 interface User {
 	id: string;
-	brand_name: string;
+	name: string;
+	username: string;
 	email: string;
 }
 

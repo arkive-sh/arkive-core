@@ -9,7 +9,8 @@ export interface SetupStatus {
 export type StorageProvider = 'local' | 's3';
 
 export interface InitialSetupRequest {
-	brandName: string;
+	name: string;
+	username: string;
 	email: string;
 	password: string;
 	confirmPassword: string;

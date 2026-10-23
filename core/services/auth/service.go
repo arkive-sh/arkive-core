@@ -219,23 +219,7 @@ func (s *Service) GetUserByID(ctx context.Context, userID string) (models.User, 
 	if userID == "" {
 		return models.User{}, ErrInvalidInput
 	}
-
-	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
-	if err != nil {
-		return models.User{}, err
-	}
-
-	user, err := s.authRepo.GetUserByID(ctx, tx, userID)
-	if err != nil {
-		_ = tx.Rollback(ctx)
-		return models.User{}, err
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return models.User{}, err
-	}
-
-	return user, nil
+	return s.authRepo.GetUserByID(ctx, s.db, userID)
 }
 
 func (s *Service) RequestPasswordReset(ctx context.Context, email string) (PasswordResetRequestResult, error) {

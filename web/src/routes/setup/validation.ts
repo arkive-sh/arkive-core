@@ -2,7 +2,8 @@ import * as v from 'valibot';
 import type { StorageProvider } from './types';
 
 export interface SetupFormValues {
-	brand_name: string;
+	name: string;
+	username: string;
 	email: string;
 	password: string;
 	confirm_password: string;
@@ -29,7 +30,18 @@ const password = v.pipe(
 export function validateSetup(values: SetupFormValues) {
 	const schema = v.pipe(
 		v.object({
-			brand_name: required('brand name is required'),
+			name: v.pipe(
+				v.string(),
+				v.nonEmpty('name is required'),
+				v.minCodePoints(3, 'name must be at least 3 characters')
+			),
+			username: v.pipe(
+				v.string(),
+				v.nonEmpty('username is required'),
+				v.minCodePoints(3, 'username must be at least 3 characters'),
+				v.maxCodePoints(20, 'username must be at most 20 characters'),
+				v.regex(/^[A-Za-z0-9]+$/, 'username may only contain letters and numbers')
+			),
 			email: v.pipe(v.string(), v.nonEmpty('email is required'), v.email('email must be valid')),
 			password,
 			confirm_password: required('confirm password is required'),

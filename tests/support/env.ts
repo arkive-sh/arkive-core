@@ -18,7 +18,8 @@ export const storageDir = path.join(
 );
 
 export const e2eAccount = {
-  brandName: process.env.PLAYWRIGHT_E2E_BRAND_NAME || "Arkive E2E",
+  name: process.env.PLAYWRIGHT_E2E_NAME || "Arkive E2E",
+  username: process.env.PLAYWRIGHT_E2E_USERNAME || "arkive-e2e",
   email: process.env.PLAYWRIGHT_E2E_EMAIL || "numan@gmail.com",
   password: process.env.PLAYWRIGHT_E2E_PASSWORD || "12345678@Aa",
 };

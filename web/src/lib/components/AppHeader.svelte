@@ -8,7 +8,7 @@
 	import { toast } from '#lib/toast.ts';
 
 	type Props = {
-		user: { brand_name: string; email: string };
+		user: { name: string; username: string; email: string };
 		mobileView: boolean;
 		mobileOpen: boolean;
 		desktopCollapsed: boolean;
@@ -83,7 +83,8 @@
 					<CircleUser class="size-5.5 stroke-2" aria-hidden="true" />
 				{/snippet}
 				<div class="grid gap-1 px-2 pt-1.5 pb-2">
-					<span class="text-[13px] leading-4.5 font-semibold text-(--text)">{user.brand_name || 'Account'}</span>
+					<span class="text-[13px] leading-4.5 font-semibold text-(--text)">{user.name || 'Account'}</span>
+					<span class="text-[13px] leading-4.5 text-(--muted)">@{user.username}</span>
 					<span class="break-all text-[13px] leading-4.5 text-(--muted)">{user.email}</span>
 				</div>
 				<div class="my-1.5 h-px bg-(--border)"></div>

@@ -4,10 +4,13 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
+	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/crypto/bcrypt"
 
 	"arkive/core/database"
@@ -23,6 +26,8 @@ import (
 var ErrAlreadyInitialized = errors.New("instance already initialized")
 var ErrInvalidRecoverySetup = errors.New("invalid recovery key setup")
 
+var usernamePattern = regexp.MustCompile(`^[A-Za-z0-9]+$`)
+
 type Service struct {
 	db           database.PgPool
 	authRepo     *authrepo.Repository
@@ -31,7 +36,8 @@ type Service struct {
 }
 
 type InitialAdminInput struct {
-	BrandName          string
+	Name               string
+	Username           string
 	Email              string
 	Password           string
 	ConfirmPassword    string
@@ -59,13 +65,14 @@ func (s *Service) IsInitialized(ctx context.Context) (bool, error) {
 }
 
 func (s *Service) CreateInitialAdmin(ctx context.Context, input InitialAdminInput) (models.User, validation.Errors, error) {
-	input.BrandName = strings.TrimSpace(input.BrandName)
+	input.Name = strings.TrimSpace(input.Name)
+	input.Username = strings.TrimSpace(input.Username)
 	input.Email = strings.TrimSpace(input.Email)
 	input.Password = strings.TrimSpace(input.Password)
 	input.ConfirmPassword = strings.TrimSpace(input.ConfirmPassword)
 	input.Storage = settingssvc.NormalizeStorageSettings(input.Storage)
 
-	validationErrors := validateAdminInput(input.BrandName, input.Email, input.Password, input.ConfirmPassword)
+	validationErrors := validateAdminInput(input.Name, input.Username, input.Email, input.Password, input.ConfirmPassword)
 	if len(input.VaultSalt) != 16 {
 		validationErrors.Add(validation.GeneralKey, "vault salt is missing or invalid")
 	}
@@ -98,8 +105,20 @@ func (s *Service) CreateInitialAdmin(ctx context.Context, input InitialAdminInpu
 		return models.User{}, nil, err
 	}
 
-	user, err := s.authRepo.CreateVerifiedUser(ctx, tx, input.BrandName, input.Email, string(hash), input.VaultSalt, input.EncryptedMasterKey)
+	user, err := s.authRepo.CreateVerifiedUser(ctx, tx, input.Name, input.Username, input.Email, string(hash), input.VaultSalt, input.EncryptedMasterKey)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			switch pgErr.ConstraintName {
+			case "users_username_key":
+				validationErrors.Add("username", "username is already taken")
+			case "users_email_key":
+				validationErrors.Add("email", "email is already in use")
+			}
+			if validationErrors.HasAny() {
+				return models.User{}, validationErrors, nil
+			}
+		}
 		return models.User{}, nil, err
 	}
 	if err := settingssvc.SaveStorageSettingsTx(ctx, tx, s.settingsRepo, input.Storage); err != nil {
@@ -175,20 +194,36 @@ func (s *Service) SaveRecoveryWrappedMasterKey(ctx context.Context, token string
 	return tx.Commit(ctx)
 }
 
-func validateAdminInput(brandName, email, password, confirmPassword string) validation.Errors {
+func validateAdminInput(name, username, email, password, confirmPassword string) validation.Errors {
 	validationErrors := validation.New()
-	if brandName == "" {
-		validationErrors.Add("brand_name", "brand name is required")
+	if name == "" {
+		validationErrors.Add("name", "name is required")
+	} else if utf8.RuneCountInString(name) < 3 {
+		validationErrors.Add("name", "name must be at least 3 characters")
 	}
+
+	if username == "" {
+		validationErrors.Add("username", "username is required")
+	} else if utf8.RuneCountInString(username) < 3 {
+		validationErrors.Add("username", "username must be at least 3 characters")
+	} else if utf8.RuneCountInString(username) > 20 {
+		validationErrors.Add("username", "username must be at most 20 characters")
+	}
+	if username != "" && !usernamePattern.MatchString(username) {
+		validationErrors.Add("username", "username may only contain letters and numbers")
+	}
+
 	if email == "" {
 		validationErrors.Add("email", "email is required")
 	}
+
 	if password == "" {
 		validationErrors.Add("password", "password is required")
 	}
 	if confirmPassword == "" {
 		validationErrors.Add("confirm_password", "confirm password is required")
 	}
+
 	if password != "" {
 		switch validation.PasswordIssueFor(password) {
 		case validation.PasswordTooShort:
