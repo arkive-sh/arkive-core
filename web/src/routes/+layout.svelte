@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
+	import { browser } from '$app/env';
 	import { onMount } from 'svelte';
 	import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
 	import type { Snippet } from 'svelte';
@@ -16,7 +16,10 @@
 	provideTransferManager(transferManager);
 
 	onMount(() => {
-		const onUploadComplete = () => void queryClient.invalidateQueries({ queryKey: ['search'] });
+		const onUploadComplete = () => {
+			void queryClient.invalidateQueries({ queryKey: ['search'] });
+			void queryClient.invalidateQueries({ queryKey: ['folder-entries'] });
+		};
 		window.addEventListener('arkive:upload-complete', onUploadComplete);
 		const stored = localStorage.getItem('theme');
 		const mode = ['dark', 'system', 'light'].includes(stored || '') ? stored : 'system';
