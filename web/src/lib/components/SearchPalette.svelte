@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { Search } from '@lucide/svelte';
 	import Modal from '#lib/components/Modal.svelte';
-	import { apiRequest } from '#lib/api.ts';
+	import { api } from '#lib/api.ts';
 	import { getCachedThumbnail } from '#lib/thumbnail-cache.ts';
 	import type { EncryptedSearchFile, EncryptedSearchFolder, SearchPreview } from '#lib/vault/types.ts';
 	import { decryptSearchFile, decryptSearchFolder, decryptSearchThumbnail, createSearchTokens } from '#lib/vault/search.ts';
@@ -40,6 +41,7 @@
 	];
 
 	let { open, vaultId, onOpen, onClose }: Props = $props();
+	const queryClient = useQueryClient();
 	let query = $state('');
 	let results = $state<SearchResult[]>([]);
 	let loading = $state(false);
@@ -112,6 +114,7 @@
 		try {
 			await waitUntilReady();
 			const tokens = await createSearchTokens(query, vaultId);
+			if (controller.signal.aborted || latestQuery !== query) return;
 			if (!tokens.length) {
 				if (latestQuery === query) {
 					results = settings;
@@ -120,12 +123,15 @@
 				return;
 			}
 
-			const data = await apiRequest<SearchResponse>('/api/search', {
-				method: 'POST',
-				signal: controller.signal,
-				headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-				data: { tokens, limit: 20 }
-			}, 'Search failed');
+			const data = await queryClient.fetchQuery({
+				queryKey: ['search', vaultId, tokens],
+				queryFn: async ({ signal }) => (await api.post<SearchResponse>(
+					'/api/search',
+					{ tokens, limit: 20 },
+					{ signal, headers: { Accept: 'application/json' } }
+				)).data,
+				retry: false
+			});
 			if (controller.signal.aborted || latestQuery !== query) return;
 
 			const folders = await Promise.all((data.results?.folders ?? []).map(async (folder): Promise<SearchResult | null> => {
@@ -188,6 +194,7 @@
 		latestQuery = value;
 		if (searchTimer !== undefined) window.clearTimeout(searchTimer);
 		abortController?.abort();
+		void queryClient.cancelQueries({ queryKey: ['search', vaultId] });
 		clearThumbnails();
 		results = searchSettings(value);
 		activeIndex = 0;
@@ -241,6 +248,7 @@
 			window.cancelAnimationFrame(frame);
 			if (searchTimer !== undefined) window.clearTimeout(searchTimer);
 			abortController?.abort();
+			void queryClient.cancelQueries({ queryKey: ['search', vaultId] });
 			latestQuery = '';
 			clearThumbnails();
 		};
