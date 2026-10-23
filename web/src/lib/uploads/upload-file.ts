@@ -2,6 +2,7 @@ import { CORE_API_ORIGIN } from '$app/env/public';
 import { api } from '../api';
 import { createSearchTokens } from '../vault/search';
 import { waitUntilReady } from '../vault/session';
+import { encryptFolderMetadata, encryptFolderName } from '../vault/files';
 import type { SearchTokenEntry } from '../vault/types';
 import {
 	clearUploadContext,
@@ -60,7 +61,33 @@ async function cancelUpload(uploadSessionId: string): Promise<void> {
 	await api.post(`/api/uploads/${encodeURIComponent(uploadSessionId)}/cancel`).catch(() => {});
 }
 
-export async function uploadFile(file: File, signal?: AbortSignal, onProgress?: (uploadedBytes: number) => void): Promise<void> {
+export async function createUploadFolder(
+	name: string,
+	parentFolderId: string | null,
+	vaultId: string,
+	signal: AbortSignal
+): Promise<string> {
+	const [{ encryptedMetadata: encryptedName }, { encryptedMetadata }, tokens] = await Promise.all([
+		encryptFolderName({ name }),
+		encryptFolderMetadata({ name }),
+		createSearchTokens(name, vaultId, 128)
+	]);
+	if (signal.aborted) throw new DOMException('Upload canceled.', 'AbortError');
+	const searchTokens = tokens.map((token): SearchTokenEntry => ({ token, field: 'name', weight: 10 }));
+	const { data } = await api.post<{ folder: { id: string } }>(
+		'/api/folders',
+		{ parentFolderId, encryptedName, encryptedMetadata, searchTokens },
+		{ signal }
+	);
+	return data.folder.id;
+}
+
+export async function uploadFile(
+	file: File,
+	signal?: AbortSignal,
+	onProgress?: (uploadedBytes: number) => void,
+	folderId: string | null = null
+): Promise<void> {
 	if (!file.size) throw new Error('Empty files cannot be uploaded.');
 	if (!(await waitUntilReady()).unlocked) throw new Error('Unlock the vault before uploading files.');
 	checkAborted(signal);
@@ -78,7 +105,7 @@ export async function uploadFile(file: File, signal?: AbortSignal, onProgress?: 
 			uploadPartSize: UPLOAD_PART_SIZE,
 			uploadPartCount,
 			encryptionVersion: 1,
-			folderId: null,
+			folderId,
 			singlePart: totalChunks === 1
 		},
 		{ signal }

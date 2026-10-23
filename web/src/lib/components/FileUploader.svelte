@@ -1,18 +1,19 @@
 <script lang="ts">
 	import { CloudUpload } from '@lucide/svelte';
 	import Modal from '#lib/components/Modal.svelte';
-	import { useTransferManager } from '#lib/transfers/manager.ts';
+	import { useTransferManager, type UploadItem } from '#lib/transfers/manager.ts';
 
+	let { vaultId }: { vaultId: string } = $props();
 	const transfers = useTransferManager();
-	let selectedFiles = $state<File[]>([]);
+	let selectedFiles = $state<UploadItem[]>([]);
 	let dragOver = $state(false);
 	let confirmOpen = $state(false);
-	let status = $state('Select files manually to start a secure upload.');
+	let status = $state('');
 	let fileInput: HTMLInputElement | undefined;
 
-	function stageFiles(files: FileList | File[]): void {
+	function stageFiles(files: UploadItem[]): void {
 		if (!files.length) return;
-		selectedFiles = Array.from(files);
+		selectedFiles = files;
 		status = '';
 		confirmOpen = true;
 	}
@@ -20,14 +21,49 @@
 	function selectFiles(event: Event): void {
 		const input = event.currentTarget;
 		if (!(input instanceof HTMLInputElement)) return;
-		stageFiles(input.files ?? []);
+		stageFiles(Array.from(input.files ?? [], (file) => ({ file, relativePath: file.webkitRelativePath })));
 		input.value = '';
 	}
 
-	function dropFiles(event: DragEvent): void {
+	async function readDroppedEntry(entry: FileSystemEntry, parentPath = ''): Promise<UploadItem[]> {
+		const relativePath = parentPath ? `${parentPath}/${entry.name}` : entry.name;
+		if (entry.isFile) {
+			return new Promise((resolve, reject) => {
+				(entry as FileSystemFileEntry).file((file) => resolve([{ file, relativePath }]), reject);
+			});
+		}
+		if (!entry.isDirectory) return [];
+
+		const reader = (entry as FileSystemDirectoryEntry).createReader();
+		const files: UploadItem[] = [];
+		while (true) {
+			const entries = await new Promise<FileSystemEntry[]>((resolve, reject) => reader.readEntries(resolve, reject));
+			if (!entries.length) return files;
+			for (const child of entries) files.push(...(await readDroppedEntry(child, relativePath)));
+		}
+	}
+
+	async function dropFiles(event: DragEvent): Promise<void> {
 		event.preventDefault();
 		dragOver = false;
-		if (event.dataTransfer?.files) stageFiles(event.dataTransfer.files);
+		const dataTransfer = event.dataTransfer;
+		if (!dataTransfer) return;
+
+		const entries = Array.from(dataTransfer.items)
+			.map((item) => item.webkitGetAsEntry())
+			.filter((entry): entry is FileSystemEntry => entry !== null);
+		if (!entries.length) {
+			stageFiles(Array.from(dataTransfer.files, (file) => ({ file, relativePath: file.webkitRelativePath })));
+			return;
+		}
+
+		try {
+			const files: UploadItem[] = [];
+			for (const entry of entries) files.push(...(await readDroppedEntry(entry)));
+			stageFiles(files);
+		} catch (error) {
+			status = error instanceof Error ? error.message : 'Could not read dropped files.';
+		}
 	}
 
 	function dropzoneKeydown(event: KeyboardEvent): void {
@@ -43,7 +79,7 @@
 
 	function startUpload(): void {
 		if (!selectedFiles.length) return;
-		const count = transfers.enqueueUploads(selectedFiles);
+		const count = transfers.enqueueUploads(selectedFiles, vaultId);
 		selectedFiles = [];
 		confirmOpen = false;
 		status = `Added ${count} ${count === 1 ? 'file' : 'files'} to transfers.`;
