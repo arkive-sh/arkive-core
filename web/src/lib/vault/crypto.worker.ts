@@ -1,5 +1,5 @@
 import initArkiveCrypto, * as arkiveCrypto from '../../../../core/web/static/vendor/arkive-crypto/arkive_crypto.js';
-import { signRecoveryProof } from '../recovery-proof';
+import { deriveRecoveryProofPublicKey, signRecoveryProof } from '../recovery-proof';
 import type { VaultWorkerMethod } from './types';
 
 type CryptoApi = typeof arkiveCrypto;
@@ -201,7 +201,7 @@ function handleUnlockVault(params: WorkerParams, crypto: CryptoApi) {
     salt = decodeBase64(params.salt);
     encryptedMasterKey = decodeBase64(params.encryptedMasterKey);
     kek = crypto.derive_password_kek(
-      String(params.password || ""),
+      String(params.password || "").trim(),
       salt,
     );
     masterKey = crypto.unwrap_master_key(
@@ -215,6 +215,60 @@ function handleUnlockVault(params: WorkerParams, crypto: CryptoApi) {
   } finally {
     if (kek) crypto.zeroize(kek);
     if (masterKey) crypto.zeroize(masterKey);
+  }
+}
+
+function handleCreateInitialVault(params: WorkerParams, crypto: CryptoApi) {
+  let salt;
+  let masterKey;
+  let kek;
+  let encryptedMasterKey;
+  try {
+    salt = crypto.generate_salt();
+    masterKey = crypto.generate_master_key();
+    kek = crypto.derive_password_kek(String(params.password || '').trim(), salt);
+    encryptedMasterKey = crypto.wrap_master_key(
+      masterKey,
+      kek,
+      new TextEncoder().encode('arkive:master-key:v1'),
+    );
+    return {
+      vaultSalt: encodeBase64(salt),
+      encryptedMasterKey: encodeBase64(encryptedMasterKey),
+      masterKey: encodeBase64(masterKey),
+    };
+  } finally {
+    if (salt) crypto.zeroize(salt);
+    if (masterKey) crypto.zeroize(masterKey);
+    if (kek) crypto.zeroize(kek);
+    if (encryptedMasterKey) crypto.zeroize(encryptedMasterKey);
+  }
+}
+
+async function handlePrepareInitialRecovery(params: WorkerParams, crypto: CryptoApi) {
+  const userID = String(params.userID || '').trim();
+  if (!userID) throw new Error('Recovery setup context is unavailable');
+
+  let masterKey;
+  let recoveryKey;
+  let encryptedMasterKeyRecovery;
+  let recoveryProofPublicKey;
+  try {
+    masterKey = decodeBase64(params.masterKey);
+    if (!masterKey.length) throw new Error('Setup master key is unavailable');
+    recoveryKey = crypto.generate_recovery_key();
+    encryptedMasterKeyRecovery = crypto.wrap_master_key_with_recovery_key(masterKey, recoveryKey, userID);
+    recoveryProofPublicKey = await deriveRecoveryProofPublicKey(recoveryKey, userID);
+    return {
+      recoveryKey: crypto.format_recovery_key(recoveryKey),
+      encryptedMasterKeyRecovery: encodeBase64(encryptedMasterKeyRecovery),
+      recoveryProofPublicKey: encodeBase64(recoveryProofPublicKey),
+    };
+  } finally {
+    if (masterKey) crypto.zeroize(masterKey);
+    if (recoveryKey) crypto.zeroize(recoveryKey);
+    if (encryptedMasterKeyRecovery) crypto.zeroize(encryptedMasterKeyRecovery);
+    if (recoveryProofPublicKey) crypto.zeroize(recoveryProofPublicKey);
   }
 }
 
@@ -291,7 +345,7 @@ async function handlePreparePasswordReset(params: WorkerParams, crypto: CryptoAp
     );
     // Keep vault wrapping consistent with setup/login: password-derived KEK + AAD.
     kek = crypto.derive_password_kek(
-      String(params.newPassword || ""),
+      String(params.newPassword || "").trim(),
       salt,
     );
     wrappedMasterKey = crypto.wrap_master_key(
@@ -918,6 +972,8 @@ function handleDecryptSearchThumbnail(params: WorkerParams, crypto: CryptoApi) {
 }
 
 const messageHandlers: Record<VaultWorkerMethod, WorkerHandler> = {
+	createInitialVault: handleCreateInitialVault,
+	prepareInitialRecovery: handlePrepareInitialRecovery,
 	unlockVault: handleUnlockVault,
 	lockVault: handleLockVault,
 	createSessionUnlock: handleCreateSessionUnlock,

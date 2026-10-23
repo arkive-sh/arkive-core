@@ -1,10 +1,10 @@
 import axios from 'axios';
 import { CORE_API_ORIGIN } from '$app/env/public';
 
-interface APIErrorResponse {
+export interface APIErrorResponse {
 	error?: {
 		message?: string;
-		details?: { fields?: { general?: string } };
+		details?: { fields?: Record<string, string> };
 	};
 }
 

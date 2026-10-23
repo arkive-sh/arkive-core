@@ -2,6 +2,7 @@ import { redirect } from '@sveltejs/kit';
 import axios from 'axios';
 import { api } from '#lib/api.ts';
 import type { LayoutServerLoad } from './$types';
+import type { SetupStatus } from '../setup/types';
 
 interface User {
 	id: string;
@@ -9,10 +10,17 @@ interface User {
 	email: string;
 }
 
-export const load: LayoutServerLoad = async ({ request }) => {
+export const load: LayoutServerLoad = async ({ request, url }) => {
+	const headers = { Cookie: request.headers.get('cookie') ?? '' };
+	if (url.pathname === '/') {
+		const { data: setup } = await api.get<SetupStatus>('/api/setup/status', { headers });
+		if (!setup.initialized) redirect(303, '/setup');
+		if (setup.recoveryPending) redirect(303, '/setup/recovery-key');
+	}
+
 	try {
 		const { data: user } = await api.get<User>('/api/me', {
-			headers: { Cookie: request.headers.get('cookie') ?? '' }
+			headers
 		});
 		return { user };
 	} catch (error) {

@@ -26,7 +26,7 @@ import (
 	"arkive/pkg/storage/localclient"
 )
 
-func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, filesService *filessvc.Service, folderService *foldersvc.Service, localStorage *localclient.Client, corsMiddleware gin.HandlerFunc) *gin.Engine {
+func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, filesService *filessvc.Service, folderService *folderssvc.Service, localStorage *localclient.Client, corsMiddleware gin.HandlerFunc) *gin.Engine {
 	r := gin.Default()
 	r.Use(middleware.ErrorLogger())
 	r.Use(middleware.SecurityHeaders())
@@ -59,10 +59,6 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 	localStorageRoutes.PUT("/upload/:token", handlers.LocalStorageUpload(localStorage))
 	localStorageRoutes.GET("/download/:token", handlers.LocalStorageDownload(localStorage))
 	r.GET("/", handlers.WebRoot(authService, setupService))
-	r.GET("/setup", handlers.WebSetupGet(setupService))
-	r.POST("/setup", handlers.WebSetupPost(setupService))
-	r.GET("/setup/recovery-key", handlers.WebSetupRecoveryGet(setupService))
-	r.POST("/setup/recovery-key", handlers.WebSetupRecoveryPost(setupService))
 	r.GET("/s/:token", handlers.PublicShareView(shareService, filesService, settingsService, cfg.CookieSecret))
 	r.POST("/s/:token", handlers.PublicShareUnlock(shareService, filesService, settingsService, cfg.CookieSecret))
 	r.GET("/login", handlers.WebLoginGet(authService, setupService))
@@ -89,6 +85,9 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 		r.OPTIONS("/api/*path", corsMiddleware)
 	}
 	{
+		api.GET("/setup/status", handlers.APISetupStatus(setupService))
+		api.POST("/setup", handlers.APICreateInitialSetup(setupService))
+		api.POST("/setup/recovery-key", handlers.APICompleteInitialSetup(setupService))
 		api.POST("/auth/login", handlers.APILogin(authService))
 		api.POST("/auth/logout", handlers.APILogout(authService))
 		api.POST("/auth/forgot-password", handlers.APIForgotPassword(authService))
