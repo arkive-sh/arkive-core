@@ -9,12 +9,47 @@
 	import { api, type APIErrorResponse } from '#lib/api.ts';
 	import { callVaultWorker } from '#lib/vault/worker-client.ts';
 	import { SETUP_MASTER_KEY_STORAGE, type InitialSetupRequest, type SetupStatus, type StorageProvider } from './types';
-	import { validateSetup } from './validation';
+	import { validateSetup, type SetupFormValues } from './validation';
 
 	let storageProvider = $state<StorageProvider>('local');
 	let submitting = $state(false);
 	let generalError = $state('');
 	let fieldErrors = $state<Record<string, string>>({});
+
+	function readFormValues(values: FormData): SetupFormValues {
+		const read = (name: string) => String(values.get(name) ?? '').trim();
+		return {
+			name: read('name'),
+			username: read('username'),
+			email: read('email'),
+			password: read('password'),
+			confirm_password: read('confirm_password'),
+			storage_provider: storageProvider,
+			storage_gb: read('storage_gb'),
+			local_path: read('local_path'),
+			s3_access_key_id: read('s3_access_key_id'),
+			s3_secret_access_key: read('s3_secret_access_key'),
+			s3_bucket: read('s3_bucket'),
+			s3_endpoint: read('s3_endpoint')
+		};
+	}
+
+	function validateInput(event: Event): void {
+		if (!(event.currentTarget instanceof HTMLFormElement) || !(event.target instanceof HTMLInputElement)) return;
+
+		const field = event.target.name;
+		const result = validateSetup(readFormValues(new FormData(event.currentTarget)));
+		const issues = result.success ? [] : result.issues;
+		const fields = field === 'password' || field === 'confirm_password' ? ['password', 'confirm_password'] : [field];
+		const nextErrors = { ...fieldErrors };
+		for (const name of fields) {
+			const issue = issues.find((issue) => issue.path?.[0]?.key === name);
+			if (issue) nextErrors[name] = issue.message;
+			else delete nextErrors[name];
+		}
+		fieldErrors = nextErrors;
+		generalError = '';
+	}
 
 	function showError(error: unknown): void {
 		if (axios.isAxiosError<APIErrorResponse>(error)) {
@@ -32,24 +67,12 @@
 
 		const form = event.currentTarget;
 		const values = new FormData(form);
-		const read = (name: string) => String(values.get(name) ?? '').trim();
-		const password = read('password');
+		const formValues = readFormValues(values);
+		const password = formValues.password;
 		generalError = '';
 		fieldErrors = {};
 
-		const validation = validateSetup({
-			brand_name: read('brand_name'),
-			email: read('email'),
-			password,
-			confirm_password: read('confirm_password'),
-			storage_provider: storageProvider,
-			storage_gb: read('storage_gb'),
-			local_path: read('local_path'),
-			s3_access_key_id: read('s3_access_key_id'),
-			s3_secret_access_key: read('s3_secret_access_key'),
-			s3_bucket: read('s3_bucket'),
-			s3_endpoint: read('s3_endpoint')
-		});
+		const validation = validateSetup(formValues);
 		if (!validation.success) {
 			for (const issue of validation.issues) {
 				const field = issue.path?.[0]?.key;
@@ -65,22 +88,23 @@
 			const vault = await callVaultWorker('createInitialVault', { password });
 			sessionStorage.setItem(SETUP_MASTER_KEY_STORAGE, vault.masterKey);
 			const request: InitialSetupRequest = {
-				brandName: read('brand_name'),
-				email: read('email'),
+				name: formValues.name,
+				username: formValues.username,
+				email: formValues.email,
 				password,
-				confirmPassword: read('confirm_password'),
+				confirmPassword: formValues.confirm_password,
 				vaultSalt: vault.vaultSalt,
 				encryptedMasterKey: vault.encryptedMasterKey,
 				storage: {
 					provider: storageProvider,
-					localPath: storageProvider === 'local' ? read('local_path') : '',
-					storageGB: read('storage_gb'),
-					s3AccessKeyID: storageProvider === 's3' ? read('s3_access_key_id') : '',
-					s3SecretAccessKey: storageProvider === 's3' ? read('s3_secret_access_key') : '',
-					s3SessionToken: storageProvider === 's3' ? read('s3_session_token') : '',
-					s3Bucket: storageProvider === 's3' ? read('s3_bucket') : '',
-					s3Endpoint: storageProvider === 's3' ? read('s3_endpoint') : '',
-					s3Region: storageProvider === 's3' ? read('s3_region') : '',
+					localPath: storageProvider === 'local' ? formValues.local_path : '',
+					storageGB: formValues.storage_gb,
+					s3AccessKeyID: storageProvider === 's3' ? formValues.s3_access_key_id : '',
+					s3SecretAccessKey: storageProvider === 's3' ? formValues.s3_secret_access_key : '',
+					s3SessionToken: storageProvider === 's3' ? String(values.get('s3_session_token') ?? '').trim() : '',
+					s3Bucket: storageProvider === 's3' ? formValues.s3_bucket : '',
+					s3Endpoint: storageProvider === 's3' ? formValues.s3_endpoint : '',
+					s3Region: storageProvider === 's3' ? String(values.get('s3_region') ?? '').trim() : '',
 					s3UsePathStyle: storageProvider === 's3' && values.get('s3_use_path_style') === 'on'
 				}
 			};
@@ -118,7 +142,7 @@
 
 <main class="min-h-screen bg-(--bg) px-4 py-8 text-(--text) max-[760px]:px-3 max-[760px]:py-4">
 	<div class="mx-auto w-[min(920px,100%)]">
-		<form class="overflow-hidden rounded-md border border-(--border-soft) bg-(--surface-raised) shadow-[0_10px_28px_rgba(0,0,0,0.28)]" method="post" onsubmit={submit} oninput={() => { fieldErrors = {}; generalError = ''; }}>
+		<form class="overflow-hidden rounded-md border border-(--border-soft) bg-(--surface-raised) shadow-[0_10px_28px_rgba(0,0,0,0.28)]" method="post" novalidate onsubmit={submit} oninput={validateInput}>
 			<header class="flex items-center gap-3 border-b border-(--border-soft) px-6 py-[18px] max-[760px]:px-4">
 				<span class="inline-flex items-center justify-center text-(--accent)"><Server class="size-5" aria-hidden="true" /></span>
 				<div>
@@ -133,9 +157,10 @@
 				{/if}
 
 				{#snippet instanceIcon()}<BadgeInfo class="size-4" aria-hidden="true" />{/snippet}
-				<SetupSection number="1" title="Instance Details" icon={instanceIcon}>
+				<SetupSection number="1" title="Account Details" icon={instanceIcon}>
 					<div class="grid grid-cols-2 gap-4 max-[760px]:grid-cols-1">
-						<InputField label="Instance name" name="brand_name" placeholder="Sovereign-01" required helperText={fieldErrors.brand_name} />
+						<InputField label="Name" name="name" placeholder="Enter your name" required helperText={fieldErrors.name} />
+						<InputField label="Username" name="username" placeholder="Enter username" required helperText={fieldErrors.username} />
 						<InputField label="Admin email" name="email" type="email" placeholder="admin@domain.local" required helperText={fieldErrors.email} />
 					</div>
 				</SetupSection>

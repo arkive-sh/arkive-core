@@ -84,17 +84,17 @@ func APICompletePasswordReset(svc *auth.Service) gin.HandlerFunc {
 			return
 		}
 
-		vaultSalt, err := decodeBase64Field(strings.TrimSpace(req.VaultSalt))
+		vaultSalt, err := base64.StdEncoding.DecodeString(strings.TrimSpace(req.VaultSalt))
 		if err != nil {
 			apierror.InvalidPayload(c)
 			return
 		}
-		encryptedMasterKey, err := decodeBase64Field(strings.TrimSpace(req.EncryptedMasterKey))
+		encryptedMasterKey, err := base64.StdEncoding.DecodeString(strings.TrimSpace(req.EncryptedMasterKey))
 		if err != nil {
 			apierror.InvalidPayload(c)
 			return
 		}
-		recoveryProof, err := decodeBase64Field(strings.TrimSpace(req.RecoveryProof))
+		recoveryProof, err := base64.StdEncoding.DecodeString(strings.TrimSpace(req.RecoveryProof))
 		if err != nil {
 			apierror.InvalidPayload(c)
 			return

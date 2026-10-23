@@ -19,8 +19,8 @@ type DashboardSidebarProps struct {
 
 func DashboardSidebar(props DashboardSidebarProps) g.Node {
 	nodeLabel := "Self-hosted core"
-	if props.User != nil && strings.TrimSpace(props.User.BrandName) != "" {
-		nodeLabel = "Node: " + strings.TrimSpace(props.User.BrandName)
+	if props.User != nil && strings.TrimSpace(props.User.Username) != "" {
+		nodeLabel = "@" + strings.TrimSpace(props.User.Username)
 	}
 
 	return g.Group([]g.Node{

@@ -3,7 +3,7 @@
 	import Button from '#lib/components/Button.svelte';
 
 	type Props = {
-		user: { brand_name: string };
+		user: { username: string };
 		currentPath: string;
 		mobileView: boolean;
 		mobileOpen: boolean;
@@ -42,7 +42,7 @@
 			</span>
 			<div class="grid gap-1">
 				<a class="font-mono text-lg leading-6 font-semibold" href="/" onclick={onNavigate}>Arkive Core</a>
-				<span class="font-mono text-[13px] leading-4.5 text-(--muted)">{user.brand_name ? `Node: ${user.brand_name}` : 'Self-hosted core'}</span>
+				<span class="font-mono text-[13px] leading-4.5 text-(--muted)">@{user.username}</span>
 			</div>
 		</div>
 		<button class="absolute top-0 right-4 inline-flex size-9 cursor-pointer items-center justify-center rounded border border-(--border) bg-transparent p-0 text-(--muted) hover:bg-(--surface-raised) hover:text-(--text) min-[961px]:hidden" type="button" aria-label="Close menu" onclick={onClose}>

@@ -29,7 +29,8 @@ type apiSetupStorageInput struct {
 }
 
 type apiCreateSetupRequest struct {
-	BrandName          string               `json:"brandName"`
+	Name               string               `json:"name"`
+	Username           string               `json:"username"`
 	Email              string               `json:"email"`
 	Password           string               `json:"password"`
 	ConfirmPassword    string               `json:"confirmPassword"`
@@ -117,7 +118,8 @@ func APICreateInitialSetup(svc *setup.Service) gin.HandlerFunc {
 		}
 
 		user, validationErrors, err := svc.CreateInitialAdmin(c.Request.Context(), setup.InitialAdminInput{
-			BrandName:          req.BrandName,
+			Name:               req.Name,
+			Username:           req.Username,
 			Email:              req.Email,
 			Password:           req.Password,
 			ConfirmPassword:    req.ConfirmPassword,

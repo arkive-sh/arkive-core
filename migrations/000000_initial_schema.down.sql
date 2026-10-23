@@ -13,5 +13,7 @@ DROP TABLE IF EXISTS instance_settings;
 DROP TABLE IF EXISTS sessions;
 DROP TABLE IF EXISTS users;
 
+DROP FUNCTION IF EXISTS prevent_username_change();
+
 DROP EXTENSION IF EXISTS citext;
 DROP EXTENSION IF EXISTS pgcrypto;

@@ -30,9 +30,10 @@ func APIMe(svc *auth.Service) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"id":         user.ID,
-			"brand_name": user.BrandName,
-			"email":      user.Email,
+			"id":       user.ID,
+			"name":     user.Name,
+			"username": user.Username,
+			"email":    user.Email,
 		})
 	}
 }

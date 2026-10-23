@@ -127,9 +127,9 @@ func renderUserMenu(user *models.User) g.Node {
 		return h.Span()
 	}
 
-	brandName := strings.TrimSpace(user.BrandName)
-	if brandName == "" {
-		brandName = "Account"
+	name := strings.TrimSpace(user.Name)
+	if name == "" {
+		name = "Account"
 	}
 
 	return components.Dropdown(components.DropdownProps{
@@ -144,7 +144,7 @@ func renderUserMenu(user *models.User) g.Node {
 			h.Class("dropdown-content"),
 			h.Div(
 				h.Class("dropdown-meta"),
-				h.Span(h.Class("dropdown-label"), g.Text(brandName)),
+				h.Span(h.Class("dropdown-label"), g.Text(name)),
 				h.Span(h.Class("dropdown-email"), g.Text(user.Email)),
 			),
 			h.Div(h.Class("dropdown-divider")),
