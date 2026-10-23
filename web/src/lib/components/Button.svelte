@@ -1,17 +1,18 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import type { HTMLButtonAttributes } from 'svelte/elements';
 
-	type Props = {
+	type Props = Omit<HTMLButtonAttributes, 'class' | 'type' | 'disabled' | 'onclick'> & {
 		text: string;
 		variant?: string;
-		type?: 'button' | 'submit' | 'reset';
+		type?: HTMLButtonAttributes['type'];
 		href?: string;
 		class?: string;
-		id?: string;
 		icon?: Snippet;
 		busyText?: string;
 		busy?: boolean;
 		disabled?: boolean;
+		onclick?: HTMLButtonAttributes['onclick'];
 	};
 
 	let {
@@ -24,7 +25,9 @@
 		icon,
 		busyText,
 		busy = false,
-		disabled = false
+		disabled = false,
+		onclick,
+		...buttonProps
 	}: Props = $props();
 
 	const variants: Record<string, string> = {
@@ -49,18 +52,20 @@
 </script>
 
 {#if href}
-	<a class={classes} {href} {id}>
+	<a {...buttonProps} class={classes} {href} {id}>
 		{#if icon}<span class="inline-flex items-center justify-center">{@render icon()}</span>{/if}
 		<span>{text}</span>
 	</a>
 {:else}
 	<button
+		{...buttonProps}
 		class={classes}
 		{type}
 		{id}
 		data-busy-text={busyText}
 		disabled={disabled || busy}
 		aria-busy={busy}
+		{onclick}
 	>
 		{#if busy}
 			<span class="size-4 shrink-0 animate-[spin_0.7s_linear_infinite] rounded-full border-2 border-current border-r-transparent" aria-hidden="true"></span>

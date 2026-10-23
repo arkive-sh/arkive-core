@@ -1,15 +1,13 @@
 import { redirect } from '@sveltejs/kit';
-import axios from 'axios';
 import { api } from '#lib/api.ts';
+import type { SetupStatus } from '../setup/types';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ request }) => {
-	try {
-		await api.get('/api/me', { headers: { Cookie: request.headers.get('cookie') ?? '' } });
-	} catch (error) {
-		if (axios.isAxiosError(error) && error.response?.status === 401) return {};
-		throw error;
-	}
+	const headers = { Cookie: request.headers.get('cookie') ?? '' };
+	const { data: setup } = await api.get<SetupStatus>('/api/setup/status', { headers });
+	if (!setup.initialized) redirect(303, '/setup');
+	if (setup.recoveryPending) redirect(303, '/setup/recovery-key');
 
-	redirect(303, '/');
+	return {};
 };

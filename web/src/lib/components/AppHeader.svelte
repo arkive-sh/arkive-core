@@ -31,7 +31,7 @@
 		try {
 			await logoutMutation.mutateAsync();
 			queryClient.clear();
-			await goto('/login');
+			await goto('/login', { replace: true });
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'Logout failed. Please try again.');
 		}

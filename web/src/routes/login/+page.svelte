@@ -28,7 +28,7 @@
 			queryClient.clear();
 			await loginMutation.mutateAsync({ email, password });
 			passwordInput.value = '';
-			await goto('/');
+			await goto('/', { replace: true });
 		} catch (cause) {
 			generalError = cause instanceof Error ? cause.message : 'Unlock failed. Try again.';
 		}

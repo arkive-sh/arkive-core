@@ -65,6 +65,14 @@ export interface PublicShareCryptoRecord {
 
 /** Typed RPC boundary between the Svelte app and the crypto worker. */
 export interface VaultWorkerCalls {
+	createInitialVault: {
+		params: { password: string };
+		result: { vaultSalt: string; encryptedMasterKey: string; masterKey: string };
+	};
+	prepareInitialRecovery: {
+		params: { masterKey: string; userID: string };
+		result: { recoveryKey: string; encryptedMasterKeyRecovery: string; recoveryProofPublicKey: string };
+	};
 	unlockVault: {
 		params: { password: string; salt: string; encryptedMasterKey: string; aad: string };
 		result: VaultState;
