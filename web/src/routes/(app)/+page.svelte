@@ -3,6 +3,7 @@
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { File, Lock } from '@lucide/svelte';
 	import { api } from '#lib/api.ts';
+	import { formatBytes, formatRelativeTime } from '#lib/utils/format.ts';
 	import type { DashboardRecentFile, DashboardResponse } from './dashboard';
 	import FileUploader from '#lib/components/FileUploader.svelte';
 	import { decryptSearchFile } from '#lib/vault/search.ts';
@@ -40,30 +41,6 @@
 		recentFiles = dashboard.recentFiles.map((file) => ({ ...file, name: '', hydrated: false }));
 		vaultError = dashboard.recentFiles.length ? 'Unlock your vault to view file names and sizes.' : '';
 	});
-
-	function formatBytes(bytes: number): string {
-		if (bytes <= 0) return '0 B';
-		const units = ['B', 'KB', 'MB', 'GB'];
-		const unit = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-		return `${(bytes / 1024 ** unit).toFixed(unit === 0 ? 0 : unit === 3 ? 2 : 1)} ${units[unit]}`;
-	}
-
-	function relativeTime(value: string): string {
-		const date = new Date(value);
-		const difference = Date.now() - date.getTime();
-		if (!Number.isFinite(difference)) return '';
-		if (difference < 0) {
-			return new Intl.DateTimeFormat('en-US', {
-				month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
-			}).format(date);
-		}
-		if (difference < 60_000) return 'Just now';
-		if (difference < 3_600_000) return `${Math.floor(difference / 60_000)}m ago`;
-		if (difference < 86_400_000) return `${Math.floor(difference / 3_600_000)}h ago`;
-		if (difference < 604_800_000) return `${Math.floor(difference / 86_400_000)}d ago`;
-		if (difference < 2_592_000_000) return `${Math.floor(difference / 604_800_000)}w ago`;
-		return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
-	}
 
 	async function hydrateRecentFiles(files = dashboard.recentFiles): Promise<void> {
 		const currentHydration = ++hydration;
@@ -179,7 +156,7 @@
 										</div>
 									</td>
 									<td class="px-4 py-3 font-mono text-sm text-(--text)">{file.hydrated && file.size !== undefined ? formatBytes(file.size) : 'Encrypted'}</td>
-									<td class="px-4 py-3 text-sm text-(--muted)">{relativeTime(file.updatedAt)}</td>
+									<td class="px-4 py-3 text-sm text-(--muted)">{formatRelativeTime(file.updatedAt)}</td>
 								</tr>
 							{/each}
 						{/if}

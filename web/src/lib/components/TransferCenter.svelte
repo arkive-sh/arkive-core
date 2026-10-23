@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { ArrowDownUp, ChevronDown, ChevronUp, Download, RotateCcw, Trash2, Upload, X } from '@lucide/svelte';
 	import type { TransferManager, TransferState } from '#lib/transfers/manager.ts';
+	import { formatBytes } from '#lib/utils/format.ts';
 
 	let { manager }: { manager: TransferManager } = $props();
 	let transfers = $state<TransferState>({ jobs: [], open: false });
@@ -10,12 +11,6 @@
 
 	onMount(() => manager.state.subscribe((next) => transfers = next));
 
-	function formatBytes(bytes: number): string {
-		if (bytes <= 0) return '0 B';
-		const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-		const unit = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-		return `${(bytes / 1024 ** unit).toFixed(unit === 0 ? 0 : unit >= 3 ? 2 : 1)} ${units[unit]}`;
-	}
 </script>
 
 {#if transfers.jobs.length}
