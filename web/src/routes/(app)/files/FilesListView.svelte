@@ -1,25 +1,33 @@
 <script lang="ts">
 	import { File as FileIcon, Folder } from '@lucide/svelte';
 	import { createTable, FlexRender, tableFeatures, type ColumnDef } from '@tanstack/svelte-table';
+	import { createWindowVirtualizer } from '@tanstack/svelte-virtual';
+	import { get } from 'svelte/store';
 	import { formatBytes, formatDate } from '#lib/utils/format.ts';
 	import { fileManagerEntryKey, type FileManagerEntry } from './types';
+
+	const GRID_COLUMNS = '3rem minmax(220px, 2fr) minmax(160px, 1.2fr) minmax(90px, 0.75fr) minmax(150px, 1fr)';
 
 	let {
 		rows,
 		selectedIds,
+		selectedCount,
+		loadedCount,
 		onToggleSelection,
 		onToggleAll,
 		onOpenFolder
 	}: {
 		rows: FileManagerEntry[];
 		selectedIds: ReadonlySet<string>;
+		selectedCount: number;
+		loadedCount: number;
 		onToggleSelection: (entry: FileManagerEntry) => void;
 		onToggleAll: () => void;
 		onOpenFolder: (id: string) => void;
 	} = $props();
 	let selectAllCheckbox = $state<HTMLInputElement>();
-	const selectedCount = $derived(rows.filter((entry) => selectedIds.has(fileManagerEntryKey(entry))).length);
-	const allSelected = $derived(rows.length > 0 && selectedCount === rows.length);
+	let tableBody = $state<HTMLTableSectionElement>();
+	const allSelected = $derived(loadedCount > 0 && selectedCount === loadedCount);
 
 	$effect(() => {
 		if (selectAllCheckbox) selectAllCheckbox.indeterminate = selectedCount > 0 && !allSelected;
@@ -41,14 +49,45 @@
 		getRowId: (row) => `${row.kind}:${row.id}`
 	});
 	const tableRows = $derived(table.getRowModel().rows);
+	const rowVirtualizer = createWindowVirtualizer({
+		count: 0,
+		estimateSize: () => 45,
+		overscan: 8,
+		getItemKey: (index) => tableRows[index]?.id ?? index
+	});
+	const virtualRows = $derived($rowVirtualizer.getVirtualItems());
+	const rowScrollMargin = $derived($rowVirtualizer.options.scrollMargin);
+
+	$effect(() => {
+		const body = tableBody;
+		const count = tableRows.length;
+		if (!body || typeof window === 'undefined') return;
+
+		const updateOptions = () => {
+			get(rowVirtualizer).setOptions({
+				count,
+				scrollMargin: body.getBoundingClientRect().top + window.scrollY
+			});
+		};
+		updateOptions();
+
+		const resizeObserver = new ResizeObserver(updateOptions);
+		const content = document.getElementById('main-content');
+		if (content) resizeObserver.observe(content);
+		window.addEventListener('resize', updateOptions);
+		return () => {
+			resizeObserver.disconnect();
+			window.removeEventListener('resize', updateOptions);
+		};
+	});
 </script>
 
 <div class="overflow-x-auto">
-	<table class="w-full border-collapse text-left">
-		<thead class="bg-(--surface-highest) text-xs font-semibold tracking-wide text-(--muted)">
+	<table class="grid w-full min-w-[760px] border-collapse text-left">
+		<thead class="grid bg-(--surface-highest) text-xs font-semibold tracking-wide text-(--muted)">
 			{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
-				<tr>
-					<th class="w-12 px-4 py-3 first:pl-5" scope="col">
+				<tr class="grid w-full" style={`grid-template-columns: ${GRID_COLUMNS}`}>
+					<th class="flex items-center px-4 py-3 first:pl-5" scope="col">
 						<input
 							bind:this={selectAllCheckbox}
 							class="size-4 cursor-pointer accent-(--accent)"
@@ -60,50 +99,57 @@
 						/>
 					</th>
 					{#each headerGroup.headers as header (header.id)}
-						<th class="whitespace-nowrap px-4 py-3 first:pl-5 last:pr-5">
+						<th class="flex items-center whitespace-nowrap px-4 py-3 first:pl-5 last:pr-5">
 							{#if !header.isPlaceholder}<FlexRender {header} />{/if}
 						</th>
 					{/each}
 				</tr>
 			{/each}
 		</thead>
-		<tbody class="divide-y divide-(--border-soft)">
-			{#each tableRows as row (row.id)}
-				<tr class={`transition-colors hover:bg-(--surface-highest) ${selectedIds.has(fileManagerEntryKey(row.original)) ? 'bg-(--surface-highest)' : ''}`}>
-					<td class="w-12 px-4 py-3 first:pl-5">
-						<input
-							class="size-4 cursor-pointer accent-(--accent)"
-							type="checkbox"
-							checked={selectedIds.has(fileManagerEntryKey(row.original))}
-							aria-label={`Select ${row.original.name}`}
-							onchange={() => onToggleSelection(row.original)}
-						/>
-					</td>
-					{#each row.getAllCells() as cell (cell.id)}
-						<td class="whitespace-nowrap px-4 py-3 first:pl-5 last:pr-5">
-							{#if cell.column.id === 'name' && row.original.kind === 'folder'}
-								<button class="inline-flex cursor-pointer items-center gap-2 text-left font-medium text-(--text) hover:text-(--accent)" type="button" onclick={() => onOpenFolder(row.original.id)}>
-									<Folder class="size-4 shrink-0 text-(--accent)" aria-hidden="true" />
-									<FlexRender {cell} />
-								</button>
-							{:else if cell.column.id === 'name'}
-								<span class="inline-flex items-center gap-2 font-medium">
-									<FileIcon class="size-4 shrink-0 text-(--muted)" aria-hidden="true" />
-									<FlexRender {cell} />
-								</span>
-							{:else if cell.column.id === 'size'}
-								<span class="text-(--muted)">{formatBytes(cell.getValue() as number | null)}</span>
-							{:else if cell.column.id === 'updatedAt'}
-								<span class="text-(--muted)">{formatDate(cell.getValue() as string)}</span>
-							{:else}
-								<span class="font-mono text-xs text-(--muted)">{cell.getValue() as string}</span>
-							{/if}
-						</td>
-					{/each}
-				</tr>
+		<tbody bind:this={tableBody} class="relative block divide-y divide-(--border-soft)" style={tableRows.length ? `height: ${$rowVirtualizer.getTotalSize()}px` : 'height: auto'}>
+			{#if !tableRows.length}
+				<tr class="grid w-full" style={`grid-template-columns: ${GRID_COLUMNS}`}><td class="col-span-5 px-5 py-10 text-center text-(--muted)">This folder is empty.</td></tr>
 			{:else}
-				<tr><td class="px-5 py-10 text-center text-(--muted)" colspan="5">This folder is empty.</td></tr>
-			{/each}
+				{#each virtualRows as virtualRow (virtualRow.key)}
+					{@const row = tableRows[virtualRow.index]}
+					<tr
+						data-index={virtualRow.index}
+						class={`absolute top-0 left-0 grid h-[45px] w-full transition-colors hover:bg-(--surface-highest) ${selectedIds.has(fileManagerEntryKey(row.original)) ? 'bg-(--surface-highest)' : 'bg-(--surface-raised)'}`}
+						style={`grid-template-columns: ${GRID_COLUMNS}; transform: translateY(${virtualRow.start - rowScrollMargin}px)`}
+					>
+						<td class="flex items-center px-4 py-3 first:pl-5">
+							<input
+								class="size-4 cursor-pointer accent-(--accent)"
+								type="checkbox"
+								checked={selectedIds.has(fileManagerEntryKey(row.original))}
+								aria-label={`Select ${row.original.name}`}
+								onchange={() => onToggleSelection(row.original)}
+							/>
+						</td>
+						{#each row.getAllCells() as cell (cell.id)}
+							<td class="flex min-w-0 items-center whitespace-nowrap px-4 py-3 first:pl-5 last:pr-5">
+								{#if cell.column.id === 'name' && row.original.kind === 'folder'}
+									<button class="inline-flex cursor-pointer items-center gap-2 text-left font-medium text-(--text) hover:text-(--accent)" type="button" onclick={() => onOpenFolder(row.original.id)}>
+										<Folder class="size-4 shrink-0 text-(--accent)" aria-hidden="true" />
+										<FlexRender {cell} />
+									</button>
+								{:else if cell.column.id === 'name'}
+									<span class="inline-flex items-center gap-2 font-medium">
+										<FileIcon class="size-4 shrink-0 text-(--muted)" aria-hidden="true" />
+										<FlexRender {cell} />
+									</span>
+								{:else if cell.column.id === 'size'}
+									<span class="text-(--muted)">{formatBytes(cell.getValue() as number | null)}</span>
+								{:else if cell.column.id === 'updatedAt'}
+									<span class="text-(--muted)">{formatDate(cell.getValue() as string)}</span>
+								{:else}
+									<span class="font-mono text-xs text-(--muted)">{cell.getValue() as string}</span>
+								{/if}
+							</td>
+						{/each}
+					</tr>
+				{/each}
+			{/if}
 		</tbody>
 	</table>
 </div>
