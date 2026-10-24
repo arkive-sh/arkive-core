@@ -58,7 +58,7 @@ func WebFiles(filesService *filessvc.Service, folderService *folderssvc.Service)
 		pageSize := pagination.ParsePageSizeParam(c.DefaultQuery("pageSize", "25"))
 		viewMode := resolveFilesViewMode(c)
 		query := filesPageQuery(c)
-		contents, err := folderService.ListEntries(c.Request.Context(), folderssvc.ListEntriesInput{
+		contents, err := folderService.ListEntriesPage(c.Request.Context(), folderssvc.ListEntriesPageInput{
 			UserID:   user.ID,
 			FolderID: nil,
 			Page:     page,
@@ -116,7 +116,7 @@ func WebFolder(filesService *filessvc.Service, folderService *folderssvc.Service
 		viewMode := resolveFilesViewMode(c)
 		query := filesPageQuery(c)
 
-		entries, err := folderService.ListEntries(c.Request.Context(), folderssvc.ListEntriesInput{
+		entries, err := folderService.ListEntriesPage(c.Request.Context(), folderssvc.ListEntriesPageInput{
 			UserID:   user.ID,
 			FolderID: &folderID,
 			Page:     page,

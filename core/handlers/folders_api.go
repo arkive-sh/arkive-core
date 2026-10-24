@@ -5,9 +5,11 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"arkive/core/models"
 	filessvc "arkive/core/services/files"
 	folderssvc "arkive/core/services/folders"
 	"arkive/pkg/apierror"
@@ -51,6 +53,33 @@ type createFolderResponse struct {
 type deleteEntriesResponse struct {
 	DeletedFiles   int `json:"deletedFiles"`
 	DeletedFolders int `json:"deletedFolders"`
+}
+
+type folderEntrySummary struct {
+	ID                string
+	VaultID           string
+	ParentFolderID    *string
+	EncryptedName     []byte
+	EncryptedMetadata []byte
+	UpdatedAt         time.Time
+}
+
+type fileEntrySummary struct {
+	ID                string
+	FolderID          *string
+	EncryptedMetadata []byte
+	EncryptedFileKey  []byte
+	UpdatedAt         time.Time
+}
+
+// Cursor pages avoid a total count and return only fields used by the file browser.
+type cursorFolderEntriesResponse struct {
+	FolderID   *string
+	Path       []folderEntrySummary
+	Folders    []folderEntrySummary
+	Files      []fileEntrySummary
+	NextCursor *string
+	HasMore    bool
 }
 
 func APICreateFolder(folderService *folderssvc.Service) gin.HandlerFunc {
@@ -144,11 +173,16 @@ func apiListFolderEntries(c *gin.Context, folderService *folderssvc.Service, fol
 		return
 	}
 
-	result, err := folderService.ListEntries(c.Request.Context(), folderssvc.ListEntriesInput{
+	cursorValue := strings.TrimSpace(c.Query("cursor"))
+	if c.Query("page") != "" {
+		apierror.InvalidPayload(c)
+		return
+	}
+	result, err := folderService.ListEntriesCursor(c.Request.Context(), folderssvc.ListEntriesCursorInput{
 		UserID:   userID.(string),
 		FolderID: folderID,
-		Page:     pagination.ParsePageParam(c.DefaultQuery("page", "1")),
 		PageSize: pagination.ParsePageSizeParam(c.DefaultQuery("pageSize", "50")),
+		Cursor:   cursorValue,
 	})
 	if err != nil {
 		switch err {
@@ -163,7 +197,43 @@ func apiListFolderEntries(c *gin.Context, folderService *folderssvc.Service, fol
 		return
 	}
 
-	c.JSON(http.StatusOK, result)
+	c.JSON(http.StatusOK, cursorFolderEntriesResponse{
+		FolderID:   result.FolderID,
+		Path:       folderEntrySummaries(result.Path),
+		Folders:    folderEntrySummaries(result.Folders),
+		Files:      fileEntrySummaries(result.Files),
+		NextCursor: result.NextCursor,
+		HasMore:    result.HasMore,
+	})
+}
+
+func folderEntrySummaries(folders []models.Folder) []folderEntrySummary {
+	entries := make([]folderEntrySummary, len(folders))
+	for i, folder := range folders {
+		entries[i] = folderEntrySummary{
+			ID:                folder.ID,
+			VaultID:           folder.VaultID,
+			ParentFolderID:    folder.ParentFolderID,
+			EncryptedName:     folder.EncryptedName,
+			EncryptedMetadata: folder.EncryptedMetadata,
+			UpdatedAt:         folder.UpdatedAt,
+		}
+	}
+	return entries
+}
+
+func fileEntrySummaries(files []models.File) []fileEntrySummary {
+	entries := make([]fileEntrySummary, len(files))
+	for i, file := range files {
+		entries[i] = fileEntrySummary{
+			ID:                file.ID,
+			FolderID:          file.FolderID,
+			EncryptedMetadata: file.EncryptedMetadata,
+			EncryptedFileKey:  file.EncryptedFileKey,
+			UpdatedAt:         file.UpdatedAt,
+		}
+	}
+	return entries
 }
 
 func APIMoveEntries(folderService *folderssvc.Service) gin.HandlerFunc {

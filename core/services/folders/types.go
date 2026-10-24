@@ -9,7 +9,7 @@ const (
 	EntryTypeFile   EntryType = "file"
 )
 
-type ListEntriesResult struct {
+type ListEntriesPageResult struct {
 	FolderID     *string
 	Page         int
 	PageSize     int
@@ -18,6 +18,15 @@ type ListEntriesResult struct {
 	Path         []models.Folder
 	Folders      []models.Folder
 	Files        []models.File
+}
+
+type ListEntriesCursorResult struct {
+	FolderID   *string
+	Path       []models.Folder
+	Folders    []models.Folder
+	Files      []models.File
+	NextCursor *string
+	HasMore    bool
 }
 
 type CreateFolderInput struct {
@@ -29,11 +38,18 @@ type CreateFolderInput struct {
 	SearchTokens      []models.FileSearchToken
 }
 
-type ListEntriesInput struct {
+type ListEntriesPageInput struct {
 	UserID   string
 	FolderID *string
 	Page     int
 	PageSize int
+}
+
+type ListEntriesCursorInput struct {
+	UserID   string
+	FolderID *string
+	PageSize int
+	Cursor   string
 }
 
 type MoveEntriesInput struct {
