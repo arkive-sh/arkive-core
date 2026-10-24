@@ -32,11 +32,11 @@ export interface TransferManager {
 	enqueueDownload(fileName: string, totalBytes: number, run: TransferRunner): string;
 	setLimits(limits: { concurrency: number; maxInProgressUploads: number }): void;
 	setOpen(open: boolean): void;
-	cancel(id: string): void;
+	cancelMany(ids: string[]): void;
 	cancelAll(): Promise<void>;
 	cancelUploads(): Promise<void>;
-	retry(id: string): void;
-	remove(id: string): void;
+	retryMany(ids: string[]): void;
+	removeMany(ids: string[]): void;
 	clearCompleted(): void;
 }
 
@@ -65,6 +65,14 @@ export function createTransferManager(): TransferManager {
 	let maxInProgressUploads = DEFAULT_MAX_IN_PROGRESS_UPLOADS;
 	let settingsReady = false;
 	let processing = false;
+	let uploadsChanged = false;
+
+	function notifyUploadsChangedIfIdle(): void {
+		if (!uploadsChanged || typeof window === 'undefined') return;
+		if (get(state).jobs.some((job) => job.kind === 'upload' && (job.status === 'queued' || job.status === 'running'))) return;
+		uploadsChanged = false;
+		window.dispatchEvent(new Event('arkive:upload-complete'));
+	}
 
 	function setLimits(limits: { concurrency: number; maxInProgressUploads: number }): void {
 		concurrency = Number.isFinite(limits.concurrency)
@@ -97,9 +105,8 @@ export function createTransferManager(): TransferManager {
 				transferredBytes: Math.min(job.totalBytes, Math.max(0, transferredBytes))
 			}), concurrency);
 			updateJob(job.id, { status: 'completed', transferredBytes: job.totalBytes });
-      runners.delete(job.id);
-
-      if (job.kind === 'upload' && typeof window !== 'undefined') window.dispatchEvent(new Event('arkive:upload-complete'));
+			runners.delete(job.id);
+			if (job.kind === 'upload') uploadsChanged = true;
 
 		} catch (error) {
 			if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
@@ -112,6 +119,7 @@ export function createTransferManager(): TransferManager {
 			}
 		} finally {
 			controllers.delete(job.id);
+			notifyUploadsChangedIfIdle();
 		}
 	}
 
@@ -156,41 +164,68 @@ export function createTransferManager(): TransferManager {
 		return id;
 	}
 
-	function cancel(id: string): void {
-		const job = get(state).jobs.find((entry) => entry.id === id);
-		if (!job || job.status === 'completed' || job.status === 'failed' || job.status === 'canceled') return;
-		if (job.status === 'queued') updateJob(id, { status: 'canceled' });
-		else controllers.get(id)?.abort();
+	function cancelMany(ids: string[]): void {
+		const selected = new Set(ids);
+		if (!selected.size) return;
+		const queued = new Set<string>();
+		for (const job of get(state).jobs) {
+			if (!selected.has(job.id)) continue;
+			if (job.status === 'queued') queued.add(job.id);
+			else if (job.status === 'running') controllers.get(job.id)?.abort();
+		}
+		if (queued.size) {
+			state.update((current) => ({
+				...current,
+				jobs: current.jobs.map((job) => queued.has(job.id) ? { ...job, status: 'canceled' } : job)
+			}));
+			notifyUploadsChangedIfIdle();
+		}
 	}
 
 	async function cancelAll(): Promise<void> {
 		const jobs = get(state).jobs;
-		for (const job of jobs) {
-			if (job.status === 'queued') updateJob(job.id, { status: 'canceled' });
-			else if (job.status === 'running') controllers.get(job.id)?.abort();
-		}
+		cancelMany(jobs.filter((job) => job.status === 'queued' || job.status === 'running').map((job) => job.id));
 		await Promise.all(jobs.filter((job) => job.status === 'running').map((job) => runningTasks.get(job.id)).filter((task): task is Promise<void> => !!task));
 	}
 
 	async function cancelUploads(): Promise<void> {
 		const jobs = get(state).jobs;
-		for (const job of jobs) {
-			if (job.kind !== 'upload') continue;
-			if (job.status === 'queued') updateJob(job.id, { status: 'canceled' });
-			else if (job.status === 'running') controllers.get(job.id)?.abort();
-		}
+		cancelMany(jobs.filter((job) => job.kind === 'upload' && (job.status === 'queued' || job.status === 'running')).map((job) => job.id));
 		await Promise.all(jobs.filter((job) => job.kind === 'upload').map((job) => runningTasks.get(job.id)).filter((task): task is Promise<void> => !!task));
 		for (const job of get(state).jobs) {
 			if (job.kind === 'upload') runners.delete(job.id);
 		}
 		state.update((current) => ({ ...current, jobs: current.jobs.filter((job) => job.kind !== 'upload') }));
+		notifyUploadsChangedIfIdle();
 	}
 
-	function retry(id: string): void {
-		const job = get(state).jobs.find((entry) => entry.id === id);
-		if (!job || !runners.has(id) || (job.status !== 'failed' && job.status !== 'canceled')) return;
-		updateJob(id, { status: 'queued', transferredBytes: 0, error: undefined });
+	function retryMany(ids: string[]): void {
+		const selected = new Set(ids);
+		const retryable = new Set(get(state).jobs
+			.filter((job) => selected.has(job.id) && runners.has(job.id) && (job.status === 'failed' || job.status === 'canceled'))
+			.map((job) => job.id));
+		if (!retryable.size) return;
+		state.update((current) => ({
+			...current,
+			jobs: current.jobs.map((job) => retryable.has(job.id)
+				? { ...job, status: 'queued', transferredBytes: 0, error: undefined }
+				: job)
+		}));
 		void runQueue();
+	}
+
+	function removeMany(ids: string[]): void {
+		const selected = new Set(ids);
+		const removed = new Set<string>();
+		state.update((current) => ({
+			...current,
+			jobs: current.jobs.filter((job) => {
+				const removable = selected.has(job.id) && job.status !== 'queued' && job.status !== 'running';
+				if (removable) removed.add(job.id);
+				return !removable;
+			})
+		}));
+		for (const id of removed) runners.delete(id);
 	}
 
 	return {
@@ -236,17 +271,11 @@ export function createTransferManager(): TransferManager {
 		setOpen(open) {
 			state.update((current) => ({ ...current, open }));
 		},
-		cancel,
+		cancelMany,
 		cancelAll,
 		cancelUploads,
-		retry,
-		remove(id) {
-			state.update((current) => ({
-				...current,
-				jobs: current.jobs.filter((job) => job.id !== id || job.status === 'queued' || job.status === 'running')
-			}));
-			if (!get(state).jobs.some((job) => job.id === id)) runners.delete(id);
-		},
+		retryMany,
+		removeMany,
 		clearCompleted() {
 			state.update((current) => ({
 				...current,
