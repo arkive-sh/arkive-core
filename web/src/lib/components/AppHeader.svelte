@@ -38,7 +38,7 @@
 	}
 </script>
 
-<header class={`sticky top-0 z-15 border-b border-(--border) bg-(--bg) ${desktopCollapsed ? '' : 'min-[961px]:ml-60'}`}>
+<header class={`sticky top-0 z-15 border-b border-(--border) bg-(--bg) ${desktopCollapsed ? '' : 'min-[961px]:ml-16'}`}>
 	<div class="flex min-h-14 flex-wrap items-center justify-between gap-4 px-3 pt-2 pb-3 min-[721px]:px-5 min-[721px]:pb-2">
 		<div class="flex min-w-0 flex-1 items-center gap-3 min-[721px]:flex-initial">
 			<button

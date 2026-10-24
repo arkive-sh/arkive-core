@@ -142,23 +142,55 @@ func (r *Repository) ListChildFolders(ctx context.Context, db database.PgExecuto
 }
 
 func (r *Repository) ListChildFoldersAfter(ctx context.Context, db database.PgExecutor, userID string, parentID *string, limit int, afterCreatedAt *time.Time, afterID *string) ([]models.Folder, error) {
-	query := `SELECT
-		id, vault_id, parent_folder_id, encrypted_name, encrypted_metadata, created_at, updated_at
-	FROM
-		folders
-	WHERE
-		user_id = $1
-		AND deleted_at IS NULL
-		AND (
-			($2::uuid IS NULL AND parent_folder_id IS NULL)
-			OR parent_folder_id = $2
-		)`
+	query := `WITH RECURSIVE folder_page AS MATERIALIZED (
+		SELECT
+			id, vault_id, parent_folder_id, encrypted_name, encrypted_metadata, created_at, updated_at
+		FROM folders
+		WHERE
+			user_id = $1
+			AND deleted_at IS NULL
+			AND (
+				($2::uuid IS NULL AND parent_folder_id IS NULL)
+				OR parent_folder_id = $2
+			)`
 	args := []any{userID, parentID, limit}
 	if afterCreatedAt != nil {
 		query += ` AND (created_at, id) < ($4, $5::uuid)`
 		args = append(args, afterCreatedAt, afterID)
 	}
-	query += ` ORDER BY created_at DESC, id DESC LIMIT $3`
+	query += `
+		ORDER BY created_at DESC, id DESC
+		LIMIT $3
+	), folder_tree(root_id, folder_id) AS (
+		SELECT id, id FROM folder_page
+		UNION
+		SELECT tree.root_id, child.id
+		FROM folder_tree tree
+		INNER JOIN folders child ON child.parent_folder_id = tree.folder_id
+		WHERE child.user_id = $1 AND child.deleted_at IS NULL
+	), folder_sizes AS (
+		SELECT tree.root_id, COALESCE(SUM(file.plaintext_size), 0)::bigint AS size_bytes
+		FROM folder_tree tree
+		INNER JOIN files file ON file.folder_id = tree.folder_id
+		WHERE
+			file.user_id = $1
+			AND file.upload_status = 'complete'
+			AND file.expires_at IS NULL
+			AND file.deleted_at IS NULL
+		GROUP BY tree.root_id
+	)
+	SELECT
+		folder_page.id,
+		folder_page.vault_id,
+		folder_page.parent_folder_id,
+		folder_page.encrypted_name,
+		folder_page.encrypted_metadata,
+		folder_page.created_at,
+		folder_page.updated_at,
+		COALESCE(folder_sizes.size_bytes, 0)::bigint
+	FROM folder_page
+	LEFT JOIN folder_sizes ON folder_sizes.root_id = folder_page.id
+	ORDER BY folder_page.created_at DESC, folder_page.id DESC`
 	rows, err := db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -169,6 +201,7 @@ func (r *Repository) ListChildFoldersAfter(ctx context.Context, db database.PgEx
 	for rows.Next() {
 		var folder models.Folder
 		var parentFolderID *string
+		var sizeBytes int64
 		if err := rows.Scan(
 			&folder.ID,
 			&folder.VaultID,
@@ -177,10 +210,12 @@ func (r *Repository) ListChildFoldersAfter(ctx context.Context, db database.PgEx
 			&folder.EncryptedMetadata,
 			&folder.CreatedAt,
 			&folder.UpdatedAt,
+			&sizeBytes,
 		); err != nil {
 			return nil, err
 		}
 		folder.ParentFolderID = parentFolderID
+		folder.SizeBytes = &sizeBytes
 		folders = append(folders, folder)
 	}
 	if rows.Err() != nil {
