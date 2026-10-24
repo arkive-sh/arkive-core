@@ -1,6 +1,6 @@
 import { getDownloadCapabilities } from "./capabilities.js";
 import { canUseBlobFallback } from "./download_limits.js";
-import { DOWNLOAD_POLICY } from "./download_policy.js";
+import { DOWNLOAD_POLICY, getTransferConcurrency } from "./download_policy.js";
 import { clearDownloadWarning, showLargeDownloadWarning } from "./download_warning.js";
 import { downloadBlobFallback } from "./download_blob.js";
 import { downloadStreamedToDisk } from "./download_stream.js";
@@ -13,6 +13,7 @@ export async function downloadFile(options) {
   const caps = getDownloadCapabilities();
   const controller = new AbortController();
   const signal = options.signal || controller.signal;
+  const concurrency = await getTransferConcurrency();
 
   clearDownloadWarning(warningContainer);
 
@@ -25,9 +26,7 @@ export async function downloadFile(options) {
       signal: signal,
       onProgress: options.onProgress,
       readAhead: options.readAhead,
-      prepareConcurrency: caps.isAndroid
-        ? DOWNLOAD_POLICY.mobileDownloadConcurrency
-        : DOWNLOAD_POLICY.desktopFilePickerConcurrency,
+      prepareConcurrency: concurrency,
     });
     return { mode: "stream" };
   }
@@ -40,6 +39,7 @@ export async function downloadFile(options) {
       filename: options.filename,
       signal: signal,
       onProgress: options.onProgress,
+      concurrency: concurrency,
     });
     return { mode: "blob" };
   }
@@ -55,6 +55,7 @@ export async function downloadFile(options) {
       },
       fileId: record.fileId,
       filename: options.filename || record.filename || "download",
+      concurrency: concurrency,
     });
     return { mode: "service-worker" };
   }

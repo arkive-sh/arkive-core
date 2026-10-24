@@ -41,20 +41,40 @@ function storageURL(url: string): string {
 	return new URL(url, CORE_API_ORIGIN).toString();
 }
 
-async function getPartURL(started: UploadStart, partNumber: number, signal?: AbortSignal): Promise<string> {
-	if (started.uploadUrl) return storageURL(started.uploadUrl);
-	const parts = Array.from(
-		{ length: Math.min(PRESIGN_BATCH_SIZE, started.uploadPartCount - partNumber + 1) },
-		(_, index) => partNumber + index
-	);
-	const { data: result } = await api.post<{ urls: Record<string, string> }>(
-		`/api/uploads/${encodeURIComponent(started.uploadSessionId)}/parts/presign`,
-		{ parts },
-		{ signal }
-	);
-	const url = result.urls[String(partNumber)];
-	if (!url) throw new Error('Storage did not provide an upload URL.');
-	return storageURL(url);
+function createPartURLGetter(started: UploadStart, signal: AbortSignal): (partNumber: number) => Promise<string> {
+	const urls = new Map<number, string>();
+	let nextBatchStart = 1;
+	let pendingBatch: Promise<void> | null = null;
+
+	return async (partNumber) => {
+		if (started.uploadUrl) return storageURL(started.uploadUrl);
+		while (!urls.has(partNumber)) {
+			if (!pendingBatch) {
+				const first = nextBatchStart;
+				if (first > started.uploadPartCount) throw new Error('Storage did not provide an upload URL.');
+				const parts = Array.from(
+					{ length: Math.min(PRESIGN_BATCH_SIZE, started.uploadPartCount - first + 1) },
+					(_, index) => first + index
+				);
+				nextBatchStart += parts.length;
+				pendingBatch = api.post<{ urls: Record<string, string> }>(
+					`/api/uploads/${encodeURIComponent(started.uploadSessionId)}/parts/presign`,
+					{ parts },
+					{ signal }
+				).then(({ data }) => {
+					for (const [number, url] of Object.entries(data.urls)) urls.set(Number(number), url);
+					if (parts.some((number) => !urls.has(number))) throw new Error('Storage did not provide an upload URL.');
+				}).finally(() => {
+					pendingBatch = null;
+				});
+			}
+			await pendingBatch;
+		}
+		const url = urls.get(partNumber);
+		urls.delete(partNumber);
+		if (!url) throw new Error('Storage did not provide an upload URL.');
+		return storageURL(url);
+	};
 }
 
 async function cancelUpload(uploadSessionId: string): Promise<void> {
@@ -86,7 +106,8 @@ export async function uploadFile(
 	file: File,
 	signal?: AbortSignal,
 	onProgress?: (uploadedBytes: number) => void,
-	folderId: string | null = null
+	folderId: string | null = null,
+	partConcurrency = 3
 ): Promise<void> {
 	if (!file.size) throw new Error('Empty files cannot be uploaded.');
 	if (!(await waitUntilReady()).unlocked) throw new Error('Unlock the vault before uploading files.');
@@ -132,17 +153,28 @@ export async function uploadFile(
 			},
 			started.totalChunks
 		);
-		const chunks: Array<{ n: number; plain_size: number; cipher_size: number; hash: string }> = [];
+		const chunksByPart: Array<Array<{ n: number; plain_size: number; cipher_size: number; hash: string }>> = new Array(started.uploadPartCount);
+		let uploadedBytes = 0;
+		let nextPartNumber = 1;
+		const concurrency = Number.isFinite(partConcurrency)
+			? Math.min(8, Math.max(1, Math.floor(partConcurrency)))
+			: 3;
+		const partController = new AbortController();
+		const abortParts = () => partController.abort();
+		signal?.addEventListener('abort', abortParts, { once: true });
+		if (signal?.aborted) abortParts();
+		const getURL = createPartURLGetter(started, partController.signal);
 
-		for (let partNumber = 1; partNumber <= started.uploadPartCount; partNumber += 1) {
-			checkAborted(signal);
+		async function uploadPart(partNumber: number): Promise<void> {
+			checkAborted(partController.signal);
 			const partStart = (partNumber - 1) * started.uploadPartSize;
 			const partEnd = Math.min(partStart + started.uploadPartSize, file.size);
 			const firstChunk = Math.floor(partStart / started.fileChunkSize) + 1;
 			const encryptedChunks: Uint8Array[] = [];
+			const partChunks: Array<{ n: number; plain_size: number; cipher_size: number; hash: string }> = [];
 			try {
 				for (let offset = partStart, chunkNumber = firstChunk; offset < partEnd; offset += started.fileChunkSize, chunkNumber += 1) {
-					checkAborted(signal);
+					checkAborted(partController.signal);
 					const end = Math.min(offset + started.fileChunkSize, partEnd);
 					const plaintext = new Uint8Array(await file.slice(offset, end).arrayBuffer());
 					try {
@@ -152,7 +184,7 @@ export async function uploadFile(
 							`arkive:file-chunk:v1:${started.vaultId}:${started.fileId}:${chunkNumber}:${started.fileChunkSize}:${started.totalChunks}`
 						);
 						encryptedChunks.push(encrypted.encryptedChunk);
-						chunks.push({
+						partChunks.push({
 							n: chunkNumber,
 							plain_size: end - offset,
 							cipher_size: encrypted.encryptedSize,
@@ -172,21 +204,23 @@ export async function uploadFile(
 						offset += chunk.byteLength;
 					}
 					const { hash } = await hashUploadPayload(body);
-					const response = await fetch(await getPartURL(started, partNumber, signal), {
+					const response = await fetch(await getURL(partNumber), {
 						method: 'PUT',
 						headers: { 'Content-Type': 'application/octet-stream' },
 						body: body.buffer,
-						signal
+						signal: partController.signal
 					});
 					if (!response.ok) throw new Error('Encrypted file data upload failed.');
 					if (started.providerUploadId) {
 						await api.post(
 							`/api/uploads/${encodeURIComponent(started.uploadSessionId)}/parts`,
 							{ partNumber, encryptedHash: hash, etag: response.headers.get('etag') || '' },
-							{ signal }
+							{ signal: partController.signal }
 						);
 					}
-				onProgress?.(partEnd);
+					chunksByPart[partNumber - 1] = partChunks;
+					uploadedBytes += partEnd - partStart;
+					onProgress?.(uploadedBytes);
 				} finally {
 					body.fill(0);
 				}
@@ -194,6 +228,24 @@ export async function uploadFile(
 				for (const chunk of encryptedChunks) chunk.fill(0);
 			}
 		}
+
+		const workers = Array.from({ length: Math.min(concurrency, started.uploadPartCount) }, async () => {
+			while (nextPartNumber <= started.uploadPartCount) {
+				checkAborted(partController.signal);
+				const partNumber = nextPartNumber++;
+				await uploadPart(partNumber);
+			}
+		});
+		try {
+			await Promise.all(workers);
+		} catch (error) {
+			partController.abort();
+			await Promise.allSettled(workers);
+			throw error;
+		} finally {
+			signal?.removeEventListener('abort', abortParts);
+		}
+		const chunks = chunksByPart.flat();
 
 		checkAborted(signal);
 		const finalized = await finalizeUpload(

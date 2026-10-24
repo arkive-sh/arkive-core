@@ -3,6 +3,7 @@
 	import { onMount } from 'svelte';
 	import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
 	import type { Snippet } from 'svelte';
+	import { api } from '#lib/api';
 	import ToastHost from '#lib/components/ToastHost.svelte';
 	import TransferCenter from '#lib/components/TransferCenter.svelte';
 	import { createTransferManager, provideTransferManager } from '#lib/transfers/manager.ts';
@@ -16,6 +17,9 @@
 	provideTransferManager(transferManager);
 
 	onMount(() => {
+		void api.get<{ concurrency: number; maxInProgressUploads: number }>('/api/transfers/limits')
+			.then(({ data }) => transferManager.setLimits(data))
+			.catch(() => transferManager.setLimits({ concurrency: 3, maxInProgressUploads: 300 }));
 		const onUploadComplete = () => {
 			void queryClient.invalidateQueries({ queryKey: ['search'] });
 			void queryClient.invalidateQueries({ queryKey: ['folder-entries'] });

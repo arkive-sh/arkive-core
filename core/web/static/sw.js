@@ -29,6 +29,7 @@ self.addEventListener("message", function(event) {
       filename: String(session.filename || "download"),
       plaintextSize: Number(session.plaintextSize || 0),
       mimeType: String(session.mimeType || "application/octet-stream"),
+      concurrency: Math.min(8, Math.max(1, Math.floor(Number(session.concurrency || 1)))),
       clientId: event.source && event.source.id ? String(event.source.id) : "",
       downloadOffset: 0,
       openedAt: now,
@@ -202,21 +203,40 @@ async function handleDownloadRequest(url) {
 
   const stream = new ReadableStream({
     async pull(controller) {
-      const offset = Number(session.downloadOffset || 0);
       const total = Number(session.plaintextSize || 0);
-      if (offset >= total) {
+      if (Number(session.downloadOffset || 0) >= total) {
         controller.close();
         finalizeSession(session, "complete");
         return;
       }
 
-      const end = Math.min(total - 1, offset + MAX_STREAM_RESPONSE_BYTES - 1);
-
       try {
-        const bytes = await requestBytesFromClient(session, offset, end);
-        touchSession(session);
-        session.downloadOffset = end + 1;
-        controller.enqueue(bytes);
+        const ranges = [];
+        let offset = Number(session.downloadOffset || 0);
+        for (let i = 0; i < session.concurrency && offset < total; i++) {
+          const end = Math.min(total - 1, offset + MAX_STREAM_RESPONSE_BYTES - 1);
+          ranges.push({ start: offset, end: end });
+          offset = end + 1;
+        }
+        const results = await Promise.all(ranges.map(async function(range) {
+          try {
+            return { bytes: await requestBytesFromClient(session, range.start, range.end) };
+          } catch (error) {
+            return { error: error };
+          }
+        }));
+        const failed = results.find(function(result) { return result.error; });
+        if (failed) throw failed.error;
+
+        for (let i = 0; i < ranges.length; i++) {
+          touchSession(session);
+          session.downloadOffset = ranges[i].end + 1;
+          controller.enqueue(results[i].bytes);
+        }
+        if (session.downloadOffset >= total) {
+          controller.close();
+          finalizeSession(session, "complete");
+        }
       } catch (error) {
         controller.error(error);
         finalizeSession(session, "error");
