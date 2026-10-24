@@ -24,12 +24,13 @@ export interface UploadItem {
 	relativePath: string;
 }
 
-export type TransferRunner = (signal: AbortSignal, onProgress: (transferredBytes: number) => void) => Promise<void>;
+export type TransferRunner = (signal: AbortSignal, onProgress: (transferredBytes: number) => void, concurrency: number) => Promise<void>;
 
 export interface TransferManager {
 	state: Readable<TransferState>;
 	enqueueUploads(files: UploadItem[], vaultId: string): number;
 	enqueueDownload(fileName: string, totalBytes: number, run: TransferRunner): string;
+	setLimits(limits: { concurrency: number; maxInProgressUploads: number }): void;
 	setOpen(open: boolean): void;
 	cancel(id: string): void;
 	cancelAll(): Promise<void>;
@@ -40,6 +41,9 @@ export interface TransferManager {
 }
 
 const contextKey = Symbol('arkive-transfer-manager');
+const DEFAULT_TRANSFER_CONCURRENCY = 3;
+const DEFAULT_MAX_IN_PROGRESS_UPLOADS = 300;
+const MAX_CONCURRENT_UPLOAD_FILES = 4;
 
 export function provideTransferManager(manager: TransferManager): void {
 	setContext(contextKey, manager);
@@ -57,7 +61,21 @@ export function createTransferManager(): TransferManager {
 	const runners = new Map<string, TransferRunner>();
 	const controllers = new Map<string, AbortController>();
 	const runningTasks = new Map<string, Promise<void>>();
+	let concurrency = DEFAULT_TRANSFER_CONCURRENCY;
+	let maxInProgressUploads = DEFAULT_MAX_IN_PROGRESS_UPLOADS;
+	let settingsReady = false;
 	let processing = false;
+
+	function setLimits(limits: { concurrency: number; maxInProgressUploads: number }): void {
+		concurrency = Number.isFinite(limits.concurrency)
+			? Math.min(8, Math.max(1, Math.floor(limits.concurrency)))
+			: DEFAULT_TRANSFER_CONCURRENCY;
+		maxInProgressUploads = Number.isFinite(limits.maxInProgressUploads) && limits.maxInProgressUploads > 0
+			? Math.floor(limits.maxInProgressUploads)
+			: DEFAULT_MAX_IN_PROGRESS_UPLOADS;
+		settingsReady = true;
+		void runQueue();
+	}
 
 	function updateJob(id: string, update: Partial<Transfer>): void {
 		state.update((current) => ({
@@ -77,7 +95,7 @@ export function createTransferManager(): TransferManager {
 		try {
 			await run(controller.signal, (transferredBytes) => updateJob(job.id, {
 				transferredBytes: Math.min(job.totalBytes, Math.max(0, transferredBytes))
-			}));
+			}), concurrency);
 			updateJob(job.id, { status: 'completed', transferredBytes: job.totalBytes });
       runners.delete(job.id);
 
@@ -98,18 +116,27 @@ export function createTransferManager(): TransferManager {
 	}
 
 	async function runQueue(): Promise<void> {
-		if (processing || typeof window === 'undefined') return;
+		if (processing || !settingsReady || typeof window === 'undefined') return;
 		processing = true;
 		try {
 			while (true) {
-				const next = get(state).jobs.find((job) => job.status === 'queued');
+				const jobs = get(state).jobs;
+				const next = jobs.find((job) => job.status === 'queued');
 				if (!next) return;
+
+				const active = jobs.filter((job) => job.status === 'running');
+				const canRun = next.kind === 'upload'
+					? active.every((job) => job.kind === 'upload') && active.length < Math.min(MAX_CONCURRENT_UPLOAD_FILES, maxInProgressUploads)
+					: active.length === 0;
+				if (!canRun) return;
+
 				const controller = new AbortController();
 				controllers.set(next.id, controller);
-				const task = runJob(next, controller);
+				const task = runJob(next, controller).finally(() => {
+					runningTasks.delete(next.id);
+					void runQueue();
+				});
 				runningTasks.set(next.id, task);
-				await task;
-				runningTasks.delete(next.id);
 			}
 		} finally {
 			processing = false;
@@ -168,6 +195,7 @@ export function createTransferManager(): TransferManager {
 
 	return {
 		state,
+		setLimits,
 		enqueueUploads(files, vaultId) {
 			if (typeof window === 'undefined' || files.length === 0) return 0;
 			const folderIds = new Map<string, Promise<string>>();
@@ -194,9 +222,9 @@ export function createTransferManager(): TransferManager {
 
 			const jobs = files.map((file): Transfer => {
 				const id = crypto.randomUUID();
-				runners.set(id, async (signal, onProgress) => {
+				runners.set(id, async (signal, onProgress, concurrency) => {
 					const { uploadFile } = await import('#lib/uploads/upload-file.ts');
-					await uploadFile(file.file, signal, onProgress, await getFolderId(file, signal));
+					await uploadFile(file.file, signal, onProgress, await getFolderId(file, signal), concurrency);
 				});
 				return { id, kind: 'upload', fileName: file.relativePath || file.file.name, totalBytes: file.file.size, transferredBytes: 0, status: 'queued' };
 			});

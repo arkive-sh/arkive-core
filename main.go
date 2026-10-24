@@ -107,7 +107,7 @@ func main() {
 		corsMiddleware = cors.New(cors.Config{
 			AllowOrigins:     cfg.CORSAllowedOrigins,
 			AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-			AllowHeaders:     []string{"Content-Type", "Authorization"},
+			AllowHeaders:     []string{"Content-Type", "Authorization", "If-None-Match"},
 			AllowCredentials: true,
 		})
 	}

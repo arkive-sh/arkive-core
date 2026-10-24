@@ -9,7 +9,7 @@ export async function downloadStreamedToDisk(options) {
   const onProgress = options.onProgress;
   const readAhead = options.readAhead === true;
   const prepareConcurrency = Math.min(
-    3,
+    8,
     Math.max(1, Number(options.prepareConcurrency || 1)),
   );
 

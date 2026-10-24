@@ -11,12 +11,6 @@ function formatBytes(bytes) {
 	return (bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) + " " + units[i];
 }
 
-function parseQueueLimit(value, fallback) {
-	const parsed = Number.parseInt(String(value || ""), 10);
-	if (!Number.isFinite(parsed)) return fallback;
-	return parsed <= 0 ? 0 : parsed;
-}
-
 function parsePositiveInt(value, fallback) {
 	const parsed = Number.parseInt(String(value || ""), 10);
 	if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
@@ -57,13 +51,10 @@ export async function initUploads() {
 		showUploadErrorToast({ error: error && error.message ? error.message : "Failed to load upload limits." });
 		return;
 	}
-	const uploadLimits = {
-		maxQueueItems: parseQueueLimit(rawLimits && rawLimits.maxQueueItems, 300),
-	};
 	const uploadPolicy = {
 		partConcurrency: parsePositiveInt(rawLimits && rawLimits.partConcurrency, 3),
 	};
-	const runner = getUploadService({ limits: uploadLimits, policy: uploadPolicy });
+	const runner = getUploadService({ policy: uploadPolicy });
 	window.uploadRunner = uploadService;
 	let selectedFiles = [];
 	let state = { jobs: [], activeJobId: null };

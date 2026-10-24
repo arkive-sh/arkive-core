@@ -8,9 +8,6 @@ export function getUploadService(options) {
     return service;
   }
 
-  if (options && options.limits) {
-    service.limits = options.limits;
-  }
   if (options && options.policy) {
     service.policy = options.policy;
   }

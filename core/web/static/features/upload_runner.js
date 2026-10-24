@@ -74,17 +74,7 @@ function uuid() {
 }
 
 function getUploadPartConcurrency(defaultConcurrency) {
-	const base = Math.max(1, Number(defaultConcurrency || 1));
-	const nav = typeof navigator !== "undefined" ? navigator : null;
-	const ua = nav && nav.userAgent ? nav.userAgent : "";
-	const platform = nav && nav.platform ? nav.platform : "";
-	const maxTouchPoints = nav && nav.maxTouchPoints ? nav.maxTouchPoints : 0;
-	const isIOS = /iPad|iPhone|iPod/.test(ua) || (platform === "MacIntel" && maxTouchPoints > 1);
-	const isAndroid = /android/i.test(ua);
-	if (!isIOS && !isAndroid) {
-		return base;
-	}
-	return Math.min(base, 2);
+	return Math.min(8, Math.max(1, Math.floor(Number(defaultConcurrency || 1))));
 }
 
 function joinUint8Arrays(parts) {
@@ -158,7 +148,6 @@ function currentFolderId() {
 export class UploadRunner {
 	constructor(options) {
 		options = options || {};
-		this.limits = options.limits || { maxQueueItems: 300 };
 		this.policy = options.policy || {};
 		this.jobs = new Map();
 		this.jobCleanupTimers = new Map();
@@ -244,10 +233,6 @@ export class UploadRunner {
 	}
 
 	async addFiles(files) {
-		const nextQueueSize = this.activeQueueCount() + files.length;
-		if (this.limits.maxQueueItems > 0 && nextQueueSize > this.limits.maxQueueItems) {
-			throw new Error("Upload queue limit reached (" + this.limits.maxQueueItems + " max items)");
-		}
 		const batchId = uuid();
 		for (let i = 0; i < files.length; i++) {
 			const file = files[i];
@@ -284,16 +269,6 @@ export class UploadRunner {
 		}
 		this.emitState();
 		void this.processQueue();
-	}
-
-	activeQueueCount() {
-		let total = 0;
-		for (const job of this.jobs.values()) {
-			if (!isTerminal(job.public.status)) {
-				total++;
-			}
-		}
-		return total;
 	}
 
 	nextQueuedJob() {

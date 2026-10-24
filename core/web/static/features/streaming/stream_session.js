@@ -141,6 +141,7 @@ export async function openStreamSession(options) {
     filename: String(settings.filename || metadata.name || record.filename || "download"),
     plaintextSize: Number(metadata.size || record.plaintextSize || 0),
     mimeType: String(metadata.mime || record.mimeType || "application/octet-stream"),
+    concurrency: Math.min(8, Math.max(1, Math.floor(Number(settings.concurrency || 1)))),
   };
 
   providers.set(sessionId, {

@@ -7,28 +7,41 @@ export async function downloadBlobFallback(options) {
   const filename = options.filename;
   const signal = options.signal;
   const onProgress = options.onProgress;
-  const parts = [];
+  const concurrency = Math.min(8, Math.max(1, Number(options.concurrency || 1)));
+  const parts = new Array(chunkMap.length);
   let written = 0;
+  let nextIndex = 0;
+  let failure = null;
 
-  for (let i = 0; i < chunkMap.length; i++) {
-    const chunk = chunkMap[i];
-    if (signal && signal.aborted) {
-      throw new DOMException("Download aborted", "AbortError");
-    }
+  async function worker() {
+    while (nextIndex < chunkMap.length && !failure) {
+      const i = nextIndex++;
+      const chunk = chunkMap[i];
+      try {
+        if (signal && signal.aborted) {
+          throw new DOMException("Download aborted", "AbortError");
+        }
 
-    const encryptedBuffer = await fetchEncryptedChunk(record.sourceUrl, chunk, signal);
-    const plainBuffer = await decryptChunk(chunk, encryptedBuffer);
-    parts.push(plainBuffer);
+        const encryptedBuffer = await fetchEncryptedChunk(record.sourceUrl, chunk, signal);
+        const plainBuffer = await decryptChunk(chunk, encryptedBuffer);
+        parts[i] = plainBuffer;
 
-    written += Number(chunk.plainSize || plainBuffer.length || 0);
-    if (onProgress) {
-      onProgress({
-        written: written,
-        total: Number(record.plaintextSize || 0),
-        chunkIndex: chunk.index,
-      });
+        written += Number(chunk.plainSize || plainBuffer.length || 0);
+        if (onProgress) {
+          onProgress({
+            written: written,
+            total: Number(record.plaintextSize || 0),
+            chunkIndex: chunk.index,
+          });
+        }
+      } catch (error) {
+        failure = error;
+      }
     }
   }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, chunkMap.length) }, worker));
+  if (failure) throw failure;
 
   const blob = new Blob(parts, {
     type: record.mimeType || "application/octet-stream",

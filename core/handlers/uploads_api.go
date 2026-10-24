@@ -143,17 +143,57 @@ func APIUploadLimits(settingsService *settingssvc.Service) gin.HandlerFunc {
 		if settings.MaxQueueItems <= 0 {
 			settings.MaxQueueItems = defaults.MaxQueueItems
 		}
-		if settings.PartConcurrency <= 0 {
+		if settings.PartConcurrency < 1 || settings.PartConcurrency > 8 {
 			settings.PartConcurrency = defaults.PartConcurrency
 		}
 		if settings.StaleUploadHours <= 0 {
 			settings.StaleUploadHours = defaults.StaleUploadHours
+		}
+		etag := `"` + strconv.Itoa(settings.MaxQueueItems) + `-` + strconv.Itoa(settings.PartConcurrency) + `-` + strconv.Itoa(settings.StaleUploadHours) + `"`
+		if useSettingsCache(c, etag) {
+			return
 		}
 
 		c.JSON(http.StatusOK, gin.H{
 			"maxQueueItems":    settings.MaxQueueItems,
 			"partConcurrency":  settings.PartConcurrency,
 			"staleUploadHours": settings.StaleUploadHours,
+		})
+	}
+}
+
+// Cache the settings because it's not very important for uploads.
+// This will be applied on the next request
+func useSettingsCache(c *gin.Context, etag string) bool {
+	c.Header("Cache-Control", "private, no-cache")
+	c.Header("ETag", etag)
+	if c.GetHeader("If-None-Match") != etag {
+		return false
+	}
+	c.Status(http.StatusNotModified)
+	return true
+}
+
+func APITransferLimits(settingsService *settingssvc.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		settings, err := settingsService.UploadSettings(c.Request.Context())
+		defaults := settingssvc.DefaultUploadSettings()
+		if err != nil {
+			settings = defaults
+		}
+		if settings.MaxQueueItems <= 0 {
+			settings.MaxQueueItems = defaults.MaxQueueItems
+		}
+		if settings.PartConcurrency < 1 || settings.PartConcurrency > 8 {
+			settings.PartConcurrency = defaults.PartConcurrency
+		}
+		etag := `"transfer-v1-` + strconv.Itoa(settings.MaxQueueItems) + `-` + strconv.Itoa(settings.PartConcurrency) + `"`
+		if useSettingsCache(c, etag) {
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"concurrency":          settings.PartConcurrency,
+			"maxInProgressUploads": settings.MaxQueueItems,
 		})
 	}
 }

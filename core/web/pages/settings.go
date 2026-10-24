@@ -255,13 +255,13 @@ func SettingsPage(props SettingsPageProps) web.Page {
 								h.Class("settings-stack"),
 								components.Card(components.CardProps{
 									Title:    "Current limits",
-									Subtitle: "Upload limits applied by the server.",
+									Subtitle: "Transfer limits applied by the server.",
 									Class:    "settings-card",
 									Body: []g.Node{
 										h.Div(
 											h.Class("settings-meta"),
-											h.Div(h.Class("settings-meta-row"), h.Span(g.Text("Queue items")), h.Span(g.Text(strconv.Itoa(uploadSettings.MaxQueueItems)))),
-											h.Div(h.Class("settings-meta-row"), h.Span(g.Text("Part concurrency")), h.Span(g.Text(strconv.Itoa(uploadSettings.PartConcurrency)))),
+											h.Div(h.Class("settings-meta-row"), h.Span(g.Text("In-progress uploads")), h.Span(g.Text(strconv.Itoa(uploadSettings.MaxQueueItems)))),
+											h.Div(h.Class("settings-meta-row"), h.Span(g.Text("Transfer concurrency")), h.Span(g.Text(strconv.Itoa(uploadSettings.PartConcurrency)))),
 											h.Div(h.Class("settings-meta-row"), h.Span(g.Text("Stale upload window")), h.Span(g.Text(strconv.Itoa(uploadSettings.StaleUploadHours)+" hour(s)"))),
 										),
 									},
