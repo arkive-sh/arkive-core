@@ -2,8 +2,11 @@ package folders
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -93,10 +96,11 @@ func (s *Service) CreateFolder(ctx context.Context, input CreateFolderInput) (mo
 	return folder, nil
 }
 
-func (s *Service) ListEntries(ctx context.Context, input ListEntriesInput) (ListEntriesResult, error) {
+// ListEntriesPage serves the legacy Go-rendered file pages.
+func (s *Service) ListEntriesPage(ctx context.Context, input ListEntriesPageInput) (ListEntriesPageResult, error) {
 	userID := strings.TrimSpace(input.UserID)
 	if userID == "" {
-		return ListEntriesResult{}, ErrInvalidInput
+		return ListEntriesPageResult{}, ErrInvalidInput
 	}
 	if input.Page < 1 {
 		input.Page = 1
@@ -110,24 +114,24 @@ func (s *Service) ListEntries(ctx context.Context, input ListEntriesInput) (List
 	if input.FolderID != nil {
 		folderID, err := validateUUIDValue(*input.FolderID)
 		if err != nil {
-			return ListEntriesResult{}, err
+			return ListEntriesPageResult{}, err
 		}
 		if _, err := s.folderRepo.GetForUser(ctx, s.db, userID, folderID); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return ListEntriesResult{}, ErrNotFound
+				return ListEntriesPageResult{}, ErrNotFound
 			}
-			return ListEntriesResult{}, err
+			return ListEntriesPageResult{}, err
 		}
 		input.FolderID = &folderID
 	}
 
 	folderCount, err := s.folderRepo.CountChildFolders(ctx, s.db, userID, input.FolderID)
 	if err != nil {
-		return ListEntriesResult{}, err
+		return ListEntriesPageResult{}, err
 	}
 	fileCount, err := s.fileRepo.CountByFolder(ctx, s.db, userID, input.FolderID)
 	if err != nil {
-		return ListEntriesResult{}, err
+		return ListEntriesPageResult{}, err
 	}
 
 	totalEntries := folderCount + fileCount
@@ -137,7 +141,7 @@ func (s *Service) ListEntries(ctx context.Context, input ListEntriesInput) (List
 	}
 	offset := (input.Page - 1) * input.PageSize
 
-	result := ListEntriesResult{
+	result := ListEntriesPageResult{
 		FolderID:     input.FolderID,
 		Page:         input.Page,
 		PageSize:     input.PageSize,
@@ -151,9 +155,9 @@ func (s *Service) ListEntries(ctx context.Context, input ListEntriesInput) (List
 		path, err := s.folderPath(ctx, s.db, userID, *input.FolderID)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return ListEntriesResult{}, ErrNotFound
+				return ListEntriesPageResult{}, ErrNotFound
 			}
-			return ListEntriesResult{}, err
+			return ListEntriesPageResult{}, err
 		}
 		result.Path = path
 	}
@@ -168,7 +172,7 @@ func (s *Service) ListEntries(ctx context.Context, input ListEntriesInput) (List
 		}
 		folders, err := s.folderRepo.ListChildFolders(ctx, s.db, userID, input.FolderID, folderLimit, offset)
 		if err != nil {
-			return ListEntriesResult{}, err
+			return ListEntriesPageResult{}, err
 		}
 		result.Folders = folders
 
@@ -176,7 +180,7 @@ func (s *Service) ListEntries(ctx context.Context, input ListEntriesInput) (List
 		if remaining > 0 {
 			files, err := s.fileRepo.ListByFolder(ctx, s.db, userID, input.FolderID, remaining, 0)
 			if err != nil {
-				return ListEntriesResult{}, err
+				return ListEntriesPageResult{}, err
 			}
 			result.Files = files
 		}
@@ -186,7 +190,171 @@ func (s *Service) ListEntries(ctx context.Context, input ListEntriesInput) (List
 	fileOffset := offset - folderCount
 	files, err := s.fileRepo.ListByFolder(ctx, s.db, userID, input.FolderID, input.PageSize, fileOffset)
 	if err != nil {
-		return ListEntriesResult{}, err
+		return ListEntriesPageResult{}, err
+	}
+	result.Files = files
+	return result, nil
+}
+
+// ListEntriesCursor serves the file browser API without counting all entries.
+func (s *Service) ListEntriesCursor(ctx context.Context, input ListEntriesCursorInput) (ListEntriesCursorResult, error) {
+	userID := strings.TrimSpace(input.UserID)
+	if userID == "" {
+		return ListEntriesCursorResult{}, ErrInvalidInput
+	}
+	if input.PageSize <= 0 {
+		input.PageSize = defaultPageSize
+	}
+	if input.PageSize > maxPageSize {
+		input.PageSize = maxPageSize
+	}
+	if input.FolderID != nil {
+		folderID, err := validateUUIDValue(*input.FolderID)
+		if err != nil {
+			return ListEntriesCursorResult{}, err
+		}
+		input.FolderID = &folderID
+	}
+	return s.listEntriesByCursor(ctx, userID, input.FolderID, input.PageSize, strings.TrimSpace(input.Cursor))
+}
+
+type listEntriesCursor struct {
+	FolderID  string `json:"folderId"`
+	Stage     string `json:"stage"`
+	CreatedAt string `json:"createdAt,omitempty"`
+	ID        string `json:"id,omitempty"`
+}
+
+type listEntriesCursorState struct {
+	stage          string
+	afterCreatedAt *time.Time
+	afterID        *string
+}
+
+func decodeListEntriesCursor(value, folderID string) (listEntriesCursorState, error) {
+	if value == "" {
+		return listEntriesCursorState{stage: "folders"}, nil
+	}
+	if len(value) > 2048 {
+		return listEntriesCursorState{}, ErrInvalidInput
+	}
+
+	decoded, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil {
+		return listEntriesCursorState{}, ErrInvalidInput
+	}
+	var cursor listEntriesCursor
+	if err := json.Unmarshal(decoded, &cursor); err != nil || cursor.FolderID != folderID {
+		return listEntriesCursorState{}, ErrInvalidInput
+	}
+	if cursor.Stage != "folders" && cursor.Stage != "files" {
+		return listEntriesCursorState{}, ErrInvalidInput
+	}
+	if (cursor.CreatedAt == "") != (cursor.ID == "") {
+		return listEntriesCursorState{}, ErrInvalidInput
+	}
+
+	state := listEntriesCursorState{stage: cursor.Stage}
+	if cursor.CreatedAt == "" {
+		if cursor.Stage == "folders" {
+			return listEntriesCursorState{}, ErrInvalidInput
+		}
+		return state, nil
+	}
+
+	createdAt, err := time.Parse(time.RFC3339Nano, cursor.CreatedAt)
+	if err != nil {
+		return listEntriesCursorState{}, ErrInvalidInput
+	}
+	id, err := validateUUIDValue(cursor.ID)
+	if err != nil {
+		return listEntriesCursorState{}, ErrInvalidInput
+	}
+	state.afterCreatedAt = &createdAt
+	state.afterID = &id
+	return state, nil
+}
+
+func encodeListEntriesCursor(folderID, stage string, createdAt *time.Time, id string) string {
+	cursor := listEntriesCursor{FolderID: folderID, Stage: stage}
+	if createdAt != nil {
+		cursor.CreatedAt = createdAt.UTC().Format(time.RFC3339Nano)
+		cursor.ID = id
+	}
+	encoded, _ := json.Marshal(cursor)
+	return base64.RawURLEncoding.EncodeToString(encoded)
+}
+
+func (s *Service) listEntriesByCursor(ctx context.Context, userID string, folderID *string, pageSize int, value string) (ListEntriesCursorResult, error) {
+	folderScope := ""
+	if folderID != nil {
+		folderScope = *folderID
+	}
+	cursor, err := decodeListEntriesCursor(value, folderScope)
+	if err != nil {
+		return ListEntriesCursorResult{}, err
+	}
+
+	result := ListEntriesCursorResult{
+		FolderID: folderID,
+		Path:     []models.Folder{},
+		Folders:  []models.Folder{},
+		Files:    []models.File{},
+	}
+	if folderID != nil {
+		path, err := s.folderPath(ctx, s.db, userID, *folderID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ListEntriesCursorResult{}, ErrNotFound
+			}
+			return ListEntriesCursorResult{}, err
+		}
+		result.Path = path
+	}
+
+	if cursor.stage == "folders" {
+		folders, err := s.folderRepo.ListChildFoldersAfter(ctx, s.db, userID, folderID, pageSize+1, cursor.afterCreatedAt, cursor.afterID)
+		if err != nil {
+			return ListEntriesCursorResult{}, err
+		}
+		if len(folders) > pageSize {
+			folders = folders[:pageSize]
+			result.Folders = folders
+			last := folders[len(folders)-1]
+			next := encodeListEntriesCursor(folderScope, "folders", &last.CreatedAt, last.ID)
+			result.NextCursor = &next
+			result.HasMore = true
+			return result, nil
+		}
+		result.Folders = folders
+	}
+
+	remaining := pageSize - len(result.Folders)
+	fileLimit := remaining + 1
+	if fileLimit < 1 {
+		fileLimit = 1
+	}
+	var afterCreatedAt *time.Time
+	var afterID *string
+	if cursor.stage == "files" {
+		afterCreatedAt = cursor.afterCreatedAt
+		afterID = cursor.afterID
+	}
+	files, err := s.fileRepo.ListByFolderAfter(ctx, s.db, userID, folderID, fileLimit, afterCreatedAt, afterID)
+	if err != nil {
+		return ListEntriesCursorResult{}, err
+	}
+	if len(files) > remaining {
+		result.HasMore = true
+		if remaining == 0 {
+			next := encodeListEntriesCursor(folderScope, "files", nil, "")
+			result.NextCursor = &next
+			return result, nil
+		}
+		files = files[:remaining]
+		last := files[len(files)-1]
+		next := encodeListEntriesCursor(folderScope, "files", &last.CreatedAt, last.ID)
+		result.NextCursor = &next
 	}
 	result.Files = files
 	return result, nil

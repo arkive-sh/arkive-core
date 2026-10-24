@@ -2,6 +2,7 @@ package foldersrepo
 
 import (
 	"context"
+	"time"
 
 	"arkive/core/database"
 	"arkive/core/models"
@@ -128,6 +129,54 @@ func (r *Repository) ListChildFolders(ctx context.Context, db database.PgExecuto
 			&folder.CreatedAt,
 			&folder.UpdatedAt,
 			&folder.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		folder.ParentFolderID = parentFolderID
+		folders = append(folders, folder)
+	}
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+	return folders, nil
+}
+
+func (r *Repository) ListChildFoldersAfter(ctx context.Context, db database.PgExecutor, userID string, parentID *string, limit int, afterCreatedAt *time.Time, afterID *string) ([]models.Folder, error) {
+	query := `SELECT
+		id, vault_id, parent_folder_id, encrypted_name, encrypted_metadata, created_at, updated_at
+	FROM
+		folders
+	WHERE
+		user_id = $1
+		AND deleted_at IS NULL
+		AND (
+			($2::uuid IS NULL AND parent_folder_id IS NULL)
+			OR parent_folder_id = $2
+		)`
+	args := []any{userID, parentID, limit}
+	if afterCreatedAt != nil {
+		query += ` AND (created_at, id) < ($4, $5::uuid)`
+		args = append(args, afterCreatedAt, afterID)
+	}
+	query += ` ORDER BY created_at DESC, id DESC LIMIT $3`
+	rows, err := db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	folders := []models.Folder{}
+	for rows.Next() {
+		var folder models.Folder
+		var parentFolderID *string
+		if err := rows.Scan(
+			&folder.ID,
+			&folder.VaultID,
+			&parentFolderID,
+			&folder.EncryptedName,
+			&folder.EncryptedMetadata,
+			&folder.CreatedAt,
+			&folder.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

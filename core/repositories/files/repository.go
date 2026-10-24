@@ -2,6 +2,7 @@ package filerepo
 
 import (
 	"context"
+	"time"
 
 	"arkive/core/database"
 	"arkive/core/models"
@@ -458,6 +459,55 @@ func (r *Repository) ListByFolder(ctx context.Context, db database.PgExecutor, u
 			&file.CreatedAt,
 			&file.UpdatedAt,
 			&file.ExpiresAt,
+		); err != nil {
+			return nil, err
+		}
+		file.FolderID = scannedFolderID
+		files = append(files, file)
+	}
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+	return files, nil
+}
+
+func (r *Repository) ListByFolderAfter(ctx context.Context, db database.PgExecutor, userID string, folderID *string, limit int, afterCreatedAt *time.Time, afterID *string) ([]models.File, error) {
+	query := `SELECT
+		id, folder_id, encrypted_metadata, encrypted_file_key, created_at, updated_at
+	FROM
+		files
+	WHERE
+		user_id = $1
+		AND upload_status = 'complete'
+		AND expires_at IS NULL
+		AND deleted_at IS NULL
+		AND (
+			($2::uuid IS NULL AND folder_id IS NULL)
+			OR folder_id = $2
+		)`
+	args := []any{userID, folderID, limit}
+	if afterCreatedAt != nil {
+		query += ` AND (created_at, id) < ($4, $5::uuid)`
+		args = append(args, afterCreatedAt, afterID)
+	}
+	query += ` ORDER BY created_at DESC, id DESC LIMIT $3`
+	rows, err := db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	files := []models.File{}
+	for rows.Next() {
+		var file models.File
+		var scannedFolderID *string
+		if err := rows.Scan(
+			&file.ID,
+			&scannedFolderID,
+			&file.EncryptedMetadata,
+			&file.EncryptedFileKey,
+			&file.CreatedAt,
+			&file.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

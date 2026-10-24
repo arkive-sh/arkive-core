@@ -2,8 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { createQuery } from '@tanstack/svelte-query';
-	import { ChevronLeft, ChevronRight } from '@lucide/svelte';
+	import { createInfiniteQuery } from '@tanstack/svelte-query';
 	import { api } from '#lib/api.ts';
 	import FilesGridView from './FilesGridView.svelte';
 	import FilesListView from './FilesListView.svelte';
@@ -35,41 +34,48 @@
 
 	type FolderEntriesResponse = {
 		FolderID: string | null;
-		Page: number;
-		PageSize: number;
-		TotalEntries: number;
-		TotalPages: number;
 		Path: ApiFolder[];
 		Folders: ApiFolder[];
 		Files: ApiFile[];
+		NextCursor: string | null;
+		HasMore: boolean;
 	};
 
 	let { data }: PageProps = $props();
 	let rows = $state<FileManagerEntry[]>([]);
 	let breadcrumbs = $state<Array<{ id: string | null; name: string }>>([{ id: null, name: 'Files' }]);
+	let entriesReady = $state(false);
+	let sentinel: HTMLDivElement | undefined = $state();
 	let decryptGeneration = 0;
+	let hydratedPageCount = 0;
+	let hydratedFolderId: string | null | undefined;
+	let hydratedFirstPage: FolderEntriesResponse | undefined;
+	let hydrationQueue = Promise.resolve();
 
-	const folderId = $derived(page.url.searchParams.get('folder_id'));
-	const pageNumber = $derived(Math.max(1, Number(page.url.searchParams.get('page')) || 1));
+	const folderId = $derived(page.url.searchParams.get('folder_id') || null);
 	const viewMode = $derived(page.url.searchParams.get('view') === 'grid' ? 'grid' : 'list');
-	const entriesQuery = createQuery(() => ({
-		queryKey: ['folder-entries', folderId, pageNumber],
+	const entriesQuery = createInfiniteQuery(() => ({
+		queryKey: ['folder-entries', folderId],
 		enabled: $vaultUnlocked,
-		queryFn: async () => {
+		initialPageParam: null as string | null,
+		queryFn: async ({ pageParam, signal }) => {
 			const endpoint = folderId
 				? `/api/folders/${encodeURIComponent(folderId)}/entries`
 				: '/api/folders/root/entries';
 			const { data: result } = await api.get<FolderEntriesResponse>(endpoint, {
-				params: { page: pageNumber, pageSize: PAGE_SIZE }
+				params: { cursor: pageParam ?? undefined, pageSize: PAGE_SIZE },
+				signal
 			});
 			return result;
-		}
+		},
+		getNextPageParam: (lastPage) => lastPage.HasMore ? lastPage.NextCursor || undefined : undefined
 	}));
 
-	const result = $derived(entriesQuery.data);
-
-	async function decryptEntries(response: FolderEntriesResponse): Promise<void> {
-		const generation = ++decryptGeneration;
+	async function decryptEntries(
+		response: FolderEntriesResponse,
+		generation: number,
+		setPath: boolean
+	): Promise<{ rows: FileManagerEntry[]; breadcrumbs?: Array<{ id: string | null; name: string }> } | undefined> {
 		const vaultId = data.user.id;
 		const [folderRows, fileRows] = await Promise.all([
 			Promise.all(response.Folders.map(async (folder): Promise<FileManagerEntry> => {
@@ -125,7 +131,7 @@
 			}))
 		]);
 
-		const path = await Promise.all(response.Path.map(async (folder) => {
+		const path = setPath ? await Promise.all(response.Path.map(async (folder) => {
 			try {
 				const decrypted = await decryptSearchFolder({
 					id: folder.ID,
@@ -139,28 +145,98 @@
 			} catch {
 				return { id: folder.ID, name: 'Encrypted folder' };
 			}
-		}));
+		})) : undefined;
 
 		if (generation !== decryptGeneration || !$vaultUnlocked) return;
-		rows = [...folderRows, ...fileRows];
-		breadcrumbs = [{ id: null, name: 'Files' }, ...path];
+		return {
+			rows: [...folderRows, ...fileRows],
+			breadcrumbs: path ? [{ id: null, name: 'Files' }, ...path] : undefined
+		};
 	}
 
 	$effect(() => {
-		const response = result;
-		if (!$vaultUnlocked || !response) {
+		const activeFolderId = folderId;
+		const pages = entriesQuery.data?.pages ?? [];
+		if (activeFolderId !== hydratedFolderId) {
+			hydratedFolderId = activeFolderId;
 			decryptGeneration += 1;
+			hydratedPageCount = 0;
+			hydratedFirstPage = undefined;
+			hydrationQueue = Promise.resolve();
 			rows = [];
 			breadcrumbs = [{ id: null, name: 'Files' }];
+			entriesReady = false;
+		}
+		if (pages[0] && (pages[0].FolderID?.toLowerCase() ?? null) !== (activeFolderId?.toLowerCase() ?? null)) return;
+		if (!$vaultUnlocked) {
+			decryptGeneration += 1;
+			hydratedPageCount = 0;
+			hydrationQueue = Promise.resolve();
+			rows = [];
+			breadcrumbs = [{ id: null, name: 'Files' }];
+			entriesReady = false;
 			return;
 		}
-		void decryptEntries(response);
+		if (pages.length < hydratedPageCount || pages[0] !== hydratedFirstPage) {
+			const keepCurrentRows = Boolean(pages[0]) && entriesReady;
+			decryptGeneration += 1;
+			hydratedPageCount = 0;
+			hydratedFirstPage = pages[0];
+			hydrationQueue = Promise.resolve();
+			if (keepCurrentRows) {
+				const generation = decryptGeneration;
+				void (async () => {
+					const refreshedRows: FileManagerEntry[] = [];
+					let refreshedBreadcrumbs: Array<{ id: string | null; name: string }> | undefined;
+					for (const [index, response] of pages.entries()) {
+						const decrypted = await decryptEntries(response, generation, index === 0);
+						if (!decrypted) return;
+						refreshedRows.push(...decrypted.rows);
+						if (decrypted.breadcrumbs) refreshedBreadcrumbs = decrypted.breadcrumbs;
+					}
+					if (generation !== decryptGeneration || !$vaultUnlocked) return;
+					rows = refreshedRows;
+					if (refreshedBreadcrumbs) breadcrumbs = refreshedBreadcrumbs;
+					hydratedPageCount = pages.length;
+				})();
+				return;
+			}
+			rows = [];
+			breadcrumbs = [{ id: null, name: 'Files' }];
+			entriesReady = false;
+		}
+
+		const generation = decryptGeneration;
+		const start = hydratedPageCount;
+		const newPages = pages.slice(start);
+		hydratedPageCount = pages.length;
+		for (const [index, response] of newPages.entries()) {
+			hydrationQueue = hydrationQueue.then(async () => {
+				const decrypted = await decryptEntries(response, generation, start === 0 && index === 0);
+				if (!decrypted) return;
+				rows = [...rows, ...decrypted.rows];
+				if (decrypted.breadcrumbs) breadcrumbs = decrypted.breadcrumbs;
+				entriesReady = true;
+			});
+		}
 	});
 
-	function urlFor(folder: string | null, nextPage = 1, nextView: FilesView = viewMode): string {
+	$effect(() => {
+		const target = sentinel;
+		if (!target || !entriesQuery.hasNextPage || entriesQuery.isFetching) return;
+
+		const observer = new IntersectionObserver(([entry]) => {
+			if (entry?.isIntersecting && entriesQuery.hasNextPage && !entriesQuery.isFetching) {
+				void entriesQuery.fetchNextPage();
+			}
+		}, { rootMargin: '400px' });
+		observer.observe(target);
+		return () => observer.disconnect();
+	});
+
+	function urlFor(folder: string | null, nextView: FilesView = viewMode): string {
 		const params = new URLSearchParams();
 		if (folder) params.set('folder_id', folder);
-		if (nextPage > 1) params.set('page', String(nextPage));
 		if (nextView === 'grid') params.set('view', 'grid');
 		const query = params.toString();
 		return query ? `/files?${query}` : '/files';
@@ -171,7 +247,7 @@
 	}
 
 	function changeView(view: FilesView): void {
-		void goto(urlFor(folderId, pageNumber, view));
+		void goto(urlFor(folderId, view));
 	}
 
 	onMount(() => {
@@ -210,30 +286,34 @@
 			<section class="rounded-md border border-(--border) bg-(--surface-raised) px-5 py-8 text-(--muted)" role="status">
 				Loading files…
 			</section>
-		{:else if entriesQuery.isError}
+		{:else if entriesQuery.isError && !entriesQuery.data}
 			<section class="rounded-md border border-(--border) bg-(--surface-raised) px-5 py-8 text-red-400" role="alert">
 				{entriesQuery.error instanceof Error ? entriesQuery.error.message : 'Could not load files.'}
 			</section>
-		{:else if result}
+		{:else if entriesQuery.data}
 			<section class="overflow-hidden rounded-md border border-(--border) bg-(--surface-raised)" aria-label="Files and folders">
-				{#if viewMode === 'grid'}
+				{#if !entriesReady}
+					<div class="px-5 py-8 text-(--muted)" role="status">Decrypting file details…</div>
+				{:else if viewMode === 'grid'}
 					<FilesGridView {rows} onOpenFolder={openFolder} />
 				{:else}
 					<FilesListView {rows} onOpenFolder={openFolder} />
 				{/if}
 
-				<footer class="flex flex-wrap items-center justify-between gap-3 border-t border-(--border-soft) px-5 py-3 text-sm text-(--muted)">
-					<span>{result.TotalEntries} {result.TotalEntries === 1 ? 'item' : 'items'}</span>
-					<div class="flex items-center gap-2">
-						<span>Page {result.Page} of {Math.max(1, result.TotalPages)}</span>
-						<button class="inline-flex size-9 cursor-pointer items-center justify-center rounded border border-(--border) disabled:cursor-not-allowed disabled:opacity-40" type="button" aria-label="Previous page" disabled={result.Page <= 1} onclick={() => void goto(urlFor(folderId, result.Page - 1))}>
-							<ChevronLeft class="size-4" aria-hidden="true" />
-						</button>
-						<button class="inline-flex size-9 cursor-pointer items-center justify-center rounded border border-(--border) disabled:cursor-not-allowed disabled:opacity-40" type="button" aria-label="Next page" disabled={result.Page >= result.TotalPages} onclick={() => void goto(urlFor(folderId, result.Page + 1))}>
-							<ChevronRight class="size-4" aria-hidden="true" />
+				{#if entriesReady && entriesQuery.hasNextPage}
+					<div bind:this={sentinel} class="flex flex-col items-center gap-2 border-t border-(--border-soft) px-5 py-3 text-sm text-(--muted)">
+						{#if entriesQuery.isFetchNextPageError}
+							<p class="m-0 text-red-400" role="alert">{entriesQuery.error instanceof Error ? entriesQuery.error.message : 'Could not load more files.'}</p>
+						{/if}
+						<button class="cursor-pointer rounded border border-(--border) px-4 py-2 disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={entriesQuery.isFetchingNextPage} onclick={() => void entriesQuery.fetchNextPage()}>
+							{entriesQuery.isFetchingNextPage ? 'Loading more…' : 'Load more'}
 						</button>
 					</div>
-				</footer>
+				{:else if entriesReady}
+					<footer class="border-t border-(--border-soft) px-5 py-3 text-sm text-(--muted)">
+						{rows.length} {rows.length === 1 ? 'item' : 'items'}
+					</footer>
+				{/if}
 			</section>
 		{/if}
 	</div>

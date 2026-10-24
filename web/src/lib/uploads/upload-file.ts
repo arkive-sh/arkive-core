@@ -174,6 +174,7 @@ export async function uploadFile(
 					const { hash } = await hashUploadPayload(body);
 					const response = await fetch(await getPartURL(started, partNumber, signal), {
 						method: 'PUT',
+						headers: { 'Content-Type': 'application/octet-stream' },
 						body: body.buffer,
 						signal
 					});
