@@ -17,4 +17,8 @@ export interface FileManagerEntry {
 	thumbnail?: ThumbnailSource;
 }
 
+export function fileManagerEntryKey(entry: Pick<FileManagerEntry, 'id' | 'kind'>): string {
+	return `${entry.kind}:${entry.id}`;
+}
+
 export type FilesView = 'list' | 'grid';
