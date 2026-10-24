@@ -2,9 +2,28 @@
 	import { File as FileIcon, Folder } from '@lucide/svelte';
 	import { createTable, FlexRender, tableFeatures, type ColumnDef } from '@tanstack/svelte-table';
 	import { formatBytes, formatDate } from '#lib/utils/format.ts';
-	import type { FileManagerEntry } from './types';
+	import { fileManagerEntryKey, type FileManagerEntry } from './types';
 
-	let { rows, onOpenFolder }: { rows: FileManagerEntry[]; onOpenFolder: (id: string) => void } = $props();
+	let {
+		rows,
+		selectedIds,
+		onToggleSelection,
+		onToggleAll,
+		onOpenFolder
+	}: {
+		rows: FileManagerEntry[];
+		selectedIds: ReadonlySet<string>;
+		onToggleSelection: (entry: FileManagerEntry) => void;
+		onToggleAll: () => void;
+		onOpenFolder: (id: string) => void;
+	} = $props();
+	let selectAllCheckbox = $state<HTMLInputElement>();
+	const selectedCount = $derived(rows.filter((entry) => selectedIds.has(fileManagerEntryKey(entry))).length);
+	const allSelected = $derived(rows.length > 0 && selectedCount === rows.length);
+
+	$effect(() => {
+		if (selectAllCheckbox) selectAllCheckbox.indeterminate = selectedCount > 0 && !allSelected;
+	});
 
 	const features = tableFeatures({});
 	const columns: ColumnDef<typeof features, FileManagerEntry>[] = [
@@ -29,6 +48,17 @@
 		<thead class="bg-(--surface-highest) text-xs font-semibold tracking-wide text-(--muted)">
 			{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
 				<tr>
+					<th class="w-12 px-4 py-3 first:pl-5" scope="col">
+						<input
+							bind:this={selectAllCheckbox}
+							class="size-4 cursor-pointer accent-(--accent)"
+							type="checkbox"
+							disabled={!rows.length}
+							checked={allSelected}
+							aria-label="Select all loaded entries"
+							onchange={onToggleAll}
+						/>
+					</th>
 					{#each headerGroup.headers as header (header.id)}
 						<th class="whitespace-nowrap px-4 py-3 first:pl-5 last:pr-5">
 							{#if !header.isPlaceholder}<FlexRender {header} />{/if}
@@ -39,7 +69,16 @@
 		</thead>
 		<tbody class="divide-y divide-(--border-soft)">
 			{#each tableRows as row (row.id)}
-				<tr class="transition-colors hover:bg-(--surface-highest)">
+				<tr class={`transition-colors hover:bg-(--surface-highest) ${selectedIds.has(fileManagerEntryKey(row.original)) ? 'bg-(--surface-highest)' : ''}`}>
+					<td class="w-12 px-4 py-3 first:pl-5">
+						<input
+							class="size-4 cursor-pointer accent-(--accent)"
+							type="checkbox"
+							checked={selectedIds.has(fileManagerEntryKey(row.original))}
+							aria-label={`Select ${row.original.name}`}
+							onchange={() => onToggleSelection(row.original)}
+						/>
+					</td>
 					{#each row.getAllCells() as cell (cell.id)}
 						<td class="whitespace-nowrap px-4 py-3 first:pl-5 last:pr-5">
 							{#if cell.column.id === 'name' && row.original.kind === 'folder'}
@@ -63,7 +102,7 @@
 					{/each}
 				</tr>
 			{:else}
-				<tr><td class="px-5 py-10 text-center text-(--muted)" colspan="4">This folder is empty.</td></tr>
+				<tr><td class="px-5 py-10 text-center text-(--muted)" colspan="5">This folder is empty.</td></tr>
 			{/each}
 		</tbody>
 	</table>

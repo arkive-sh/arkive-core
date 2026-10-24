@@ -2,12 +2,16 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { createInfiniteQuery } from '@tanstack/svelte-query';
+	import { Trash2, X } from '@lucide/svelte';
+	import { SvelteSet } from 'svelte/reactivity';
+	import { createInfiniteQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { api } from '#lib/api.ts';
+	import Modal from '#lib/components/Modal.svelte';
+	import { toast } from '#lib/toast.ts';
 	import FilesGridView from './FilesGridView.svelte';
 	import FilesListView from './FilesListView.svelte';
 	import FilesViewToggle from './FilesViewToggle.svelte';
-	import type { FileManagerEntry, FilesView } from './types';
+	import { fileManagerEntryKey, type FileManagerEntry, type FilesView } from './types';
 	import { decryptSearchFile, decryptSearchFolder } from '#lib/vault/search.ts';
 	import { waitUntilReady } from '#lib/vault/session.ts';
 	import { vaultUnlocked } from '#lib/vault/state.ts';
@@ -46,6 +50,10 @@
 	let breadcrumbs = $state<Array<{ id: string | null; name: string }>>([{ id: null, name: 'Files' }]);
 	let entriesReady = $state(false);
 	let sentinel: HTMLDivElement | undefined = $state();
+	let deleteDialogOpen = $state(false);
+	let deleting = $state(false);
+	const selectedIds = new SvelteSet<string>();
+	const queryClient = useQueryClient();
 	let decryptGeneration = 0;
 	let hydratedPageCount = 0;
 	let hydratedFolderId: string | null | undefined;
@@ -54,6 +62,8 @@
 
 	const folderId = $derived(page.url.searchParams.get('folder_id') || null);
 	const viewMode = $derived(page.url.searchParams.get('view') === 'grid' ? 'grid' : 'list');
+	const selectedEntries = $derived(rows.filter((entry) => selectedIds.has(fileManagerEntryKey(entry))));
+	const allRowsSelected = $derived(rows.length > 0 && selectedEntries.length === rows.length);
 	const entriesQuery = createInfiniteQuery(() => ({
 		queryKey: ['folder-entries', folderId],
 		enabled: $vaultUnlocked,
@@ -166,6 +176,7 @@
 			rows = [];
 			breadcrumbs = [{ id: null, name: 'Files' }];
 			entriesReady = false;
+			selectedIds.clear();
 		}
 		if (pages[0] && (pages[0].FolderID?.toLowerCase() ?? null) !== (activeFolderId?.toLowerCase() ?? null)) return;
 		if (!$vaultUnlocked) {
@@ -246,6 +257,46 @@
 		void goto(urlFor(id));
 	}
 
+	function toggleSelection(entry: FileManagerEntry): void {
+		const key = fileManagerEntryKey(entry);
+		if (selectedIds.has(key)) selectedIds.delete(key);
+		else selectedIds.add(key);
+	}
+
+	function toggleAllLoaded(): void {
+		if (allRowsSelected) {
+			for (const entry of rows) selectedIds.delete(fileManagerEntryKey(entry));
+			return;
+		}
+		for (const entry of rows) selectedIds.add(fileManagerEntryKey(entry));
+	}
+
+	function clearSelection(): void {
+		selectedIds.clear();
+	}
+
+	async function deleteSelected(): Promise<void> {
+		if (deleting || !selectedEntries.length) return;
+		deleting = true;
+		try {
+			await api.post('/api/entries/delete', {
+				fileIds: selectedEntries.filter((entry) => entry.kind === 'file').map((entry) => entry.id),
+				folderIds: selectedEntries.filter((entry) => entry.kind === 'folder').map((entry) => entry.id)
+			});
+			selectedIds.clear();
+			deleteDialogOpen = false;
+			toast.success('Selected items deleted.');
+			await Promise.all([
+				queryClient.invalidateQueries({ queryKey: ['folder-entries'] }),
+				queryClient.invalidateQueries({ queryKey: ['search'] })
+			]);
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : 'Could not delete selected items.');
+		} finally {
+			deleting = false;
+		}
+	}
+
 	function changeView(view: FilesView): void {
 		void goto(urlFor(folderId, view));
 	}
@@ -275,7 +326,25 @@
 					{/each}
 				</nav>
 			</div>
-			<FilesViewToggle view={viewMode} onChange={changeView} />
+			<div class="flex flex-wrap items-center gap-3">
+				{#if rows.length && viewMode === 'grid'}
+					<button class="inline-flex h-9 cursor-pointer items-center rounded-md border border-(--border) px-3 text-sm text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)" type="button" onclick={toggleAllLoaded}>
+						{allRowsSelected ? 'Deselect all' : 'Select all'}
+					</button>
+				{/if}
+				{#if selectedEntries.length}
+					<div class="inline-flex items-center gap-1 rounded-md border border-(--border) bg-(--surface-raised) p-1">
+						<span class="px-2 text-sm text-(--muted)">{selectedEntries.length} selected</span>
+						<button class="inline-flex size-8 cursor-pointer items-center justify-center rounded text-red-400 hover:bg-red-500/10 hover:text-red-300" type="button" aria-label="Delete selected items" title="Delete selected items" onclick={() => deleteDialogOpen = true}>
+							<Trash2 class="size-4" aria-hidden="true" />
+						</button>
+						<button class="inline-flex size-8 cursor-pointer items-center justify-center rounded text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)" type="button" aria-label="Clear selection" title="Clear selection" onclick={clearSelection}>
+							<X class="size-4" aria-hidden="true" />
+						</button>
+					</div>
+				{/if}
+				<FilesViewToggle view={viewMode} onChange={changeView} />
+			</div>
 		</header>
 
 		{#if !$vaultUnlocked}
@@ -295,9 +364,9 @@
 				{#if !entriesReady}
 					<div class="px-5 py-8 text-(--muted)" role="status">Decrypting file details…</div>
 				{:else if viewMode === 'grid'}
-					<FilesGridView {rows} onOpenFolder={openFolder} />
+					<FilesGridView {rows} {selectedIds} onToggleSelection={toggleSelection} onOpenFolder={openFolder} />
 				{:else}
-					<FilesListView {rows} onOpenFolder={openFolder} />
+					<FilesListView {rows} {selectedIds} onToggleSelection={toggleSelection} onToggleAll={toggleAllLoaded} onOpenFolder={openFolder} />
 				{/if}
 
 				{#if entriesReady && entriesQuery.hasNextPage}
@@ -318,3 +387,18 @@
 		{/if}
 	</div>
 </div>
+
+<Modal
+	open={deleteDialogOpen}
+	label="Confirm delete"
+	title={`Delete ${selectedEntries.length} selected ${selectedEntries.length === 1 ? 'item' : 'items'}?`}
+	onClose={() => { if (!deleting) deleteDialogOpen = false; }}
+>
+	<p class="m-0 text-sm text-(--muted)">This action cannot be undone.</p>
+	{#snippet actions()}
+		<button class="cursor-pointer rounded border border-(--border) px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={deleting} onclick={() => deleteDialogOpen = false}>Cancel</button>
+		<button class="cursor-pointer rounded border border-red-500 bg-red-500 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={deleting || !selectedEntries.length} onclick={() => void deleteSelected()}>
+			{deleting ? 'Deleting…' : 'Delete'}
+		</button>
+	{/snippet}
+</Modal>

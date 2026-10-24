@@ -6,10 +6,20 @@
 	import { getCachedThumbnail, cacheThumbnail } from '#lib/thumbnail-cache.ts';
 	import { formatBytes } from '#lib/utils/format.ts';
 	import { decryptSearchThumbnail } from '#lib/vault/search.ts';
-	import type { FileManagerEntry } from './types';
+	import { fileManagerEntryKey, type FileManagerEntry } from './types';
 
 	const THUMBNAIL_CONCURRENCY = 4;
-	let { rows, onOpenFolder }: { rows: FileManagerEntry[]; onOpenFolder: (id: string) => void } = $props();
+	let {
+		rows,
+		selectedIds,
+		onToggleSelection,
+		onOpenFolder
+	}: {
+		rows: FileManagerEntry[];
+		selectedIds: ReadonlySet<string>;
+		onToggleSelection: (entry: FileManagerEntry) => void;
+		onOpenFolder: (id: string) => void;
+	} = $props();
 	const thumbnails = new SvelteMap<string, string>();
 	const objectUrls = new Map<string, string>();
 	const pendingIds = new Set<string>();
@@ -110,7 +120,14 @@
 
 <div class="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-3 p-4 max-[640px]:grid-cols-[repeat(auto-fill,minmax(145px,1fr))]">
 	{#each rows as entry (`${entry.kind}:${entry.id}`)}
-		<article class="min-w-0 overflow-hidden rounded-md border border-(--border) bg-(--surface) transition-colors hover:border-(--accent)">
+		<article class={`relative min-w-0 overflow-hidden rounded-md border bg-(--surface) transition-colors hover:border-(--accent) ${selectedIds.has(fileManagerEntryKey(entry)) ? 'border-(--accent)' : 'border-(--border)'}`}>
+			<input
+				class="absolute top-2 right-2 z-1 size-4 cursor-pointer"
+				type="checkbox"
+				checked={selectedIds.has(fileManagerEntryKey(entry))}
+				aria-label={`Select ${entry.name}`}
+				onchange={() => onToggleSelection(entry)}
+			/>
 			<div class="grid aspect-[4/3] place-items-center overflow-hidden bg-(--surface-highest)">
 				{#if entry.kind === 'folder'}
 					<Folder class="size-10 text-(--accent)" aria-hidden="true" />
