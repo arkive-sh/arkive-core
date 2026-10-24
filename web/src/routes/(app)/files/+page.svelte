@@ -62,8 +62,6 @@
 
 	const folderId = $derived(page.url.searchParams.get('folder_id') || null);
 	const viewMode = $derived(page.url.searchParams.get('view') === 'grid' ? 'grid' : 'list');
-	const selectedEntries = $derived(rows.filter((entry) => selectedIds.has(fileManagerEntryKey(entry))));
-	const allRowsSelected = $derived(rows.length > 0 && selectedEntries.length === rows.length);
 	const entriesQuery = createInfiniteQuery(() => ({
 		queryKey: ['folder-entries', folderId],
 		enabled: $vaultUnlocked,
@@ -80,6 +78,15 @@
 		},
 		getNextPageParam: (lastPage) => lastPage.HasMore ? lastPage.NextCursor || undefined : undefined
 	}));
+	const loadedEntries = $derived([...new Map([
+		...(entriesQuery.data?.pages ?? []).flatMap((response) => [
+			...response.Folders.map((folder) => ({ id: folder.ID, kind: 'folder' as const })),
+			...response.Files.map((file) => ({ id: file.ID, kind: 'file' as const }))
+		]),
+		...rows
+	].map((entry) => [fileManagerEntryKey(entry), entry] as const)).values()]);
+	const selectedEntries = $derived(loadedEntries.filter((entry) => selectedIds.has(fileManagerEntryKey(entry))));
+	const allRowsSelected = $derived(loadedEntries.length > 0 && selectedEntries.length === loadedEntries.length);
 
 	async function decryptEntries(
 		response: FolderEntriesResponse,
@@ -264,11 +271,12 @@
 	}
 
 	function toggleAllLoaded(): void {
-		if (allRowsSelected) {
-			for (const entry of rows) selectedIds.delete(fileManagerEntryKey(entry));
-			return;
+		const keys = loadedEntries.map(fileManagerEntryKey);
+		const deselect = keys.length > 0 && keys.every((key) => selectedIds.has(key));
+		for (const key of keys) {
+			if (deselect) selectedIds.delete(key);
+			else selectedIds.add(key);
 		}
-		for (const entry of rows) selectedIds.add(fileManagerEntryKey(entry));
 	}
 
 	function clearSelection(): void {
@@ -366,7 +374,7 @@
 				{:else if viewMode === 'grid'}
 					<FilesGridView {rows} {selectedIds} onToggleSelection={toggleSelection} onOpenFolder={openFolder} />
 				{:else}
-					<FilesListView {rows} {selectedIds} onToggleSelection={toggleSelection} onToggleAll={toggleAllLoaded} onOpenFolder={openFolder} />
+					<FilesListView {rows} {selectedIds} selectedCount={selectedEntries.length} loadedCount={loadedEntries.length} onToggleSelection={toggleSelection} onToggleAll={toggleAllLoaded} onOpenFolder={openFolder} />
 				{/if}
 
 				{#if entriesReady && entriesQuery.hasNextPage}

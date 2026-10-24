@@ -43,7 +43,7 @@
 	});
 </script>
 
-<div class="pointer-events-none fixed top-4 right-4 z-[100] flex w-[min(21rem,calc(100vw-2rem))] flex-col gap-2 max-[640px]:top-3 max-[640px]:right-3" aria-live="polite" aria-atomic="false">
+<div class="pointer-events-none fixed top-4 right-4 z-100 flex w-[min(21rem,calc(100vw-2rem))] flex-col gap-2 max-[640px]:top-3 max-[640px]:right-3" aria-live="polite" aria-atomic="false">
 	{#each items as item (item.id)}
 		<div
 			class="pointer-events-auto flex items-start gap-2.5 rounded-lg border border-(--border) bg-(--surface-raised) px-3 py-2.5 text-(--text) shadow-(--shadow)"
@@ -61,7 +61,7 @@
 			{/if}
 			<div class="min-w-0 flex-1">
 				{#if item.title}<p class="m-0 mb-0.5 text-xs leading-4 font-semibold">{item.title}</p>{/if}
-				<p class="m-0 break-words text-sm leading-5 text-(--muted)">{item.message}</p>
+				<p class="m-0 wrap-break-word text-sm leading-5 text-(--muted)">{item.message}</p>
 			</div>
 			<button
 				class="inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded text-(--muted-strong) hover:bg-(--surface-highest) hover:text-(--text)"
