@@ -7,10 +7,11 @@
 	import { createInfiniteQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { api } from '#lib/api.ts';
 	import Modal from '#lib/components/Modal.svelte';
+	import Tooltip from '#lib/components/Tooltip.svelte';
 	import { toast } from '#lib/toast.ts';
 	import FilesGridView from './FilesGridView.svelte';
 	import FilesListView from './FilesListView.svelte';
-	import FilesViewToggle from './FilesViewToggle.svelte';
+	import FilesViewOptions from './FilesViewOptions.svelte';
 	import { fileManagerEntryKey, type FileManagerEntry, type FilesView } from './types';
 	import { decryptSearchFile, decryptSearchFolder } from '#lib/vault/search.ts';
 	import { waitUntilReady } from '#lib/vault/session.ts';
@@ -53,6 +54,10 @@
 	let sentinel: HTMLDivElement | undefined = $state();
 	let deleteDialogOpen = $state(false);
 	let deleting = $state(false);
+	let tileSize = $state(150);
+	let showType = $state(false);
+	let showSize = $state(true);
+	let viewOptionsReady = $state(false);
 	const selectedIds = new SvelteSet<string>();
 	const queryClient = useQueryClient();
 	let decryptGeneration = 0;
@@ -311,7 +316,32 @@
 	}
 
 	onMount(() => {
+		try {
+			const savedTileSize = localStorage.getItem('arkive.files.tile-size');
+			if (savedTileSize !== null) {
+				const parsedTileSize = Number(savedTileSize);
+				if (Number.isFinite(parsedTileSize)) {
+					tileSize = Math.min(260, Math.max(60, Math.round(parsedTileSize / 10) * 10));
+				}
+			}
+			showType = localStorage.getItem('arkive.files.show-type') === 'true';
+			showSize = localStorage.getItem('arkive.files.show-size') !== 'false';
+		} catch {
+			// Keep the default view options when local storage is unavailable.
+		}
+		viewOptionsReady = true;
 		void waitUntilReady();
+	});
+
+	$effect(() => {
+		if (!viewOptionsReady) return;
+		try {
+			localStorage.setItem('arkive.files.tile-size', String(tileSize));
+			localStorage.setItem('arkive.files.show-type', String(showType));
+			localStorage.setItem('arkive.files.show-size', String(showSize));
+		} catch {
+			// Preferences still work for the current page when local storage is unavailable.
+		}
 	});
 </script>
 
@@ -335,26 +365,39 @@
 					{/each}
 				</nav>
 			{/if}
-			<div class="flex flex-wrap items-center gap-3">
+			<div class="flex flex-1 items-center justify-between gap-3 max-[640px]:w-full">
 				{#if (rows.length && viewMode === 'grid') || selectedEntries.length}
 					<div class="inline-flex flex-wrap items-center gap-1 rounded-md border border-(--border) bg-(--surface-raised) p-1">
 						{#if rows.length && viewMode === 'grid'}
-							<button class="inline-flex h-8 cursor-pointer items-center rounded px-2 text-sm text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)" type="button" aria-pressed={allRowsSelected} title="Select or deselect all loaded entries" onclick={toggleAllLoaded}>
+							<button class="inline-flex h-8 cursor-pointer items-center rounded px-2 text-sm text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)" type="button" aria-pressed={allRowsSelected} onclick={toggleAllLoaded}>
 								{allRowsSelected ? 'Deselect all' : 'Select all'}
 							</button>
 						{/if}
 						{#if selectedEntries.length}
 							<span class="px-2 text-sm text-(--muted)">{selectedEntries.length} selected</span>
-							<button class="inline-flex size-8 cursor-pointer items-center justify-center rounded text-red-400 hover:bg-red-500/10 hover:text-red-300" type="button" aria-label="Delete selected items" title="Delete selected items" onclick={() => deleteDialogOpen = true}>
-								<Trash2 class="size-4" aria-hidden="true" />
-							</button>
-							<button class="inline-flex size-8 cursor-pointer items-center justify-center rounded text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)" type="button" aria-label="Clear selection" title="Clear selection" onclick={clearSelection}>
-								<X class="size-4" aria-hidden="true" />
-							</button>
+							<Tooltip label="Delete selected items">
+								<button class="inline-flex size-8 cursor-pointer items-center justify-center rounded text-red-400 hover:bg-red-500/10 hover:text-red-300" type="button" aria-label="Delete selected items" onclick={() => deleteDialogOpen = true}>
+									<Trash2 class="size-4" aria-hidden="true" />
+								</button>
+							</Tooltip>
+							<Tooltip label="Clear selection">
+								<button class="inline-flex size-8 cursor-pointer items-center justify-center rounded text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)" type="button" aria-label="Clear selection" onclick={clearSelection}>
+									<X class="size-4" aria-hidden="true" />
+								</button>
+							</Tooltip>
 						{/if}
 					</div>
 				{/if}
-				<FilesViewToggle view={viewMode} onChange={changeView} />
+				<FilesViewOptions
+					view={viewMode}
+					{tileSize}
+					{showType}
+					{showSize}
+					onViewChange={changeView}
+					onTileSizeChange={(size) => tileSize = size}
+					onShowTypeChange={(show) => showType = show}
+					onShowSizeChange={(show) => showSize = show}
+				/>
 			</div>
 		</header>
 
@@ -375,7 +418,15 @@
 				{#if !entriesReady}
 					<div class="px-5 py-8 text-(--muted)" role="status">Decrypting file details…</div>
 				{:else if viewMode === 'grid'}
-					<FilesGridView {rows} {selectedIds} onToggleSelection={toggleSelection} onOpenFolder={openFolder} />
+					<FilesGridView
+						{rows}
+						{selectedIds}
+						{tileSize}
+						{showType}
+						{showSize}
+						onToggleSelection={toggleSelection}
+						onOpenFolder={openFolder}
+					/>
 				{:else}
 					<FilesListView {rows} {selectedIds} selectedCount={selectedEntries.length} loadedCount={loadedEntries.length} onToggleSelection={toggleSelection} onToggleAll={toggleAllLoaded} onOpenFolder={openFolder} />
 				{/if}

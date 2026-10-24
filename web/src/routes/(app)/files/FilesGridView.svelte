@@ -14,34 +14,49 @@
 	let {
 		rows,
 		selectedIds,
+		tileSize,
+		showType,
+		showSize,
 		onToggleSelection,
 		onOpenFolder
 	}: {
 		rows: FileManagerEntry[];
 		selectedIds: ReadonlySet<string>;
+		tileSize: number;
+		showType: boolean;
+		showSize: boolean;
 		onToggleSelection: (entry: FileManagerEntry) => void;
 		onOpenFolder: (id: string) => void;
 	} = $props();
 	let gridLayout = $state<HTMLDivElement>();
 	let gridContent = $state<HTMLDivElement>();
 	let columnCount = $state(1);
+	const cardGap = $derived(Math.min(12, Math.max(4, Math.round(tileSize * 0.08))));
+	const gridPadding = $derived(Math.min(16, Math.max(4, Math.round(tileSize * 0.1))));
+	const contentGap = $derived(Math.max(2, Math.round(tileSize * 0.025)));
+	const nameFontSize = $derived(Math.min(16, Math.max(12, Math.round(tileSize * 0.1))));
+	const detailFontSize = $derived(Math.min(12, Math.max(10, Math.round(tileSize * 0.08))));
+	const iconSize = $derived(Math.min(40, Math.max(16, Math.round(tileSize * 0.27))));
+	const checkboxSize = $derived(Math.min(16, Math.max(12, Math.round(tileSize * 0.1))));
+	const checkboxInset = $derived(Math.min(8, Math.max(3, Math.round(tileSize * 0.05))));
 	const thumbnails = new SvelteMap<string, string>();
 	const objectUrls = new Map<string, string>();
 	const pendingIds = new Set<string>();
 	const attemptedIds = new Set<string>();
 	const controller = new AbortController();
+	let measuredLayout = '';
 	let visibleIds = new Set<string>();
 	let queue: FileManagerEntry[] = [];
 	let activeLoads = 0;
 	const rowVirtualizer = createWindowVirtualizer({
 		count: 0,
 		estimateSize: () => {
-			const minCardWidth = typeof window !== 'undefined' && window.innerWidth <= 640 ? 145 : 190;
-			const contentWidth = Math.max(minCardWidth, (gridLayout?.clientWidth ?? 0) - 32);
-			const cardWidth = (contentWidth - 12 * (columnCount - 1)) / columnCount;
-			return cardWidth * 0.75 + 88;
+			const contentWidth = Math.max(tileSize, (gridLayout?.clientWidth ?? 0) - gridPadding * 2);
+			const cardWidth = (contentWidth - cardGap * (columnCount - 1)) / columnCount;
+			const detailLines = Number(showType) + Number(showSize);
+			return cardWidth * 0.75 + cardGap * 2 + nameFontSize * 1.25 + detailLines * (detailFontSize * 1.25 + contentGap) + 2;
 		},
-		gap: 12,
+		gap: cardGap,
 		overscan: 2,
 		getItemKey: (index) => {
 			const entry = rows[index * columnCount];
@@ -60,13 +75,18 @@
 		if (!layout || !content || typeof window === 'undefined') return;
 
 		const updateOptions = () => {
-			const minCardWidth = window.innerWidth <= 640 ? 145 : 190;
-			const columns = Math.max(1, Math.floor((layout.clientWidth - 32 + 12) / (minCardWidth + 12)));
+			const columns = Math.max(1, Math.floor((layout.clientWidth - gridPadding * 2 + cardGap) / (tileSize + cardGap)));
 			columnCount = columns;
 			get(rowVirtualizer).setOptions({
 				count: Math.ceil(count / columns),
+				gap: cardGap,
 				scrollMargin: content.getBoundingClientRect().top + window.scrollY
 			});
+			const layoutKey = `${tileSize}:${columns}:${showType}:${showSize}`;
+			if (layoutKey !== measuredLayout) {
+				get(rowVirtualizer).measure();
+				measuredLayout = layoutKey;
+			}
 		};
 		updateOptions();
 
@@ -186,7 +206,8 @@
 
 <div
 	bind:this={gridLayout}
-	class="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-3 p-4 max-[640px]:grid-cols-[repeat(auto-fill,minmax(145px,1fr))]"
+	class="grid"
+	style={`grid-template-columns: repeat(auto-fill, minmax(${tileSize}px, 1fr)); gap: ${cardGap}px; padding: ${gridPadding}px`}
 >
 	<div
 		bind:this={gridContent}
@@ -200,13 +221,14 @@
 				{@const start = virtualRow.index * columnCount}
 				<div
 					use:measureGridRow={virtualRow.index}
-					class="absolute top-0 left-0 grid w-full gap-3"
-					style={`grid-template-columns: repeat(${columnCount}, minmax(0, 1fr)); transform: translateY(${virtualRow.start - rowScrollMargin}px)`}
+					class="absolute top-0 left-0 grid w-full"
+					style={`grid-template-columns: repeat(${columnCount}, minmax(0, 1fr)); gap: ${cardGap}px; transform: translateY(${virtualRow.start - rowScrollMargin}px)`}
 				>
 					{#each rows.slice(start, start + columnCount) as entry (`${entry.kind}:${entry.id}`)}
 						<article class={`relative min-w-0 overflow-hidden rounded-md border bg-(--surface) transition-colors hover:border-(--accent) ${selectedIds.has(fileManagerEntryKey(entry)) ? 'border-(--accent)' : 'border-(--border)'}`}>
 							<input
-								class="absolute top-2 right-2 z-1 size-4 cursor-pointer"
+								class="absolute z-1 cursor-pointer"
+								style={`top: ${checkboxInset}px; right: ${checkboxInset}px; width: ${checkboxSize}px; height: ${checkboxSize}px`}
 								type="checkbox"
 								checked={selectedIds.has(fileManagerEntryKey(entry))}
 								aria-label={`Select ${entry.name}`}
@@ -214,21 +236,21 @@
 							/>
 							<div class="grid aspect-[4/3] place-items-center overflow-hidden bg-(--surface-highest)">
 								{#if entry.kind === 'folder'}
-									<Folder class="size-10 text-(--accent)" aria-hidden="true" />
+									<Folder class="text-(--accent)" style={`width: ${iconSize}px; height: ${iconSize}px`} aria-hidden="true" />
 								{:else if thumbnails.get(entry.id)}
 									<img class="size-full object-cover" src={thumbnails.get(entry.id)} alt={entry.name} loading="lazy" decoding="async" />
 								{:else}
-									<FileIcon class="size-10 text-(--muted)" aria-hidden="true" />
+									<FileIcon class="text-(--muted)" style={`width: ${iconSize}px; height: ${iconSize}px`} aria-hidden="true" />
 								{/if}
 							</div>
-							<div class="grid min-w-0 gap-1 p-3">
+							<div class="grid min-w-0" style={`gap: ${contentGap}px; padding: ${cardGap}px`}>
 								{#if entry.kind === 'folder'}
-									<button class="min-w-0 cursor-pointer truncate text-left font-medium hover:text-(--accent)" type="button" onclick={() => onOpenFolder(entry.id)}>{entry.name}</button>
+									<button class="min-w-0 cursor-pointer truncate text-left font-medium leading-tight hover:text-(--accent)" style={`font-size: ${nameFontSize}px`} type="button" onclick={() => onOpenFolder(entry.id)}>{entry.name}</button>
 								{:else}
-									<span class="truncate font-medium" title={entry.name}>{entry.name}</span>
+									<span class="truncate font-medium leading-tight" style={`font-size: ${nameFontSize}px`} title={entry.name}>{entry.name}</span>
 								{/if}
-								<span class="truncate font-mono text-xs text-(--muted)" title={entry.type}>{entry.type}</span>
-								<span class="text-xs text-(--muted)">{formatBytes(entry.size)}</span>
+								{#if showType}<span class="truncate font-mono leading-tight text-(--muted)" style={`font-size: ${detailFontSize}px`} title={entry.type}>{entry.type}</span>{/if}
+								{#if showSize}<span class="leading-tight text-(--muted)" style={`font-size: ${detailFontSize}px`}>{formatBytes(entry.size)}</span>{/if}
 							</div>
 						</article>
 					{/each}
