@@ -9,6 +9,7 @@ type Folder struct {
 	ParentFolderID    *string
 	EncryptedName     []byte
 	EncryptedMetadata []byte
+	SizeBytes         *int64
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 	DeletedAt         *time.Time

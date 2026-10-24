@@ -61,6 +61,7 @@ type folderEntrySummary struct {
 	ParentFolderID    *string
 	EncryptedName     []byte
 	EncryptedMetadata []byte
+	SizeBytes         *int64 `json:"SizeBytes,omitempty"`
 	UpdatedAt         time.Time
 }
 
@@ -216,6 +217,7 @@ func folderEntrySummaries(folders []models.Folder) []folderEntrySummary {
 			ParentFolderID:    folder.ParentFolderID,
 			EncryptedName:     folder.EncryptedName,
 			EncryptedMetadata: folder.EncryptedMetadata,
+			SizeBytes:         folder.SizeBytes,
 			UpdatedAt:         folder.UpdatedAt,
 		}
 	}

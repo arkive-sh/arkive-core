@@ -25,6 +25,7 @@
 		ParentFolderID: string | null;
 		EncryptedName: string;
 		EncryptedMetadata: string;
+		SizeBytes?: number;
 		UpdatedAt: string;
 	};
 
@@ -105,9 +106,9 @@
 						score: 0,
 						url: `/folders/${folder.ID}`
 					});
-					return { id: folder.ID, kind: 'folder', name: decrypted.name.name || 'Encrypted folder', type: 'Folder', size: null, updatedAt: folder.UpdatedAt };
+					return { id: folder.ID, kind: 'folder', name: decrypted.name.name || 'Encrypted folder', type: 'Folder', size: folder.SizeBytes ?? null, updatedAt: folder.UpdatedAt };
 				} catch {
-					return { id: folder.ID, kind: 'folder', name: 'Encrypted folder', type: 'Folder', size: null, updatedAt: folder.UpdatedAt };
+					return { id: folder.ID, kind: 'folder', name: 'Encrypted folder', type: 'Folder', size: folder.SizeBytes ?? null, updatedAt: folder.UpdatedAt };
 				}
 			})),
 			Promise.all(response.Files.map(async (file): Promise<FileManagerEntry> => {
@@ -321,34 +322,36 @@
 <div class="min-h-full bg-(--bg) py-6 pb-8">
 	<div class="mx-auto grid w-[min(1440px,calc(100%-40px))] gap-5 max-[960px]:w-[calc(100%-24px)]">
 		<header class="flex items-start justify-between gap-4 max-[640px]:flex-col">
-			<div class="grid gap-3">
-				<h1 class="m-0 text-2xl leading-8 font-semibold">Files</h1>
+			<h1 class="sr-only">{breadcrumbs.at(-1)?.name ?? 'Files'}</h1>
+			{#if breadcrumbs.length > 1}
 				<nav class="flex flex-wrap items-center gap-2 text-sm text-(--muted)" aria-label="Folder path">
-					{#each breadcrumbs as crumb, index (crumb.id ?? 'root')}
+					{#each breadcrumbs.slice(1) as crumb, index (crumb.id ?? 'root')}
 						{#if index > 0}<span aria-hidden="true">/</span>{/if}
-						{#if index === breadcrumbs.length - 1}
+						{#if index === breadcrumbs.length - 2}
 							<span aria-current="page" class="text-(--text)">{crumb.name}</span>
 						{:else}
 							<a class="cursor-pointer hover:text-(--text)" href={urlFor(crumb.id)}>{crumb.name}</a>
 						{/if}
 					{/each}
 				</nav>
-			</div>
+			{/if}
 			<div class="flex flex-wrap items-center gap-3">
-				{#if rows.length && viewMode === 'grid'}
-					<button class="inline-flex h-9 cursor-pointer items-center rounded-md border border-(--border) px-3 text-sm text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)" type="button" onclick={toggleAllLoaded}>
-						{allRowsSelected ? 'Deselect all' : 'Select all'}
-					</button>
-				{/if}
-				{#if selectedEntries.length}
-					<div class="inline-flex items-center gap-1 rounded-md border border-(--border) bg-(--surface-raised) p-1">
-						<span class="px-2 text-sm text-(--muted)">{selectedEntries.length} selected</span>
-						<button class="inline-flex size-8 cursor-pointer items-center justify-center rounded text-red-400 hover:bg-red-500/10 hover:text-red-300" type="button" aria-label="Delete selected items" title="Delete selected items" onclick={() => deleteDialogOpen = true}>
-							<Trash2 class="size-4" aria-hidden="true" />
-						</button>
-						<button class="inline-flex size-8 cursor-pointer items-center justify-center rounded text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)" type="button" aria-label="Clear selection" title="Clear selection" onclick={clearSelection}>
-							<X class="size-4" aria-hidden="true" />
-						</button>
+				{#if (rows.length && viewMode === 'grid') || selectedEntries.length}
+					<div class="inline-flex flex-wrap items-center gap-1 rounded-md border border-(--border) bg-(--surface-raised) p-1">
+						{#if rows.length && viewMode === 'grid'}
+							<button class="inline-flex h-8 cursor-pointer items-center rounded px-2 text-sm text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)" type="button" aria-pressed={allRowsSelected} title="Select or deselect all loaded entries" onclick={toggleAllLoaded}>
+								{allRowsSelected ? 'Deselect all' : 'Select all'}
+							</button>
+						{/if}
+						{#if selectedEntries.length}
+							<span class="px-2 text-sm text-(--muted)">{selectedEntries.length} selected</span>
+							<button class="inline-flex size-8 cursor-pointer items-center justify-center rounded text-red-400 hover:bg-red-500/10 hover:text-red-300" type="button" aria-label="Delete selected items" title="Delete selected items" onclick={() => deleteDialogOpen = true}>
+								<Trash2 class="size-4" aria-hidden="true" />
+							</button>
+							<button class="inline-flex size-8 cursor-pointer items-center justify-center rounded text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)" type="button" aria-label="Clear selection" title="Clear selection" onclick={clearSelection}>
+								<X class="size-4" aria-hidden="true" />
+							</button>
+						{/if}
 					</div>
 				{/if}
 				<FilesViewToggle view={viewMode} onChange={changeView} />

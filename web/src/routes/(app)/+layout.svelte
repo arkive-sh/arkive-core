@@ -74,7 +74,6 @@
 	/>
 	<SearchPalette open={searchOpen} vaultId={data.user.id} onOpen={openSearch} onClose={closeSearch} />
 	<AppSidebar
-		user={data.user}
 		currentPath={page.url.pathname}
 		{mobileView}
 		{mobileOpen}
@@ -82,7 +81,7 @@
 		onClose={closeSidebar}
 		onNavigate={() => mobileView && setMobileOpen(false)}
 	/>
-	<main class={`min-h-[calc(100vh-56px)] overflow-x-clip ${desktopCollapsed ? '' : 'min-[961px]:ml-60'}`} id="main-content">
+	<main class={`min-h-[calc(100vh-56px)] overflow-x-clip ${desktopCollapsed ? '' : 'min-[961px]:ml-16'}`} id="main-content">
 		{@render children()}
 	</main>
 </div>
