@@ -11,11 +11,11 @@
 		<dl class="m-0 grid gap-3 text-sm">
 			<div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-3">
 				<dt class="text-(--muted)">Name</dt>
-				<dd class="m-0 min-w-0 break-words">{entry.name}</dd>
+				<dd class="m-0 min-w-0 wrap-break-word">{entry.name}</dd>
 			</div>
 			<div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-3">
 				<dt class="text-(--muted)">Type</dt>
-				<dd class="m-0 min-w-0 break-words">{entry.type}</dd>
+				<dd class="m-0 min-w-0 wrap-break-word">{entry.type}</dd>
 			</div>
 			<div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-3">
 				<dt class="text-(--muted)">Size</dt>
@@ -27,7 +27,7 @@
 			</div>
 			<div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-3">
 				<dt class="text-(--muted)">Location</dt>
-				<dd class="m-0 min-w-0 break-words">{location}</dd>
+				<dd class="m-0 min-w-0 wrap-break-word">{location}</dd>
 			</div>
 		</dl>
 	{/if}

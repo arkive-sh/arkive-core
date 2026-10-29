@@ -55,7 +55,7 @@
 	<div class="flex justify-center border-b border-(--border-soft) px-2 pb-4">
 		<Tooltip label="Upload file" disabled={mobileView} className="w-full">
 			<a
-				class={`mx-auto inline-flex min-h-11 items-center justify-center rounded-md border border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] transition-[background-color,border-color,color] duration-200 hover:border-[var(--accent-strong)] hover:bg-[var(--accent-strong)] ${mobileView ? 'w-full gap-3 px-4' : 'size-11'}`}
+				class={`mx-auto inline-flex min-h-11 items-center justify-center rounded-md border border-(--accent) bg-(--accent) text-(--accent-ink) transition-[background-color,border-color,color] duration-200 hover:border-(--accent-strong) hover:bg-(--accent-strong) ${mobileView ? 'w-full gap-3 px-4' : 'size-11'}`}
 				href="/#upload-panel"
 				aria-label="Upload file"
 				onclick={onNavigate}

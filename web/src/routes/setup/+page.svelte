@@ -143,7 +143,7 @@
 <main class="min-h-screen bg-(--bg) px-4 py-8 text-(--text) max-[760px]:px-3 max-[760px]:py-4">
 	<div class="mx-auto w-[min(920px,100%)]">
 		<form class="overflow-hidden rounded-md border border-(--border-soft) bg-(--surface-raised) shadow-[0_10px_28px_rgba(0,0,0,0.28)]" method="post" novalidate onsubmit={submit} oninput={validateInput}>
-			<header class="flex items-center gap-3 border-b border-(--border-soft) px-6 py-[18px] max-[760px]:px-4">
+			<header class="flex items-center gap-3 border-b border-(--border-soft) px-6 py-4.5 max-[760px]:px-4">
 				<span class="inline-flex items-center justify-center text-(--accent)"><Server class="size-5" aria-hidden="true" /></span>
 				<div>
 					<h1 class="m-0 text-xl leading-7 font-semibold">Initialize Arkive Core</h1>
@@ -168,7 +168,7 @@
 				{#snippet securityIcon()}<LockKeyhole class="size-4" aria-hidden="true" />{/snippet}
 				<SetupSection number="2" title="Security" icon={securityIcon}>
 					<div class="flex items-start gap-3 rounded border border-(--border) bg-(--surface-highest) px-3.5 py-3">
-						<ShieldAlert class="mt-0.5 size-[18px] shrink-0 text-amber-400" aria-hidden="true" />
+						<ShieldAlert class="mt-0.5 size-4.5 shrink-0 text-amber-400" aria-hidden="true" />
 						<p class="m-0 text-[13px] leading-5 text-(--muted)">Arkive Core uses zero-knowledge encryption. This password derives your master encryption key. <strong class="text-(--danger)">It cannot be recovered if lost.</strong></p>
 					</div>
 					<div class="grid grid-cols-2 gap-4 max-[760px]:grid-cols-1">
