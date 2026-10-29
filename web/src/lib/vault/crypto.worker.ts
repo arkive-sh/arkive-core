@@ -42,6 +42,7 @@ interface WorkerParams {
 	shareSecret?: string;
 	terms?: unknown;
 	thumbnailAad?: string;
+	thumbnailBytes?: unknown;
 	totalParts?: number;
 	uploadToken?: string;
 	userID?: string;
@@ -58,6 +59,7 @@ interface WorkerRequest {
 interface WorkerResult {
 	[key: string]: unknown;
 	encryptedChunk?: unknown;
+	encryptedThumbnail?: unknown;
 	chunkBytes?: unknown;
 	thumbnailBytes?: unknown;
 }
@@ -441,18 +443,10 @@ function handlePrepareUpload(params: WorkerParams, crypto: CryptoApi) {
   if (!unlockedMasterKey) {
     throw new Error("Vault is locked");
   }
-  let metadata;
   let fileKey;
-  let encryptedMetadata;
   let encryptedFileKey;
   try {
-    metadata = new TextEncoder().encode(JSON.stringify(params.metadata || {}));
     fileKey = crypto.generate_file_key();
-    encryptedMetadata = crypto.encrypt_chunk(
-      metadata,
-      fileKey,
-      aadBytes(params.metadataAad),
-    );
     encryptedFileKey = crypto.wrap_file_key(
       fileKey,
       unlockedMasterKey,
@@ -460,17 +454,53 @@ function handlePrepareUpload(params: WorkerParams, crypto: CryptoApi) {
     );
     activeUploads.set(uploadToken, { fileKey: fileKey.slice() });
     return {
-      encryptedMetadata: encodeBase64(encryptedMetadata),
       encryptedFileKey: encodeBase64(encryptedFileKey),
       totalParts: Number(params.totalParts || 0),
       encryptionVersion: 1,
     };
   } finally {
-    if (metadata) crypto.zeroize(metadata);
     if (fileKey) crypto.zeroize(fileKey);
-		if (encryptedMetadata) crypto.zeroize(encryptedMetadata);
 		if (encryptedFileKey) crypto.zeroize(encryptedFileKey);
   }
+}
+
+function handleEncryptUploadMetadata(params: WorkerParams, crypto: CryptoApi) {
+	const uploadToken = String(params.uploadToken || '');
+	const upload = activeUploads.get(uploadToken);
+	if (!upload || !upload.fileKey) {
+		throw new Error('Upload context is missing');
+	}
+	let metadata;
+	let encryptedMetadata;
+	try {
+		metadata = new TextEncoder().encode(JSON.stringify(params.metadata || {}));
+		encryptedMetadata = crypto.encrypt_chunk(metadata, upload.fileKey, aadBytes(params.metadataAad));
+		return { encryptedMetadata: encodeBase64(encryptedMetadata) };
+	} finally {
+		if (metadata) crypto.zeroize(metadata);
+		if (encryptedMetadata) crypto.zeroize(encryptedMetadata);
+	}
+}
+
+function handleEncryptUploadThumbnail(params: WorkerParams, crypto: CryptoApi) {
+	const uploadToken = String(params.uploadToken || '');
+	const upload = activeUploads.get(uploadToken);
+	if (!upload || !upload.fileKey) {
+		throw new Error('Upload context is missing');
+	}
+	let thumbnailBytes;
+	let encryptedThumbnail;
+	try {
+		thumbnailBytes = toUint8Array(params.thumbnailBytes);
+		encryptedThumbnail = crypto.encrypt_chunk(thumbnailBytes, upload.fileKey, aadBytes(params.aad));
+		return {
+			encryptedThumbnail: encryptedThumbnail.slice(),
+			encryptedSize: encryptedThumbnail.length
+		};
+	} finally {
+		if (thumbnailBytes) crypto.zeroize(thumbnailBytes);
+		if (encryptedThumbnail) crypto.zeroize(encryptedThumbnail);
+	}
 }
 
 function handleEncryptUploadPart(params: WorkerParams, crypto: CryptoApi) {
@@ -983,6 +1013,8 @@ const messageHandlers: Record<VaultWorkerMethod, WorkerHandler> = {
 	prepareShare: handlePrepareShare,
 	openShareKey: handleOpenShareKey,
 	prepareUpload: handlePrepareUpload,
+	encryptUploadMetadata: handleEncryptUploadMetadata,
+	encryptUploadThumbnail: handleEncryptUploadThumbnail,
 	encryptUploadPart: handleEncryptUploadPart,
 	hashUploadPayload: handleHashUploadPayload,
 	finalizeUpload: handleFinalizeUpload,
@@ -1022,7 +1054,7 @@ workerScope.addEventListener('message', async (event) => {
   try {
     const result = await handleMessage(payload);
     const transfer: Transferable[] = [];
-		for (const value of [result.encryptedChunk, result.chunkBytes, result.thumbnailBytes]) {
+		for (const value of [result.encryptedChunk, result.encryptedThumbnail, result.chunkBytes, result.thumbnailBytes]) {
 			if (value instanceof Uint8Array && value.buffer instanceof ArrayBuffer) transfer.push(value.buffer);
 		}
 		workerScope.postMessage({ id: payload.id, ok: true, result }, transfer);

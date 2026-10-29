@@ -7,19 +7,38 @@ export function prepareUpload(
 	uploadToken: string,
 	vaultId: string,
 	fileId: string,
-	metadata: VaultMetadata,
 	totalParts: number
 ): Promise<VaultWorkerCalls['prepareUpload']['result']> {
 	touchSessionUnlock();
 	return callVaultWorker('prepareUpload', {
 		uploadToken,
-		vaultId,
-		fileId,
-		metadata,
 		totalParts,
-		metadataAad: `arkive:file-metadata:v1:${vaultId}:${fileId}`,
 		fileKeyAad: `arkive:file-key:v1:${vaultId}:${fileId}`
 	});
+}
+
+export function encryptUploadMetadata(
+	uploadToken: string,
+	metadata: VaultMetadata,
+	vaultId: string,
+	fileId: string
+): Promise<VaultWorkerCalls['encryptUploadMetadata']['result']> {
+	touchSessionUnlock();
+	return callVaultWorker('encryptUploadMetadata', {
+		uploadToken,
+		metadata,
+		metadataAad: `arkive:file-metadata:v1:${vaultId}:${fileId}`
+	});
+}
+
+export function encryptUploadThumbnail(
+	uploadToken: string,
+	thumbnailBytes: VaultBytes,
+	aad: VaultAAD
+): Promise<VaultWorkerCalls['encryptUploadThumbnail']['result']> {
+	touchSessionUnlock();
+	const payload = toWorkerBytes(thumbnailBytes);
+	return callVaultWorker('encryptUploadThumbnail', { uploadToken, thumbnailBytes: payload, aad: normalizeAAD(aad) }, [payload]);
 }
 
 export function encryptUploadPart(
