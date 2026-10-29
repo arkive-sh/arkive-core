@@ -17,7 +17,8 @@
 		onToggleSelection,
 		onToggleAll,
 		onOpenFolder,
-		onShowContextMenu
+		onShowContextMenu,
+		onPreviewImage
 	}: {
 		rows: FileManagerEntry[];
 		selectedIds: ReadonlySet<string>;
@@ -27,6 +28,7 @@
 		onToggleAll: () => void;
 		onOpenFolder: (id: string) => void;
 		onShowContextMenu: (entry: FileManagerEntry, x: number, y: number) => void;
+		onPreviewImage: (entry: FileManagerEntry, trigger: HTMLElement) => void;
 	} = $props();
 	let selectAllCheckbox = $state<HTMLInputElement>();
 	let tableBody = $state<HTMLTableSectionElement>();
@@ -138,6 +140,11 @@
 								{#if cell.column.id === 'name' && row.original.kind === 'folder'}
 									<button class="inline-flex min-w-0 max-w-full cursor-pointer items-center gap-2 text-left font-medium text-(--text) hover:text-(--accent)" type="button" onclick={() => onOpenFolder(row.original.id)}>
 										<Folder class="size-4 shrink-0 text-(--accent)" aria-hidden="true" />
+										<span class="min-w-0 truncate" title={row.original.name}><FlexRender {cell} /></span>
+									</button>
+								{:else if cell.column.id === 'name' && row.original.type.startsWith('image/')}
+									<button class="inline-flex min-w-0 max-w-full cursor-zoom-in items-center gap-2 text-left font-medium" type="button" onclick={(event) => onPreviewImage(row.original, event.currentTarget)}>
+										<FileTypeIcon name={row.original.name} mime={row.original.type} className="size-4 shrink-0" />
 										<span class="min-w-0 truncate" title={row.original.name}><FlexRender {cell} /></span>
 									</button>
 								{:else if cell.column.id === 'name'}

@@ -8,13 +8,13 @@
 	import { api } from '#lib/api.ts';
 	import Breadcrumbs from '#lib/components/Breadcrumbs.svelte';
 	import Modal from '#lib/components/Modal.svelte';
-	import Tooltip from '#lib/components/Tooltip.svelte';
 	import FileEntryContextMenu from './FileEntryContextMenu.svelte';
 	import FilePropertiesModal from './FilePropertiesModal.svelte';
 	import { toast } from '#lib/toast.ts';
 	import FilesGridView from './FilesGridView.svelte';
 	import FilesListView from './FilesListView.svelte';
 	import FilesViewOptions from './FilesViewOptions.svelte';
+	import ImageViewer from './ImageViewer.svelte';
 	import { fileManagerEntryKey, type FileManagerEntry, type FilesView } from './types';
 	import { decryptSearchFile, decryptSearchFolder } from '#lib/vault/search.ts';
 	import { waitUntilReady } from '#lib/vault/session.ts';
@@ -59,6 +59,7 @@
 	let deleting = $state(false);
 	let deleteTargets = $state<FileManagerEntry[]>([]);
 	let propertiesEntry = $state<FileManagerEntry | null>(null);
+	let imagePreviewRequest = $state<{ fileId: string; trigger: HTMLElement } | null>(null);
 	let contextMenuEntry = $state<FileManagerEntry | null>(null);
 	let contextMenuPosition = $state({ x: 0, y: 0 });
 	let tileSize = $state(150);
@@ -99,6 +100,8 @@
 		...rows
 	].map((entry) => [fileManagerEntryKey(entry), entry] as const)).values()]);
 	const selectedEntries = $derived(loadedEntries.filter((entry) => selectedIds.has(fileManagerEntryKey(entry))));
+	// shortcut: PhotoSwipe navigates loaded rows; add paged image lookup if full-folder navigation is needed.
+	const imageEntries = $derived(rows.filter((entry) => entry.kind === 'file' && entry.type.startsWith('image/')));
 	const allRowsSelected = $derived(loadedEntries.length > 0 && selectedEntries.length === loadedEntries.length);
 	const currentLocation = $derived(breadcrumbs.map((crumb) => crumb.name).join(' / '));
 	const breadcrumbItems = $derived(breadcrumbs.map((crumb, index) => ({
@@ -153,6 +156,8 @@
 								version: thumbnailVersion,
 								size: thumbnailSize,
 								mime: preview.thumbnail_mime || 'image/webp',
+								width: Number(preview.thumbnail_width || 0),
+								height: Number(preview.thumbnail_height || 0),
 								vaultId,
 								encryptedMetadata: file.EncryptedMetadata,
 								encryptedFileKey: file.EncryptedFileKey
@@ -311,6 +316,10 @@
 		contextMenuPosition = { x, y };
 	}
 
+	function previewImage(entry: FileManagerEntry, trigger: HTMLElement): void {
+		imagePreviewRequest = { fileId: entry.id, trigger };
+	}
+
 	function requestDelete(entry?: FileManagerEntry): void {
 		if (entry) {
 			const entryIsSelected = selectedIds.has(fileManagerEntryKey(entry));
@@ -391,23 +400,19 @@
 				<div class="flex shrink-0 items-center justify-between gap-3">
 					{#if (rows.length && viewMode === 'grid') || selectedEntries.length}
 						<div class="inline-flex flex-wrap items-center gap-1 rounded-md border border-(--border) bg-(--surface-raised) p-1">
-							{#if rows.length && viewMode === 'grid'}
-								<button class="inline-flex h-8 cursor-pointer items-center rounded px-2 text-sm text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)" type="button" aria-pressed={allRowsSelected} onclick={toggleAllLoaded}>
-									{allRowsSelected ? 'Deselect all' : 'Select all'}
+							{#if rows.length && viewMode === 'grid' && !allRowsSelected}
+								<button class="inline-flex h-8 cursor-pointer items-center rounded px-2 text-sm text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)" type="button" onclick={toggleAllLoaded}>
+									Select all
 								</button>
 							{/if}
 							{#if selectedEntries.length}
 								<span class="px-2 text-sm text-(--muted)">{selectedEntries.length} selected</span>
-								<Tooltip label="Delete selected items">
-									<button class="inline-flex size-8 cursor-pointer items-center justify-center rounded text-red-400 hover:bg-red-500/10 hover:text-red-300" type="button" aria-label="Delete selected items" onclick={() => requestDelete()}>
-										<Trash2 class="size-4" aria-hidden="true" />
-									</button>
-								</Tooltip>
-								<Tooltip label="Clear selection">
-									<button class="inline-flex size-8 cursor-pointer items-center justify-center rounded text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)" type="button" aria-label="Clear selection" onclick={clearSelection}>
-										<X class="size-4" aria-hidden="true" />
-									</button>
-								</Tooltip>
+								<button class="inline-flex size-8 cursor-pointer items-center justify-center rounded text-red-400 hover:bg-red-500/10 hover:text-red-300" type="button" aria-label="Delete selected items" onclick={() => requestDelete()}>
+									<Trash2 class="size-4" aria-hidden="true" />
+								</button>
+								<button class="inline-flex size-8 cursor-pointer items-center justify-center rounded text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)" type="button" aria-label="Clear selection" onclick={clearSelection}>
+									<X class="size-4" aria-hidden="true" />
+								</button>
 							{/if}
 						</div>
 					{/if}
@@ -451,6 +456,7 @@
 						onToggleSelection={toggleSelection}
 						onOpenFolder={openFolder}
 						onShowContextMenu={showContextMenu}
+						onPreviewImage={previewImage}
 					/>
 				{:else}
 					<FilesListView
@@ -462,6 +468,7 @@
 						onToggleAll={toggleAllLoaded}
 						onOpenFolder={openFolder}
 						onShowContextMenu={showContextMenu}
+						onPreviewImage={previewImage}
 					/>
 				{/if}
 
@@ -483,6 +490,13 @@
 		{/if}
 	</div>
 </div>
+
+<ImageViewer
+	entries={imageEntries}
+	request={imagePreviewRequest}
+	onClose={() => imagePreviewRequest = null}
+	onError={(message) => toast.error(message)}
+/>
 
 <FileEntryContextMenu
 	entry={contextMenuEntry}

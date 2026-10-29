@@ -20,7 +20,8 @@
 		showSize,
 		onToggleSelection,
 		onOpenFolder,
-		onShowContextMenu
+		onShowContextMenu,
+		onPreviewImage
 	}: {
 		rows: FileManagerEntry[];
 		selectedIds: ReadonlySet<string>;
@@ -30,6 +31,7 @@
 		onToggleSelection: (entry: FileManagerEntry) => void;
 		onOpenFolder: (id: string) => void;
 		onShowContextMenu: (entry: FileManagerEntry, x: number, y: number) => void;
+		onPreviewImage: (entry: FileManagerEntry, trigger: HTMLElement) => void;
 	} = $props();
 	let gridLayout = $state<HTMLDivElement>();
 	let gridContent = $state<HTMLDivElement>();
@@ -246,18 +248,30 @@
 								aria-label={`Select ${entry.name}`}
 								onchange={() => onToggleSelection(entry)}
 							/>
-							<div class="grid aspect-[4/3] place-items-center overflow-hidden bg-(--surface-highest)">
-								{#if entry.kind === 'folder'}
-									<Folder class="text-(--accent)" style={`width: ${iconSize}px; height: ${iconSize}px`} aria-hidden="true" />
-								{:else if thumbnails.get(entry.id)}
-									<img class="size-full object-cover" src={thumbnails.get(entry.id)} alt={entry.name} loading="lazy" decoding="async" />
-								{:else}
-									<FileTypeIcon name={entry.name} mime={entry.type} style={`width: ${iconSize}px; height: ${iconSize}px`} />
-								{/if}
-							</div>
+							{#if entry.kind === 'file' && entry.type.startsWith('image/')}
+								<button class="grid aspect-[4/3] w-full cursor-zoom-in place-items-center overflow-hidden bg-(--surface-highest)" type="button" aria-label={`Preview ${entry.name}`} onclick={(event) => onPreviewImage(entry, event.currentTarget)}>
+									{#if thumbnails.get(entry.id)}
+										<img class="size-full object-cover" src={thumbnails.get(entry.id)} alt={entry.name} loading="lazy" decoding="async" />
+									{:else}
+										<FileTypeIcon name={entry.name} mime={entry.type} style={`width: ${iconSize}px; height: ${iconSize}px`} />
+									{/if}
+								</button>
+							{:else}
+								<div class="grid aspect-[4/3] place-items-center overflow-hidden bg-(--surface-highest)">
+									{#if entry.kind === 'folder'}
+										<Folder class="text-(--accent)" style={`width: ${iconSize}px; height: ${iconSize}px`} aria-hidden="true" />
+									{:else if thumbnails.get(entry.id)}
+										<img class="size-full object-cover" src={thumbnails.get(entry.id)} alt={entry.name} loading="lazy" decoding="async" />
+									{:else}
+										<FileTypeIcon name={entry.name} mime={entry.type} style={`width: ${iconSize}px; height: ${iconSize}px`} />
+									{/if}
+								</div>
+							{/if}
 							<div class="grid min-w-0" style={`gap: ${contentGap}px; padding: ${cardGap}px`}>
 								{#if entry.kind === 'folder'}
 									<button class="min-w-0 cursor-pointer truncate text-left font-medium leading-tight hover:text-(--accent)" style={`font-size: ${nameFontSize}px`} type="button" onclick={() => onOpenFolder(entry.id)}>{entry.name}</button>
+								{:else if entry.type.startsWith('image/')}
+									<button class="min-w-0 cursor-zoom-in truncate text-left font-medium leading-tight hover:text-(--accent)" style={`font-size: ${nameFontSize}px`} type="button" onclick={(event) => onPreviewImage(entry, event.currentTarget)}>{entry.name}</button>
 								{:else}
 									<span class="truncate font-medium leading-tight" style={`font-size: ${nameFontSize}px`} title={entry.name}>{entry.name}</span>
 								{/if}

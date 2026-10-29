@@ -5,6 +5,11 @@
 	--font-mono: "Inter", system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
 }
 
+/* Keep the document from scrolling behind modal and PhotoSwipe overlays. */
+body:has([data-modal-open="true"], .pswp--open) {
+	overflow: hidden;
+}
+
 :root {
 	color-scheme: dark;
 	--bg: #0b0e11;

@@ -2,6 +2,8 @@ export interface ThumbnailSource {
 	version: number;
 	size: number;
 	mime: string;
+	width: number;
+	height: number;
 	vaultId: string;
 	encryptedMetadata: string;
 	encryptedFileKey: string;
