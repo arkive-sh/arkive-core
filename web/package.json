@@ -29,6 +29,7 @@
     "@tanstack/svelte-table": "^9.3.1",
     "@tanstack/svelte-virtual": "^3.13.48",
     "axios": "^1.20.0",
+    "photoswipe": "^5.4.4",
     "valibot": "^1.5.0"
   }
 }

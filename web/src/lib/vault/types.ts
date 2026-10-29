@@ -7,6 +7,8 @@ export interface SearchPreview {
 	thumbnail_version?: number;
 	thumbnail_size?: number;
 	thumbnail_mime?: string;
+	thumbnail_width?: number;
+	thumbnail_height?: number;
 }
 
 export interface EncryptedSearchFile {

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import type { Snippet } from 'svelte';
 
 	let {
@@ -14,13 +15,89 @@
 		className?: string;
 		side?: 'left' | 'right';
 	} = $props();
+
+	let root = $state<HTMLSpanElement>();
+	let tooltip = $state<HTMLSpanElement>();
+	let visible = $state(false);
+	let pointerOver = false;
+	let focusWithin = false;
+	let position = $state({ left: 0, top: 0 });
+	let listening = false;
+
+	function positionTooltip(): void {
+		if (!root || !tooltip) return;
+
+		const trigger = root.getBoundingClientRect();
+		const tip = tooltip.getBoundingClientRect();
+		const margin = 8;
+		const gap = 10;
+		let actualSide = side;
+		if (actualSide === 'right' && trigger.right + gap + tip.width > window.innerWidth - margin) actualSide = 'left';
+		else if (actualSide === 'left' && trigger.left - gap - tip.width < margin) actualSide = 'right';
+
+		const left = actualSide === 'right' ? trigger.right + gap : trigger.left - gap - tip.width;
+		const top = trigger.top + (trigger.height - tip.height) / 2;
+		position = {
+			left: Math.round(Math.min(Math.max(left, margin), window.innerWidth - tip.width - margin)),
+			top: Math.round(Math.min(Math.max(top, margin), window.innerHeight - tip.height - margin))
+		};
+	}
+
+	function updateVisibility(): void {
+		const shouldShow = !disabled && (pointerOver || focusWithin);
+		visible = shouldShow;
+		if (shouldShow) {
+			positionTooltip();
+			if (!listening) {
+				window.addEventListener('resize', positionTooltip);
+				window.addEventListener('scroll', positionTooltip, true);
+				listening = true;
+			}
+		} else if (listening) {
+			window.removeEventListener('resize', positionTooltip);
+			window.removeEventListener('scroll', positionTooltip, true);
+			listening = false;
+		}
+	}
+
+	function onFocusOut(event: FocusEvent): void {
+		if (!(event.relatedTarget instanceof Node) || !root?.contains(event.relatedTarget)) {
+			focusWithin = false;
+			updateVisibility();
+		}
+	}
+
+	onDestroy(() => {
+		if (!listening) return;
+		window.removeEventListener('resize', positionTooltip);
+		window.removeEventListener('scroll', positionTooltip, true);
+	});
 </script>
 
-<span class={`group/tooltip relative inline-flex ${className}`}>
+<span
+	bind:this={root}
+	class={`relative inline-flex ${className}`}
+	role="presentation"
+	onpointerenter={() => {
+		pointerOver = true;
+		updateVisibility();
+	}}
+	onpointerleave={() => {
+		pointerOver = false;
+		updateVisibility();
+	}}
+	onfocusin={() => {
+		focusWithin = true;
+		updateVisibility();
+	}}
+	onfocusout={onFocusOut}
+>
 	{@render children()}
 	{#if !disabled}
 		<span
-			class={`pointer-events-none invisible absolute top-1/2 z-50 -translate-y-1/2 whitespace-nowrap rounded-md border border-(--border) bg-[color-mix(in_srgb,var(--surface-highest)_88%,black)] px-2.5 py-1.5 text-xs font-medium text-(--text) opacity-0 shadow-lg transition-[opacity,visibility] duration-200 ease-out group-hover/tooltip:visible group-hover/tooltip:opacity-100 group-focus-within/tooltip:visible group-focus-within/tooltip:opacity-100 ${side === 'left' ? 'right-full mr-2.5' : 'left-full ml-2.5'}`}
+			bind:this={tooltip}
+			class={`pointer-events-none fixed z-50 w-max max-w-[calc(100vw_-_1rem)] break-words rounded-md border border-(--border) bg-[color-mix(in_srgb,var(--surface-highest)_88%,black)] px-2.5 py-1.5 text-center text-xs font-medium text-(--text) shadow-lg transition-[opacity,visibility] duration-200 ease-out ${visible ? 'visible opacity-100' : 'invisible opacity-0'}`}
+			style={`left: ${position.left}px; top: ${position.top}px`}
 			role="tooltip"
 		>
 			{label}
