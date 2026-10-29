@@ -249,7 +249,7 @@
 								onchange={() => onToggleSelection(entry)}
 							/>
 							{#if entry.kind === 'file' && entry.type.startsWith('image/')}
-								<button class="grid aspect-[4/3] w-full cursor-zoom-in place-items-center overflow-hidden bg-(--surface-highest)" type="button" aria-label={`Preview ${entry.name}`} onclick={(event) => onPreviewImage(entry, event.currentTarget)}>
+								<button class="grid aspect-4/3 w-full cursor-zoom-in place-items-center overflow-hidden bg-(--surface-highest)" type="button" aria-label={`Preview ${entry.name}`} onclick={(event) => onPreviewImage(entry, event.currentTarget)}>
 									{#if thumbnails.get(entry.id)}
 										<img class="size-full object-cover" src={thumbnails.get(entry.id)} alt={entry.name} loading="lazy" decoding="async" />
 									{:else}
@@ -257,7 +257,7 @@
 									{/if}
 								</button>
 							{:else}
-								<div class="grid aspect-[4/3] place-items-center overflow-hidden bg-(--surface-highest)">
+								<div class="grid aspect-4/3 place-items-center overflow-hidden bg-(--surface-highest)">
 									{#if entry.kind === 'folder'}
 										<Folder class="text-(--accent)" style={`width: ${iconSize}px; height: ${iconSize}px`} aria-hidden="true" />
 									{:else if thumbnails.get(entry.id)}

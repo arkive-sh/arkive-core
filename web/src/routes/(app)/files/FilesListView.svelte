@@ -88,7 +88,7 @@
 </script>
 
 <div class="overflow-x-auto">
-	<table class="grid w-full min-w-[760px] border-collapse text-left">
+	<table class="grid w-full min-w-190 border-collapse text-left">
 		<thead class="grid bg-(--surface-highest) text-xs font-semibold tracking-wide text-(--muted)">
 			{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
 				<tr class="grid w-full" style={`grid-template-columns: ${GRID_COLUMNS}`}>
@@ -119,7 +119,7 @@
 					{@const row = tableRows[virtualRow.index]}
 					<tr
 						data-index={virtualRow.index}
-						class={`absolute top-0 left-0 grid h-[45px] w-full transition-colors hover:bg-(--surface-highest) ${selectedIds.has(fileManagerEntryKey(row.original)) ? 'bg-(--surface-highest)' : 'bg-(--surface-raised)'}`}
+						class={`absolute top-0 left-0 grid h-11.25 w-full transition-colors hover:bg-(--surface-highest) ${selectedIds.has(fileManagerEntryKey(row.original)) ? 'bg-(--surface-highest)' : 'bg-(--surface-raised)'}`}
 						style={`grid-template-columns: ${GRID_COLUMNS}; transform: translateY(${virtualRow.start - rowScrollMargin}px)`}
 						oncontextmenu={(event) => {
 							event.preventDefault();

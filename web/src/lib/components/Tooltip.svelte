@@ -96,7 +96,7 @@
 	{#if !disabled}
 		<span
 			bind:this={tooltip}
-			class={`pointer-events-none fixed z-50 w-max max-w-[calc(100vw_-_1rem)] break-words rounded-md border border-(--border) bg-[color-mix(in_srgb,var(--surface-highest)_88%,black)] px-2.5 py-1.5 text-center text-xs font-medium text-(--text) shadow-lg transition-[opacity,visibility] duration-200 ease-out ${visible ? 'visible opacity-100' : 'invisible opacity-0'}`}
+			class={`pointer-events-none fixed z-50 w-max max-w-[calc(100vw-1rem)] wrap-break-word rounded-md border border-(--border) bg-[color-mix(in_srgb,var(--surface-highest)_88%,black)] px-2.5 py-1.5 text-center text-xs font-medium text-(--text) shadow-lg transition-[opacity,visibility] duration-200 ease-out ${visible ? 'visible opacity-100' : 'invisible opacity-0'}`}
 			style={`left: ${position.left}px; top: ${position.top}px`}
 			role="tooltip"
 		>

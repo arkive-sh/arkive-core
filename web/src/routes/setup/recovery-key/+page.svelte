@@ -103,21 +103,21 @@
 </svelte:head>
 
 <main class="grid min-h-screen bg-[linear-gradient(180deg,rgba(9,14,18,0.98),rgba(15,20,24,0.98))] px-4 py-5 text-(--text) md:place-items-center print:bg-white print:text-black">
-	<section class="mx-auto w-full max-w-[800px] border border-(--border) bg-(--surface) p-5 shadow-[0_24px_60px_rgba(0,0,0,0.34)] print:border-gray-300 print:bg-white print:p-0 print:shadow-none" aria-labelledby="recovery-heading">
-		<header class="mb-[18px] flex items-start gap-4">
+	<section class="mx-auto w-full max-w-200 border border-(--border) bg-(--surface) p-5 shadow-[0_24px_60px_rgba(0,0,0,0.34)] print:border-gray-300 print:bg-white print:p-0 print:shadow-none" aria-labelledby="recovery-heading">
+		<header class="mb-4.5 flex items-start gap-4">
 			<span class="inline-flex size-14 shrink-0 items-center justify-center border border-(--danger)/30 bg-(--danger)/10 text-(--danger) print:hidden">
 				<TriangleAlert class="size-7" aria-hidden="true" />
 			</span>
 			<div class="min-w-0">
 				<h1 id="recovery-heading" class="m-0 mb-1 text-[1.75rem] leading-[1.05] font-semibold">Vault Recovery Key</h1>
-				<p class="m-0 max-w-[640px] text-[15px] leading-[1.4] text-(--muted) print:text-gray-700">This is the <strong class="text-(--danger) italic print:text-black">ONLY</strong> way to recover your data if you lose your password. Arkive Core is a zero-knowledge system; we cannot reset your access.</p>
+				<p class="m-0 max-w-160 text-[15px] leading-[1.4] text-(--muted) print:text-gray-700">This is the <strong class="text-(--danger) italic print:text-black">ONLY</strong> way to recover your data if you lose your password. Arkive Core is a zero-knowledge system; we cannot reset your access.</p>
 				<p class="mt-2.5 mb-0 text-sm leading-5 text-amber-300 print:hidden">If you refresh this page before confirming, Arkive Core will generate a new recovery key. Only back up the key currently shown on this page.</p>
 			</div>
 		</header>
 
 		<form class="flex flex-col gap-4" method="post" onsubmit={submit}>
 			<div class="border border-(--border)/70 bg-(--surface-raised) p-5 print:border-gray-300 print:bg-white">
-				<div class="mb-[18px] flex justify-end gap-2 print:hidden">
+				<div class="mb-4.5 flex justify-end gap-2 print:hidden">
 					{#snippet copyIcon()}<Copy class="size-4" aria-hidden="true" />{/snippet}
 					<Button text="Copy key" variant="secondary" disabled={!recoveryKey} onclick={copyRecoveryKey} icon={copyIcon} />
 					{#snippet printIcon()}<Printer class="size-4" aria-hidden="true" />{/snippet}
@@ -140,15 +140,15 @@
 			{#if errorMessage}<p class="m-0 text-sm text-(--danger) print:hidden" role="alert">{errorMessage}</p>{/if}
 
 			<label class="flex cursor-pointer items-start gap-4 print:hidden">
-				<input class="mt-0.5 size-[22px] shrink-0 accent-(--accent)" type="checkbox" bind:checked={acknowledged} />
+				<input class="mt-0.5 size-5.5 shrink-0 accent-(--accent)" type="checkbox" bind:checked={acknowledged} />
 				<span class="text-[15px] leading-[1.35] text-(--muted)">I have written down or otherwise securely backed up this recovery key. I understand that Arkive Core cannot recover this key for me and losing it will result in <strong class="text-(--text)">permanent data loss</strong>.</span>
 			</label>
 
 			<footer class="flex flex-col gap-3 border-t border-(--border)/40 pt-4 sm:flex-row print:hidden">
 				{#snippet submitIcon()}<ShieldCheck class="size-4" aria-hidden="true" />{/snippet}
-				<Button type="submit" text="Confirm & Secure Vault" busyText="Securing..." variant="primary" busy={busy} disabled={!canSubmit} class="min-h-[52px] flex-1 text-xs font-extrabold tracking-[0.08em] uppercase" icon={submitIcon} />
+				<Button type="submit" text="Confirm & Secure Vault" busyText="Securing..." variant="primary" busy={busy} disabled={!canSubmit} class="min-h-13 flex-1 text-xs font-extrabold tracking-[0.08em] uppercase" icon={submitIcon} />
 				{#snippet downloadIcon()}<Download class="size-4" aria-hidden="true" />{/snippet}
-				<Button text="Download Recovery PDF" variant="secondary" disabled={!recoveryKey} onclick={saveRecoveryPDF} class="min-h-[52px] flex-1 text-xs font-extrabold tracking-[0.08em] uppercase" icon={downloadIcon} />
+				<Button text="Download Recovery PDF" variant="secondary" disabled={!recoveryKey} onclick={saveRecoveryPDF} class="min-h-13 flex-1 text-xs font-extrabold tracking-[0.08em] uppercase" icon={downloadIcon} />
 			</footer>
 		</form>
 	</section>

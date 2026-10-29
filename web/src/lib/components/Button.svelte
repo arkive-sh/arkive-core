@@ -32,7 +32,7 @@
 
 	const variants: Record<string, string> = {
 		primary:
-			'border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-ink)] hover:border-[var(--accent-strong)] hover:bg-[var(--accent-strong)]',
+			'border-(--accent) bg-(--accent) text-(--accent-ink) hover:border-(--accent-strong) hover:bg-(--accent-strong)',
 		secondary:
 			'border-(--border) bg-transparent text-(--text) shadow-none hover:bg-(--surface-highest)',
 		danger: 'border-(--border) bg-[rgba(147,0,10,0.18)] text-(--danger) shadow-none',
