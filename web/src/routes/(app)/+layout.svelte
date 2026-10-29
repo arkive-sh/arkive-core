@@ -45,7 +45,7 @@
 			setMobileOpen(false);
 		};
 		const closeOnEscape = (event: KeyboardEvent) => {
-			if (event.key === 'Escape' && !document.querySelector('[data-modal-open="true"]')) closeSidebar();
+			if (event.key === 'Escape' && !document.querySelector('[data-modal-open="true"], [role="menu"]')) closeSidebar();
 		};
 
 		syncView();

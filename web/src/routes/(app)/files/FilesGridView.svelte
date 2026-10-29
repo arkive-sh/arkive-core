@@ -1,12 +1,13 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
-	import { File as FileIcon, Folder } from '@lucide/svelte';
+	import { Folder } from '@lucide/svelte';
 	import { createWindowVirtualizer } from '@tanstack/svelte-virtual';
 	import { get } from 'svelte/store';
 	import { api } from '#lib/api.ts';
 	import { getCachedThumbnail, cacheThumbnail } from '#lib/thumbnail-cache.ts';
 	import { formatBytes } from '#lib/utils/format.ts';
+	import FileTypeIcon from '#lib/components/FileTypeIcon.svelte';
 	import { decryptSearchThumbnail } from '#lib/vault/search.ts';
 	import { fileManagerEntryKey, type FileManagerEntry } from './types';
 
@@ -18,7 +19,8 @@
 		showType,
 		showSize,
 		onToggleSelection,
-		onOpenFolder
+		onOpenFolder,
+		onShowContextMenu
 	}: {
 		rows: FileManagerEntry[];
 		selectedIds: ReadonlySet<string>;
@@ -27,6 +29,7 @@
 		showSize: boolean;
 		onToggleSelection: (entry: FileManagerEntry) => void;
 		onOpenFolder: (id: string) => void;
+		onShowContextMenu: (entry: FileManagerEntry, x: number, y: number) => void;
 	} = $props();
 	let gridLayout = $state<HTMLDivElement>();
 	let gridContent = $state<HTMLDivElement>();
@@ -228,7 +231,13 @@
 					style={`grid-template-columns: repeat(${columnCount}, minmax(0, 1fr)); gap: ${cardGap}px; transform: translateY(${virtualRow.start - rowScrollMargin}px)`}
 				>
 					{#each rows.slice(start, start + columnCount) as entry (`${entry.kind}:${entry.id}`)}
-						<article class={`relative min-w-0 overflow-hidden rounded-md border bg-(--surface) transition-colors hover:border-(--accent) ${selectedIds.has(fileManagerEntryKey(entry)) ? 'border-(--accent)' : 'border-(--border)'}`}>
+						<article
+							class={`relative min-w-0 overflow-hidden rounded-md border bg-(--surface) transition-colors hover:border-(--accent) ${selectedIds.has(fileManagerEntryKey(entry)) ? 'border-(--accent)' : 'border-(--border)'}`}
+							oncontextmenu={(event) => {
+								event.preventDefault();
+								onShowContextMenu(entry, event.clientX, event.clientY);
+							}}
+						>
 							<input
 								class="absolute z-1 cursor-pointer"
 								style={`top: ${checkboxInset}px; right: ${checkboxInset}px; width: ${checkboxSize}px; height: ${checkboxSize}px`}
@@ -243,7 +252,7 @@
 								{:else if thumbnails.get(entry.id)}
 									<img class="size-full object-cover" src={thumbnails.get(entry.id)} alt={entry.name} loading="lazy" decoding="async" />
 								{:else}
-									<FileIcon class="text-(--muted)" style={`width: ${iconSize}px; height: ${iconSize}px`} aria-hidden="true" />
+									<FileTypeIcon name={entry.name} mime={entry.type} style={`width: ${iconSize}px; height: ${iconSize}px`} />
 								{/if}
 							</div>
 							<div class="grid min-w-0" style={`gap: ${contentGap}px; padding: ${cardGap}px`}>

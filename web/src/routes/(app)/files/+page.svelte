@@ -6,8 +6,11 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { createInfiniteQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { api } from '#lib/api.ts';
+	import Breadcrumbs from '#lib/components/Breadcrumbs.svelte';
 	import Modal from '#lib/components/Modal.svelte';
 	import Tooltip from '#lib/components/Tooltip.svelte';
+	import FileEntryContextMenu from './FileEntryContextMenu.svelte';
+	import FilePropertiesModal from './FilePropertiesModal.svelte';
 	import { toast } from '#lib/toast.ts';
 	import FilesGridView from './FilesGridView.svelte';
 	import FilesListView from './FilesListView.svelte';
@@ -49,11 +52,15 @@
 
 	let { data }: PageProps = $props();
 	let rows = $state<FileManagerEntry[]>([]);
-	let breadcrumbs = $state<Array<{ id: string | null; name: string }>>([{ id: null, name: 'Files' }]);
+	let breadcrumbs = $state<Array<{ id: string | null; name: string }>>([{ id: null, name: 'Root' }]);
 	let entriesReady = $state(false);
 	let sentinel: HTMLDivElement | undefined = $state();
 	let deleteDialogOpen = $state(false);
 	let deleting = $state(false);
+	let deleteTargets = $state<FileManagerEntry[]>([]);
+	let propertiesEntry = $state<FileManagerEntry | null>(null);
+	let contextMenuEntry = $state<FileManagerEntry | null>(null);
+	let contextMenuPosition = $state({ x: 0, y: 0 });
 	let tileSize = $state(150);
 	let showType = $state(false);
 	let showSize = $state(true);
@@ -93,6 +100,12 @@
 	].map((entry) => [fileManagerEntryKey(entry), entry] as const)).values()]);
 	const selectedEntries = $derived(loadedEntries.filter((entry) => selectedIds.has(fileManagerEntryKey(entry))));
 	const allRowsSelected = $derived(loadedEntries.length > 0 && selectedEntries.length === loadedEntries.length);
+	const currentLocation = $derived(breadcrumbs.map((crumb) => crumb.name).join(' / '));
+	const breadcrumbItems = $derived(breadcrumbs.map((crumb, index) => ({
+		id: crumb.id ?? 'root',
+		label: crumb.name,
+		href: index < breadcrumbs.length - 1 ? urlFor(crumb.id) : undefined
+	})));
 
 	async function decryptEntries(
 		response: FolderEntriesResponse,
@@ -173,7 +186,7 @@
 		if (generation !== decryptGeneration || !$vaultUnlocked) return;
 		return {
 			rows: [...folderRows, ...fileRows],
-			breadcrumbs: path ? [{ id: null, name: 'Files' }, ...path] : undefined
+			breadcrumbs: path ? [{ id: null, name: 'Root' }, ...path] : undefined
 		};
 	}
 
@@ -187,7 +200,9 @@
 			hydratedFirstPage = undefined;
 			hydrationQueue = Promise.resolve();
 			rows = [];
-			breadcrumbs = [{ id: null, name: 'Files' }];
+			breadcrumbs = [{ id: null, name: 'Root' }];
+			contextMenuEntry = null;
+			propertiesEntry = null;
 			entriesReady = false;
 			selectedIds.clear();
 		}
@@ -197,7 +212,9 @@
 			hydratedPageCount = 0;
 			hydrationQueue = Promise.resolve();
 			rows = [];
-			breadcrumbs = [{ id: null, name: 'Files' }];
+			breadcrumbs = [{ id: null, name: 'Root' }];
+			contextMenuEntry = null;
+			propertiesEntry = null;
 			entriesReady = false;
 			return;
 		}
@@ -226,7 +243,7 @@
 				return;
 			}
 			rows = [];
-			breadcrumbs = [{ id: null, name: 'Files' }];
+			breadcrumbs = [{ id: null, name: 'Root' }];
 			entriesReady = false;
 		}
 
@@ -289,17 +306,33 @@
 		selectedIds.clear();
 	}
 
+	function showContextMenu(entry: FileManagerEntry, x: number, y: number): void {
+		contextMenuEntry = entry;
+		contextMenuPosition = { x, y };
+	}
+
+	function requestDelete(entry?: FileManagerEntry): void {
+		if (entry) {
+			const entryIsSelected = selectedIds.has(fileManagerEntryKey(entry));
+			deleteTargets = entryIsSelected && selectedEntries.length ? selectedEntries : [entry];
+		} else {
+			deleteTargets = selectedEntries;
+		}
+		deleteDialogOpen = deleteTargets.length > 0;
+	}
+
 	async function deleteSelected(): Promise<void> {
-		if (deleting || !selectedEntries.length) return;
+		if (deleting || !deleteTargets.length) return;
 		deleting = true;
 		try {
 			await api.post('/api/entries/delete', {
-				fileIds: selectedEntries.filter((entry) => entry.kind === 'file').map((entry) => entry.id),
-				folderIds: selectedEntries.filter((entry) => entry.kind === 'folder').map((entry) => entry.id)
+				fileIds: deleteTargets.filter((entry) => entry.kind === 'file').map((entry) => entry.id),
+				folderIds: deleteTargets.filter((entry) => entry.kind === 'folder').map((entry) => entry.id)
 			});
 			selectedIds.clear();
+			deleteTargets = [];
 			deleteDialogOpen = false;
-			toast.success('Selected items deleted.');
+			toast.success('Items deleted.');
 			await Promise.all([
 				queryClient.invalidateQueries({ queryKey: ['folder-entries'] }),
 				queryClient.invalidateQueries({ queryKey: ['search'] })
@@ -353,51 +386,42 @@
 	<div class="mx-auto grid w-[min(1440px,calc(100%-40px))] gap-5 max-[960px]:w-[calc(100%-24px)]">
 		<header class="flex items-start justify-between gap-4 max-[640px]:flex-col">
 			<h1 class="sr-only">{breadcrumbs.at(-1)?.name ?? 'Files'}</h1>
-			{#if breadcrumbs.length > 1}
-				<nav class="flex flex-wrap items-center gap-2 text-sm text-(--muted)" aria-label="Folder path">
-					{#each breadcrumbs.slice(1) as crumb, index (crumb.id ?? 'root')}
-						{#if index > 0}<span aria-hidden="true">/</span>{/if}
-						{#if index === breadcrumbs.length - 2}
-							<span aria-current="page" class="text-(--text)">{crumb.name}</span>
-						{:else}
-							<a class="cursor-pointer hover:text-(--text)" href={urlFor(crumb.id)}>{crumb.name}</a>
-						{/if}
-					{/each}
-				</nav>
-			{/if}
-			<div class="flex flex-1 items-center justify-between gap-3 max-[640px]:w-full">
-				{#if (rows.length && viewMode === 'grid') || selectedEntries.length}
-					<div class="inline-flex flex-wrap items-center gap-1 rounded-md border border-(--border) bg-(--surface-raised) p-1">
-						{#if rows.length && viewMode === 'grid'}
-							<button class="inline-flex h-8 cursor-pointer items-center rounded px-2 text-sm text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)" type="button" aria-pressed={allRowsSelected} onclick={toggleAllLoaded}>
-								{allRowsSelected ? 'Deselect all' : 'Select all'}
-							</button>
-						{/if}
-						{#if selectedEntries.length}
-							<span class="px-2 text-sm text-(--muted)">{selectedEntries.length} selected</span>
-							<Tooltip label="Delete selected items">
-								<button class="inline-flex size-8 cursor-pointer items-center justify-center rounded text-red-400 hover:bg-red-500/10 hover:text-red-300" type="button" aria-label="Delete selected items" onclick={() => deleteDialogOpen = true}>
-									<Trash2 class="size-4" aria-hidden="true" />
+			<div class="flex min-w-0 flex-1 items-center gap-4 max-[640px]:w-full max-[640px]:flex-col max-[640px]:items-stretch">
+				<div class="min-w-0 flex-1"><Breadcrumbs items={breadcrumbItems} label="Folder path" /></div>
+				<div class="flex shrink-0 items-center justify-between gap-3">
+					{#if (rows.length && viewMode === 'grid') || selectedEntries.length}
+						<div class="inline-flex flex-wrap items-center gap-1 rounded-md border border-(--border) bg-(--surface-raised) p-1">
+							{#if rows.length && viewMode === 'grid'}
+								<button class="inline-flex h-8 cursor-pointer items-center rounded px-2 text-sm text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)" type="button" aria-pressed={allRowsSelected} onclick={toggleAllLoaded}>
+									{allRowsSelected ? 'Deselect all' : 'Select all'}
 								</button>
-							</Tooltip>
-							<Tooltip label="Clear selection">
-								<button class="inline-flex size-8 cursor-pointer items-center justify-center rounded text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)" type="button" aria-label="Clear selection" onclick={clearSelection}>
-									<X class="size-4" aria-hidden="true" />
-								</button>
-							</Tooltip>
-						{/if}
-					</div>
-				{/if}
-				<FilesViewOptions
-					view={viewMode}
-					{tileSize}
-					{showType}
-					{showSize}
-					onViewChange={changeView}
-					onTileSizeChange={(size) => tileSize = size}
-					onShowTypeChange={(show) => showType = show}
-					onShowSizeChange={(show) => showSize = show}
-				/>
+							{/if}
+							{#if selectedEntries.length}
+								<span class="px-2 text-sm text-(--muted)">{selectedEntries.length} selected</span>
+								<Tooltip label="Delete selected items">
+									<button class="inline-flex size-8 cursor-pointer items-center justify-center rounded text-red-400 hover:bg-red-500/10 hover:text-red-300" type="button" aria-label="Delete selected items" onclick={() => requestDelete()}>
+										<Trash2 class="size-4" aria-hidden="true" />
+									</button>
+								</Tooltip>
+								<Tooltip label="Clear selection">
+									<button class="inline-flex size-8 cursor-pointer items-center justify-center rounded text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)" type="button" aria-label="Clear selection" onclick={clearSelection}>
+										<X class="size-4" aria-hidden="true" />
+									</button>
+								</Tooltip>
+							{/if}
+						</div>
+					{/if}
+					<FilesViewOptions
+						view={viewMode}
+						{tileSize}
+						{showType}
+						{showSize}
+						onViewChange={changeView}
+						onTileSizeChange={(size) => tileSize = size}
+						onShowTypeChange={(show) => showType = show}
+						onShowSizeChange={(show) => showSize = show}
+					/>
+				</div>
 			</div>
 		</header>
 
@@ -426,9 +450,19 @@
 						{showSize}
 						onToggleSelection={toggleSelection}
 						onOpenFolder={openFolder}
+						onShowContextMenu={showContextMenu}
 					/>
 				{:else}
-					<FilesListView {rows} {selectedIds} selectedCount={selectedEntries.length} loadedCount={loadedEntries.length} onToggleSelection={toggleSelection} onToggleAll={toggleAllLoaded} onOpenFolder={openFolder} />
+					<FilesListView
+						{rows}
+						{selectedIds}
+						selectedCount={selectedEntries.length}
+						loadedCount={loadedEntries.length}
+						onToggleSelection={toggleSelection}
+						onToggleAll={toggleAllLoaded}
+						onOpenFolder={openFolder}
+						onShowContextMenu={showContextMenu}
+					/>
 				{/if}
 
 				{#if entriesReady && entriesQuery.hasNextPage}
@@ -450,16 +484,28 @@
 	</div>
 </div>
 
+<FileEntryContextMenu
+	entry={contextMenuEntry}
+	x={contextMenuPosition.x}
+	y={contextMenuPosition.y}
+	onClose={() => contextMenuEntry = null}
+	onOpenFolder={openFolder}
+	onProperties={(entry) => propertiesEntry = entry}
+	onDelete={requestDelete}
+/>
+
+<FilePropertiesModal entry={propertiesEntry} location={currentLocation} onClose={() => propertiesEntry = null} />
+
 <Modal
 	open={deleteDialogOpen}
 	label="Confirm delete"
-	title={`Delete ${selectedEntries.length} selected ${selectedEntries.length === 1 ? 'item' : 'items'}?`}
+	title={`Delete ${deleteTargets.length} ${deleteTargets.length === 1 ? 'item' : 'items'}?`}
 	onClose={() => { if (!deleting) deleteDialogOpen = false; }}
 >
 	<p class="m-0 text-sm text-(--muted)">This action cannot be undone.</p>
 	{#snippet actions()}
 		<button class="cursor-pointer rounded border border-(--border) px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={deleting} onclick={() => deleteDialogOpen = false}>Cancel</button>
-		<button class="cursor-pointer rounded border border-red-500 bg-red-500 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={deleting || !selectedEntries.length} onclick={() => void deleteSelected()}>
+		<button class="cursor-pointer rounded border border-red-500 bg-red-500 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={deleting || !deleteTargets.length} onclick={() => void deleteSelected()}>
 			{deleting ? 'Deleting…' : 'Delete'}
 		</button>
 	{/snippet}

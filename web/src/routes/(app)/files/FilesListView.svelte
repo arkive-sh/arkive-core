@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { File as FileIcon, Folder } from '@lucide/svelte';
+	import { Folder } from '@lucide/svelte';
 	import { createTable, FlexRender, tableFeatures, type ColumnDef } from '@tanstack/svelte-table';
 	import { createWindowVirtualizer } from '@tanstack/svelte-virtual';
 	import { get } from 'svelte/store';
 	import { formatBytes, formatDate } from '#lib/utils/format.ts';
+	import FileTypeIcon from '#lib/components/FileTypeIcon.svelte';
 	import { fileManagerEntryKey, type FileManagerEntry } from './types';
 
 	const GRID_COLUMNS = '3rem minmax(220px, 2fr) minmax(160px, 1.2fr) minmax(90px, 0.75fr) minmax(150px, 1fr)';
@@ -15,7 +16,8 @@
 		loadedCount,
 		onToggleSelection,
 		onToggleAll,
-		onOpenFolder
+		onOpenFolder,
+		onShowContextMenu
 	}: {
 		rows: FileManagerEntry[];
 		selectedIds: ReadonlySet<string>;
@@ -24,6 +26,7 @@
 		onToggleSelection: (entry: FileManagerEntry) => void;
 		onToggleAll: () => void;
 		onOpenFolder: (id: string) => void;
+		onShowContextMenu: (entry: FileManagerEntry, x: number, y: number) => void;
 	} = $props();
 	let selectAllCheckbox = $state<HTMLInputElement>();
 	let tableBody = $state<HTMLTableSectionElement>();
@@ -116,6 +119,10 @@
 						data-index={virtualRow.index}
 						class={`absolute top-0 left-0 grid h-[45px] w-full transition-colors hover:bg-(--surface-highest) ${selectedIds.has(fileManagerEntryKey(row.original)) ? 'bg-(--surface-highest)' : 'bg-(--surface-raised)'}`}
 						style={`grid-template-columns: ${GRID_COLUMNS}; transform: translateY(${virtualRow.start - rowScrollMargin}px)`}
+						oncontextmenu={(event) => {
+							event.preventDefault();
+							onShowContextMenu(row.original, event.clientX, event.clientY);
+						}}
 					>
 						<td class="flex items-center px-4 py-3 first:pl-5">
 							<input
@@ -135,7 +142,7 @@
 									</button>
 								{:else if cell.column.id === 'name'}
 									<span class="inline-flex items-center gap-2 font-medium">
-										<FileIcon class="size-4 shrink-0 text-(--muted)" aria-hidden="true" />
+										<FileTypeIcon name={row.original.name} mime={row.original.type} className="size-4 shrink-0" />
 										<FlexRender {cell} />
 									</span>
 								{:else if cell.column.id === 'size'}
