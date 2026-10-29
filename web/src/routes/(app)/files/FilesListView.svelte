@@ -136,21 +136,21 @@
 						{#each row.getAllCells() as cell (cell.id)}
 							<td class="flex min-w-0 items-center whitespace-nowrap px-4 py-3 first:pl-5 last:pr-5">
 								{#if cell.column.id === 'name' && row.original.kind === 'folder'}
-									<button class="inline-flex cursor-pointer items-center gap-2 text-left font-medium text-(--text) hover:text-(--accent)" type="button" onclick={() => onOpenFolder(row.original.id)}>
+									<button class="inline-flex min-w-0 max-w-full cursor-pointer items-center gap-2 text-left font-medium text-(--text) hover:text-(--accent)" type="button" onclick={() => onOpenFolder(row.original.id)}>
 										<Folder class="size-4 shrink-0 text-(--accent)" aria-hidden="true" />
-										<FlexRender {cell} />
+										<span class="min-w-0 truncate" title={row.original.name}><FlexRender {cell} /></span>
 									</button>
 								{:else if cell.column.id === 'name'}
-									<span class="inline-flex items-center gap-2 font-medium">
+									<span class="inline-flex min-w-0 max-w-full items-center gap-2 font-medium">
 										<FileTypeIcon name={row.original.name} mime={row.original.type} className="size-4 shrink-0" />
-										<FlexRender {cell} />
+										<span class="min-w-0 truncate" title={row.original.name}><FlexRender {cell} /></span>
 									</span>
 								{:else if cell.column.id === 'size'}
 									<span class="text-(--muted)">{formatBytes(cell.getValue() as number | null)}</span>
 								{:else if cell.column.id === 'updatedAt'}
 									<span class="text-(--muted)">{formatDate(cell.getValue() as string)}</span>
 								{:else}
-									<span class="font-mono text-xs text-(--muted)">{cell.getValue() as string}</span>
+									<span class="block min-w-0 truncate font-mono text-xs text-(--muted)" title={cell.getValue() as string}>{cell.getValue() as string}</span>
 								{/if}
 							</td>
 						{/each}
