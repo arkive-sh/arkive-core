@@ -4,8 +4,10 @@ import { createSearchTokens } from '../vault/search';
 import { waitUntilReady } from '../vault/session';
 import { encryptFolderMetadata, encryptFolderName } from '../vault/files';
 import type { SearchTokenEntry } from '../vault/types';
+import { createAndUploadThumbnail, type UploadedThumbnail } from './thumbnail';
 import {
 	clearUploadContext,
+	encryptUploadMetadata,
 	encryptUploadPart,
 	finalizeUpload,
 	hashUploadPayload,
@@ -135,22 +137,10 @@ export async function uploadFile(
 
 	try {
 		const mime = file.type || 'application/octet-stream';
-		const createdAt = new Date().toISOString();
 		const prepared = await prepareUpload(
 			uploadToken,
 			started.vaultId,
 			started.fileId,
-			{
-				schema: 'arkive.file.metadata',
-				version: 1,
-				name: file.name,
-				mime,
-				extension: extension(file.name),
-				size: file.size,
-				created_at_client: createdAt,
-				modified_at_client: file.lastModified ? new Date(file.lastModified).toISOString() : null,
-				preview: { thumbnail_file_id: null, has_thumbnail: false }
-			},
 			started.totalChunks
 		);
 		const chunksByPart: Array<Array<{ n: number; plain_size: number; cipher_size: number; hash: string }>> = new Array(started.uploadPartCount);
@@ -163,6 +153,14 @@ export async function uploadFile(
 		const abortParts = () => partController.abort();
 		signal?.addEventListener('abort', abortParts, { once: true });
 		if (signal?.aborted) abortParts();
+		const thumbnailPromise = createAndUploadThumbnail({
+			file,
+			uploadToken,
+			uploadSessionId: started.uploadSessionId,
+			vaultId: started.vaultId,
+			fileId: started.fileId,
+			signal: partController.signal
+		});
 		const getURL = createPartURLGetter(started, partController.signal);
 
 		async function uploadPart(partNumber: number): Promise<void> {
@@ -236,8 +234,10 @@ export async function uploadFile(
 				await uploadPart(partNumber);
 			}
 		});
+		let uploadedThumbnail: UploadedThumbnail | null = null;
 		try {
 			await Promise.all(workers);
+			uploadedThumbnail = await thumbnailPromise;
 		} catch (error) {
 			partController.abort();
 			await Promise.allSettled(workers);
@@ -247,6 +247,33 @@ export async function uploadFile(
 		}
 		const chunks = chunksByPart.flat();
 
+		checkAborted(signal);
+		const encryptedMetadata = await encryptUploadMetadata(uploadToken, {
+			schema: 'arkive.file.metadata',
+			version: 1,
+			name: file.name,
+			mime,
+			extension: extension(file.name),
+			size: file.size,
+			created_at_client: new Date().toISOString(),
+			modified_at_client: file.lastModified ? new Date(file.lastModified).toISOString() : null,
+			preview: uploadedThumbnail
+				? {
+						thumbnail_file_id: null,
+						has_thumbnail: true,
+						thumbnail_mime: uploadedThumbnail.mime,
+						thumbnail_width: uploadedThumbnail.width,
+						thumbnail_height: uploadedThumbnail.height,
+						thumbnail_size: uploadedThumbnail.encryptedSize,
+						thumbnail_version: 1
+					}
+				: { thumbnail_file_id: null, has_thumbnail: false }
+		}, started.vaultId, started.fileId);
+		const searchTokens: SearchTokenEntry[] = (await createSearchTokens(file.name, started.vaultId, 128)).map((token) => ({
+			token,
+			field: 'name' as const,
+			weight: 10 as const
+		}));
 		checkAborted(signal);
 		const finalized = await finalizeUpload(
 			uploadToken,
@@ -267,20 +294,19 @@ export async function uploadFile(
 			},
 			chunks.map((chunk) => chunk.hash)
 		);
-		const searchTokens: SearchTokenEntry[] = (await createSearchTokens(file.name, started.vaultId, 128)).map((token) => ({
-			token,
-			field: 'name' as const,
-			weight: 10 as const
-		}));
-		checkAborted(signal);
 		await api.post(
 			`/api/uploads/${encodeURIComponent(started.uploadSessionId)}/complete`,
 			{
-				encryptedMetadata: prepared.encryptedMetadata,
+				encryptedMetadata: encryptedMetadata.encryptedMetadata,
 				encryptedFileKey: prepared.encryptedFileKey,
 				encryptedManifest: finalized.encryptedManifest,
 				encryptedHash: finalized.encryptedHash,
-				searchTokens
+				searchTokens,
+				hasThumbnail: !!uploadedThumbnail,
+				thumbnailMime: uploadedThumbnail?.mime ?? '',
+				thumbnailWidth: uploadedThumbnail?.width ?? 0,
+				thumbnailHeight: uploadedThumbnail?.height ?? 0,
+				thumbnailSize: uploadedThumbnail?.encryptedSize ?? 0
 			},
 			{ signal }
 		);

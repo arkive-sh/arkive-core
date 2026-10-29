@@ -677,32 +677,38 @@ func APIUploadCancel(svc *uploads.Service) gin.HandlerFunc {
 	}
 }
 
-func APIThumbnailRedirect(svc *filessvc.Service) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		fileID := c.Param("id")
-		userID, ok := c.Get("user_id")
-		if !ok {
+func thumbnailDownloadURL(c *gin.Context, svc *filessvc.Service) (string, bool) {
+	userID, ok := c.Get("user_id")
+	if !ok {
+		apierror.Unauthorized(c)
+		return "", false
+	}
+
+	url, err := svc.PresignThumbnailDownload(c.Request.Context(), userID.(string), c.Param("id"))
+	if err != nil {
+		switch err {
+		case filessvc.ErrUnauthorized:
 			apierror.Unauthorized(c)
+		case filessvc.ErrNotFound:
+			apierror.Write(c, http.StatusNotFound, "thumbnail_not_found", "Thumbnail not found", nil)
+		case filessvc.ErrInvalidInput:
+			apierror.InvalidPayload(c)
+		default:
+			_ = c.Error(errs.WithStack(err))
+			apierror.Internal(c, "Thumbnail failed")
+		}
+		return "", false
+	}
+	return url, true
+}
+
+func APIThumbnailDownloadPresign(svc *filessvc.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		url, ok := thumbnailDownloadURL(c, svc)
+		if !ok {
 			return
 		}
-
-		url, err := svc.PresignThumbnailDownload(c.Request.Context(), userID.(string), fileID)
-		if err != nil {
-			switch err {
-			case filessvc.ErrUnauthorized:
-				apierror.Unauthorized(c)
-			case filessvc.ErrNotFound:
-				apierror.Write(c, http.StatusNotFound, "thumbnail_not_found", "Thumbnail not found", nil)
-			case filessvc.ErrInvalidInput:
-				apierror.InvalidPayload(c)
-			default:
-				_ = c.Error(errs.WithStack(err))
-				apierror.Internal(c, "Thumbnail failed")
-			}
-			return
-		}
-
-		c.Redirect(http.StatusFound, url)
+		c.JSON(http.StatusOK, gin.H{"url": url})
 	}
 }
 

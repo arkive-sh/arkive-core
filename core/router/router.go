@@ -125,7 +125,7 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 	apiFiles.Use(middleware.RequireSessionJSON(authService))
 	{
 		apiFiles.GET("/:id/record", handlers.APIFileRecord(filesService))
-		apiFiles.GET("/:id/thumbnail", handlers.APIThumbnailRedirect(filesService))
+		apiFiles.GET("/:id/thumbnail/presign", handlers.APIThumbnailDownloadPresign(filesService))
 		apiFiles.GET("/:id/share", handlers.APIGetShareForFile(shareService))
 		apiFiles.POST("/:id/share", handlers.APICreateShare(shareService))
 	}

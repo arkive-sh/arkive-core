@@ -100,8 +100,16 @@ export interface VaultWorkerCalls {
 		result: { shareSecret: string };
 	};
 	prepareUpload: {
-		params: { uploadToken: string; vaultId: string; fileId: string; metadata: VaultMetadata; totalParts: number; metadataAad: string; fileKeyAad: string };
-		result: { encryptedMetadata: string; encryptedFileKey: string; totalParts: number; encryptionVersion: number };
+		params: { uploadToken: string; totalParts: number; fileKeyAad: string };
+		result: { encryptedFileKey: string; totalParts: number; encryptionVersion: number };
+	};
+	encryptUploadMetadata: {
+		params: { uploadToken: string; metadata: VaultMetadata; metadataAad: string };
+		result: { encryptedMetadata: string };
+	};
+	encryptUploadThumbnail: {
+		params: { uploadToken: string; thumbnailBytes: VaultBytes; aad: VaultAAD };
+		result: { encryptedThumbnail: Uint8Array; encryptedSize: number };
 	};
 	encryptUploadPart: {
 		params: { uploadToken: string; chunkBytes: VaultBytes; aad: VaultAAD };

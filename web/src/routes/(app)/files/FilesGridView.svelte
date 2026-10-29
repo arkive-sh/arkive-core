@@ -123,12 +123,13 @@
 			if (controller.signal.aborted || !visibleIds.has(entry.id)) return;
 
 			if (!encryptedBytes) {
-				const { data } = await api.get<ArrayBuffer>(`/api/files/${encodeURIComponent(entry.id)}/thumbnail`, {
-					responseType: 'arraybuffer',
+				const { data } = await api.get<{ url: string }>(`/api/files/${encodeURIComponent(entry.id)}/thumbnail/presign`, {
 					signal: controller.signal
 				});
+				const response = await fetch(data.url, { credentials: 'omit', signal: controller.signal });
+				if (!response.ok) throw new Error(`Thumbnail request failed (${response.status}).`);
 				if (controller.signal.aborted || !visibleIds.has(entry.id)) return;
-				encryptedBytes = new Uint8Array(data);
+				encryptedBytes = new Uint8Array(await response.arrayBuffer());
 				void cacheThumbnail(entry.id, preview.version, preview.size, encryptedBytes).catch(() => {});
 			}
 
@@ -149,8 +150,10 @@
 			objectUrls.set(entry.id, url);
 			thumbnails.set(entry.id, url);
 			thumbnailBytes.fill(0);
-		} catch {
-			// Missing previews leave the file card's icon in place.
+		} catch (error) {
+			if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+				console.warn('Thumbnail preview failed:', error instanceof Error ? error.message : 'Unknown error');
+			}
 		}
 	}
 
