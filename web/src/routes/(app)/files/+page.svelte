@@ -84,6 +84,7 @@
 	let hydrationQueue = Promise.resolve();
 
 	const folderId = $derived(page.url.searchParams.get('folder_id') || null);
+	const focusFileId = $derived(page.url.searchParams.get('focus_file'));
 	const viewMode = $derived(page.url.searchParams.get('view') === 'grid' ? 'grid' : 'list');
 	const entriesQuery = createInfiniteQuery(() => ({
 		queryKey: ['folder-entries', folderId],
@@ -114,6 +115,7 @@
 	].map((entry) => [fileManagerEntryKey(entry), entry] as const)).values()]);
 	const selectedEntries = $derived(loadedEntries.filter((entry) => selectedIds.has(fileManagerEntryKey(entry))));
 	const selectedFiles = $derived(selectedEntries.filter((entry) => entry.kind === 'file'));
+	const focusFileInPages = $derived((entriesQuery.data?.pages ?? []).some((response) => response.Files.some((file) => file.ID === focusFileId)));
 	// shortcut: PhotoSwipe navigates loaded rows; add paged image lookup if full-folder navigation is needed.
 	const imageEntries = $derived(rows.filter((entry) => entry.kind === 'file' && entry.type.startsWith('image/')));
 	const allRowsSelected = $derived(loadedEntries.length > 0 && selectedEntries.length === loadedEntries.length);
@@ -150,6 +152,7 @@
 				try {
 					const decrypted = await decryptSearchFile({
 						id: file.ID,
+						folderId: file.FolderID,
 						vaultId,
 						encryptedMetadata: file.EncryptedMetadata,
 						encryptedFileKey: file.EncryptedFileKey,
@@ -279,6 +282,21 @@
 				entriesReady = true;
 			});
 		}
+	});
+
+	$effect(() => {
+		// shortcut: locating a deep file fetches preceding cursor pages; add seek pagination if that becomes slow.
+		const targetId = focusFileId;
+		if (
+			!targetId ||
+			!$vaultUnlocked ||
+			focusFileInPages ||
+			!entriesQuery.hasNextPage ||
+			entriesQuery.isFetchingNextPage ||
+			entriesQuery.isFetchNextPageError
+		) return;
+
+		void entriesQuery.fetchNextPage();
 	});
 
 	$effect(() => {
@@ -537,6 +555,9 @@
 				</div>
 			</div>
 		</header>
+		{#if focusFileId && entriesReady && !focusFileInPages && !entriesQuery.hasNextPage && !entriesQuery.isFetchingNextPage}
+			<p class="m-0 text-sm text-(--muted)" role="status">That file is no longer in this folder. It may have been moved or deleted.</p>
+		{/if}
 
 		{#if !$vaultUnlocked}
 			<section class="rounded-md border border-(--border) bg-(--surface-raised) px-5 py-8 text-(--muted)" role="status">
@@ -557,6 +578,7 @@
 				{:else if viewMode === 'grid'}
 					<FilesGridView
 						{rows}
+						{focusFileId}
 						{selectedIds}
 						{tileSize}
 						{showType}
@@ -570,6 +592,7 @@
 				{:else}
 					<FilesListView
 						{rows}
+						{focusFileId}
 						{selectedIds}
 						selectedCount={selectedEntries.length}
 						loadedCount={loadedEntries.length}

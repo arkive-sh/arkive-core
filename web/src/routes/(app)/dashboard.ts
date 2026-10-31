@@ -1,5 +1,6 @@
 export interface DashboardRecentFile {
 	id: string;
+	folderId: string | null;
 	vaultId: string;
 	encryptedMetadata: string;
 	encryptedFileKey: string;

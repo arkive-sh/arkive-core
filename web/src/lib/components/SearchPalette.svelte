@@ -6,6 +6,7 @@
 	import Modal from '#lib/components/Modal.svelte';
 	import { api } from '#lib/api.ts';
 	import { getCachedThumbnail } from '#lib/thumbnail-cache.ts';
+	import { fileLocationHref } from '#lib/utils/navigation.ts';
 	import type { EncryptedSearchFile, EncryptedSearchFolder, SearchPreview } from '#lib/vault/types.ts';
 	import { decryptSearchFile, decryptSearchFolder, decryptSearchThumbnail, createSearchTokens } from '#lib/vault/search.ts';
 	import { waitUntilReady } from '#lib/vault/session.ts';
@@ -143,7 +144,7 @@
 						title: opened.name?.name || opened.metadata?.name || 'Encrypted folder',
 						meta: 'Folder',
 						score: Number(folder.score || 0),
-						url: folder.url,
+						url: `/files?folder_id=${encodeURIComponent(folder.id)}`,
 						category: 'results'
 					};
 				} catch {
@@ -161,7 +162,7 @@
 						score: Number(file.score || 0),
 						preview: opened.metadata?.preview,
 						file,
-						url: file.url,
+						url: fileLocationHref(file.id, file.folderId),
 						category: 'results'
 					};
 				} catch {

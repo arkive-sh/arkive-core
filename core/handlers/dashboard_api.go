@@ -17,6 +17,7 @@ import (
 
 type dashboardRecentFile struct {
 	ID                string    `json:"id"`
+	FolderID          *string   `json:"folderId"`
 	VaultID           string    `json:"vaultId"`
 	EncryptedMetadata string    `json:"encryptedMetadata"`
 	EncryptedFileKey  string    `json:"encryptedFileKey"`
@@ -58,6 +59,7 @@ func APIDashboard(filesService *filessvc.Service, settingsService *settingssvc.S
 		for _, file := range list.Files {
 			recentFiles = append(recentFiles, dashboardRecentFile{
 				ID:                file.ID,
+				FolderID:          file.FolderID,
 				VaultID:           user.ID,
 				EncryptedMetadata: base64.StdEncoding.EncodeToString(file.EncryptedMetadata),
 				EncryptedFileKey:  base64.StdEncoding.EncodeToString(file.EncryptedFileKey),
