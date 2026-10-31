@@ -1,4 +1,5 @@
 import { self } from '$app/service-worker';
+import { parseByteRange } from './range.js';
 
 interface StreamSession {
 	sessionId: string;
@@ -23,11 +24,6 @@ interface StreamMessage {
 	error?: string;
 }
 
-interface ByteRange {
-	start: number;
-	end: number;
-}
-
 interface PendingRead {
 	sessionId: string;
 	requestId: string;
@@ -39,11 +35,18 @@ interface PendingRead {
 	onAbort?: () => void;
 }
 
+interface PendingRestore {
+	promise: Promise<void>;
+	resolve(): void;
+	timeout: ReturnType<typeof setTimeout>;
+}
+
 const sessions = new Map<string, StreamSession>();
 const pendingReads = new Map<string, PendingRead>();
-const INITIAL_PROBE_BYTES = 4 * 1024 * 1024;
+const pendingRestores = new Map<string, PendingRestore>();
 const MAX_STREAM_RESPONSE_BYTES = 4 * 1024 * 1024;
 const STREAM_READ_TIMEOUT_MS = 5 * 60 * 1000;
+const STREAM_RESTORE_TIMEOUT_MS = 1000;
 const PREVIEW_SESSION_MAX_LIFETIME_MS = 6 * 60 * 60 * 1000;
 const DOWNLOAD_SESSION_MAX_LIFETIME_MS = 45 * 60 * 1000;
 
@@ -79,11 +82,13 @@ self.addEventListener("message", function(event) {
       maxLifetimeMs,
       expiresAt: now + maxLifetimeMs,
     });
+    finishSessionRestore(session.sessionId);
     return;
   }
 
   if (message.type === "ARKIVE_STREAM_CLOSE") {
     const sessionId = String(message.sessionId || "");
+    finishSessionRestore(sessionId);
     const session = sessions.get(sessionId);
     if (session) finalizeSession(session, 'closed');
     else cancelSessionReads(sessionId, 'closed');
@@ -134,48 +139,6 @@ function isDownloadRequest(url: URL): boolean {
   return url.pathname.startsWith("/arkive-download/");
 }
 
-function parseRange(header: string | null, size: number): ByteRange {
-  if (!header || !header.startsWith("bytes=")) {
-    return {
-      start: 0,
-      end: Math.min(Math.max(0, size - 1), INITIAL_PROBE_BYTES - 1),
-    };
-  }
-
-  const parts = header.replace("bytes=", "").split("-");
-  const startRaw = parts[0];
-  const endRaw = parts[1];
-
-  if (startRaw === "" && endRaw) {
-    const suffixSize = Math.max(0, Number(endRaw || 0));
-    return {
-      start: Math.max(0, size - suffixSize),
-      end: Math.max(0, size - 1),
-    };
-  }
-
-  const start = Number(startRaw || 0);
-  const end = endRaw
-    ? Number(endRaw)
-    : Math.min(size - 1, start + MAX_STREAM_RESPONSE_BYTES - 1);
-
-  return {
-    start: Math.max(0, start),
-    end: Math.min(size - 1, end),
-  };
-}
-
-function clampRange(range: ByteRange, size: number): ByteRange {
-  const start = Math.max(0, Number(range && range.start) || 0);
-  const requestedEnd = Math.min(size - 1, Math.max(start, Number(range && range.end) || start));
-  const end = Math.min(requestedEnd, start + MAX_STREAM_RESPONSE_BYTES - 1);
-
-  return {
-    start: start,
-    end: end,
-  };
-}
-
 async function handleRequest(request: Request, url: URL, clientId: string): Promise<Response> {
   if (isDownloadRequest(url)) {
     return handleDownloadRequest(url, clientId, request.signal);
@@ -184,7 +147,7 @@ async function handleRequest(request: Request, url: URL, clientId: string): Prom
 }
 
 async function handleStreamRequest(request: Request, url: URL, clientId: string): Promise<Response> {
-  const session = findSession(url, clientId, 'preview');
+  const session = await findOrRestoreSession(url, clientId, 'preview');
   if (!session) {
     return new Response("Stream session not found.", { status: 404 });
   }
@@ -194,11 +157,8 @@ async function handleStreamRequest(request: Request, url: URL, clientId: string)
   }
   touchSession(session);
 
-  const range = clampRange(
-    parseRange(request.headers.get("Range"), session.plaintextSize),
-    session.plaintextSize,
-  );
-  if (range.end < range.start || session.plaintextSize <= 0) {
+  const range = parseByteRange(request.headers.get('Range'), session.plaintextSize, MAX_STREAM_RESPONSE_BYTES);
+  if (!range) {
     return new Response(null, {
       status: 416,
       headers: {
@@ -226,7 +186,7 @@ async function handleStreamRequest(request: Request, url: URL, clientId: string)
 }
 
 async function handleDownloadRequest(url: URL, clientId: string, signal: AbortSignal): Promise<Response> {
-  const session = findSession(url, clientId, 'download');
+  const session = await findOrRestoreSession(url, clientId, 'download');
   if (!session) {
     return new Response("Download session not found.", { status: 404 });
   }
@@ -316,6 +276,47 @@ function findSession(url: URL, clientId: string, purpose: StreamSession['purpose
 	// The URL acts as a temporary capability, so tie it to its file and original page.
 	if (!clientId || !session || session.clientId !== clientId || session.fileId !== fileId || session.purpose !== purpose) return;
 	return session;
+}
+
+async function findOrRestoreSession(url: URL, clientId: string, purpose: StreamSession['purpose']): Promise<StreamSession | undefined> {
+	let session = findSession(url, clientId, purpose);
+	if (session || !clientId) return session;
+
+	const sessionId = url.searchParams.get('session');
+	if (!sessionId) return;
+	const client = await self.clients.get(clientId);
+	if (!client) return;
+	session = findSession(url, clientId, purpose);
+	if (session) return session;
+
+	let pending = pendingRestores.get(sessionId);
+	if (!pending) {
+		let resolve!: () => void;
+		const promise = new Promise<void>((done) => { resolve = done; });
+		pending = {
+			promise,
+			resolve,
+			timeout: setTimeout(() => finishSessionRestore(sessionId), STREAM_RESTORE_TIMEOUT_MS)
+		};
+		pendingRestores.set(sessionId, pending);
+		// The worker lost its map on restart; ask the page to replay its live registration.
+		try {
+			client.postMessage({ type: 'ARKIVE_STREAM_RESTORE', sessionId });
+		} catch {
+			finishSessionRestore(sessionId);
+		}
+	}
+
+	await pending.promise;
+	return findSession(url, clientId, purpose);
+}
+
+function finishSessionRestore(sessionId: string): void {
+	const pending = pendingRestores.get(sessionId);
+	if (!pending) return;
+	clearTimeout(pending.timeout);
+	pendingRestores.delete(sessionId);
+	pending.resolve();
 }
 
 async function requestBytesFromClient(session: StreamSession, start: number, end: number, signal?: AbortSignal): Promise<Uint8Array<ArrayBuffer>> {
