@@ -217,28 +217,34 @@ export class DecryptedFileReader {
 	private async loadChunk(index: number, context: FileReadContext, signal: AbortSignal): Promise<Uint8Array> {
 		signal.throwIfAborted();
 		const chunk = this.manifest?.chunks[index];
-		if (!chunk) throw new RangeError('File chunk is outside its contents.');
+    if (!chunk) throw new RangeError('File chunk is outside its contents.');
+
 		const cipherStart = this.cipherStarts[index];
 		const response = await fetch(context.record.sourceUrl, {
 			headers: { Range: `bytes=${cipherStart}-${cipherStart + chunk.cipher_size - 1}` },
 			signal
-		});
+    });
+
 		if (response.status !== 206) throw new Error(`Could not load file data (${response.status}).`);
 
 		const encryptedChunk = new Uint8Array(await response.arrayBuffer());
 		try {
 			signal.throwIfAborted();
 			if (this.disposed) throw new Error('File reader is closed.');
-			if (encryptedChunk.byteLength !== chunk.cipher_size) throw new Error('The file data is incomplete.');
-			const aad = `arkive:file-chunk:v1:${context.record.vaultId}:${context.record.fileId}:${index + 1}:${context.record.chunkSize}:${context.record.totalChunks}`;
-			const { chunkBytes } = await decryptFileChunk(this.contextId, encryptedChunk, aad, chunk.hash);
+      if (encryptedChunk.byteLength !== chunk.cipher_size) throw new Error('The file data is incomplete.');
+
+      const aad = `arkive:file-chunk:v1:${context.record.vaultId}:${context.record.fileId}:${index + 1}:${context.record.chunkSize}:${context.record.totalChunks}`;
+
+      const { chunkBytes } = await decryptFileChunk(this.contextId, encryptedChunk, aad, chunk.hash);
+
 			if (this.disposed || signal.aborted) {
 				chunkBytes.fill(0);
 				if (signal.aborted) signal.throwIfAborted();
 				throw new Error('File reader is closed.');
 			}
 			this.storeChunk(index, chunkBytes);
-			return chunkBytes;
+      return chunkBytes;
+
 		} finally {
 			encryptedChunk.fill(0);
 		}
@@ -246,10 +252,12 @@ export class DecryptedFileReader {
 
 	private storeChunk(index: number, bytes: Uint8Array): void {
 		const previous = this.chunkCache.get(index);
-		if (previous) this.chunkCacheBytes -= previous.byteLength;
+    if (previous) this.chunkCacheBytes -= previous.byteLength;
+
 		this.chunkCache.delete(index);
 		this.chunkCache.set(index, bytes);
-		this.chunkCacheBytes += bytes.byteLength;
+    this.chunkCacheBytes += bytes.byteLength;
+
 		while (this.chunkCacheBytes > this.maxChunkCacheBytes && this.chunkCache.size > 1) {
 			const oldestIndex = this.chunkCache.keys().next().value;
 			if (oldestIndex === undefined) break;
