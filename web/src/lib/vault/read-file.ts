@@ -28,9 +28,17 @@ interface FileReadContext {
 	plaintextSize: number;
 }
 
+interface PendingChunkRead {
+	controller: AbortController;
+	consumers: number;
+	settled: boolean;
+	promise: Promise<Uint8Array>;
+}
+
 export class DecryptedFileReader {
 	private readonly contextId = crypto.randomUUID();
 	private readonly chunkCache = new Map<number, Uint8Array>();
+	private readonly pendingChunks = new Map<number, PendingChunkRead>();
 	private readonly maxChunkCacheBytes = 32 * 1024 * 1024;
 	private chunkCacheBytes = 0;
 	private loadPromise?: Promise<FileReadContext>;
@@ -143,10 +151,15 @@ export class DecryptedFileReader {
 
 	async dispose(): Promise<void> {
 		if (this.disposed) return;
-		this.disposed = true;
+    this.disposed = true;
+
+		for (const pending of this.pendingChunks.values()) pending.controller.abort();
+    this.pendingChunks.clear();
+
 		for (const chunk of this.chunkCache.values()) chunk.fill(0);
 		this.chunkCache.clear();
-		this.chunkCacheBytes = 0;
+    this.chunkCacheBytes = 0;
+
 		await this.closeContext();
 	}
 
@@ -154,6 +167,7 @@ export class DecryptedFileReader {
 		signal?.throwIfAborted();
 		const context = await this.load();
 		signal?.throwIfAborted();
+		if (this.disposed) throw new Error('File reader is closed.');
 		const cached = this.chunkCache.get(index);
 		if (cached) {
 			this.chunkCache.delete(index);
@@ -161,6 +175,47 @@ export class DecryptedFileReader {
 			return cached;
 		}
 
+		// Share fetch/decrypt work, but abort it only after every range stops waiting.
+		let pending = this.pendingChunks.get(index);
+		if (!pending) {
+			const controller = new AbortController();
+			const readSignal = this.signal ? AbortSignal.any([this.signal, controller.signal]) : controller.signal;
+			pending = {
+				controller,
+				consumers: 0,
+				settled: false,
+				promise: Promise.resolve().then(() => this.loadChunk(index, context, readSignal))
+			};
+			const current = pending;
+			pending.promise = pending.promise.finally(() => {
+				current.settled = true;
+				if (this.pendingChunks.get(index) === current) this.pendingChunks.delete(index);
+			});
+			this.pendingChunks.set(index, pending);
+		}
+
+		pending.consumers++;
+		let onAbort: (() => void) | undefined;
+		try {
+			if (!signal) return await pending.promise;
+			const canceled = new Promise<Uint8Array>((_, reject) => {
+				onAbort = () => reject(signal.reason ?? new DOMException('Stream read was cancelled.', 'AbortError'));
+				signal.addEventListener('abort', onAbort, { once: true });
+				signal.throwIfAborted();
+			});
+			return await Promise.race([pending.promise, canceled]);
+		} finally {
+			if (onAbort) signal?.removeEventListener('abort', onAbort);
+			pending.consumers--;
+			if (!pending.consumers && !pending.settled) {
+				if (this.pendingChunks.get(index) === pending) this.pendingChunks.delete(index);
+				pending.controller.abort();
+			}
+		}
+	}
+
+	private async loadChunk(index: number, context: FileReadContext, signal: AbortSignal): Promise<Uint8Array> {
+		signal.throwIfAborted();
 		const chunk = this.manifest?.chunks[index];
 		if (!chunk) throw new RangeError('File chunk is outside its contents.');
 		const cipherStart = this.cipherStarts[index];
@@ -172,14 +227,14 @@ export class DecryptedFileReader {
 
 		const encryptedChunk = new Uint8Array(await response.arrayBuffer());
 		try {
-			signal?.throwIfAborted();
+			signal.throwIfAborted();
 			if (this.disposed) throw new Error('File reader is closed.');
 			if (encryptedChunk.byteLength !== chunk.cipher_size) throw new Error('The file data is incomplete.');
 			const aad = `arkive:file-chunk:v1:${context.record.vaultId}:${context.record.fileId}:${index + 1}:${context.record.chunkSize}:${context.record.totalChunks}`;
 			const { chunkBytes } = await decryptFileChunk(this.contextId, encryptedChunk, aad, chunk.hash);
-			if (this.disposed || signal?.aborted) {
+			if (this.disposed || signal.aborted) {
 				chunkBytes.fill(0);
-				if (signal?.aborted) signal.throwIfAborted();
+				if (signal.aborted) signal.throwIfAborted();
 				throw new Error('File reader is closed.');
 			}
 			this.storeChunk(index, chunkBytes);
