@@ -36,7 +36,7 @@ export interface EncryptedStream {
 	close(): void;
 }
 
-const providers = new Map<string, { reader: StreamReader; reads: Map<string, AbortController> }>();
+const providers = new Map<string, { reader: StreamReader; registration: StreamRegistration; reads: Map<string, AbortController> }>();
 let providerBridgeBound = false;
 
 function cancelProviderReads(provider: { reads: Map<string, AbortController> }): void {
@@ -66,6 +66,14 @@ function bindProviderBridge(): void {
 			const requestId = String(message.requestId || '');
 			provider?.reads.get(requestId)?.abort();
 			provider?.reads.delete(requestId);
+			return;
+		}
+		if (message.type === 'ARKIVE_STREAM_RESTORE') {
+			if (provider) {
+				try {
+					postToServiceWorker({ type: 'ARKIVE_STREAM_OPEN', session: provider.registration });
+				} catch {}
+			}
 			return;
 		}
 		if (message.type !== 'ARKIVE_STREAM_READ') return;
@@ -143,7 +151,7 @@ export async function openEncryptedStream(options: StreamOptions): Promise<Encry
 		concurrency: Math.min(8, Math.max(1, Math.floor(options.concurrency || 1)))
 	};
 
-	providers.set(registration.sessionId, { reader: options.reader, reads: new Map() });
+	providers.set(registration.sessionId, { reader: options.reader, registration, reads: new Map() });
 	try {
 		postToServiceWorker({ type: 'ARKIVE_STREAM_OPEN', session: registration });
 	} catch (error) {
