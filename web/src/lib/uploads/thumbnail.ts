@@ -187,7 +187,7 @@ export async function createThumbnail(file: File, signal?: AbortSignal): Promise
 	const mime = file.type.toLowerCase();
 	try {
 		if (mime.startsWith('image/')) return await createImageThumbnail(file, signal);
-		if (mime === 'video/mp4' || mime === 'video/webm') return await createVideoThumbnail(file, signal);
+		if (mime.startsWith('video/')) return await createVideoThumbnail(file, signal);
 		return null;
 	} catch (error) {
 		if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
