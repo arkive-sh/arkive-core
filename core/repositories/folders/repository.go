@@ -141,7 +141,7 @@ func (r *Repository) ListChildFolders(ctx context.Context, db database.PgExecuto
 	return folders, nil
 }
 
-func (r *Repository) ListChildFoldersAfter(ctx context.Context, db database.PgExecutor, userID string, parentID *string, limit int, afterCreatedAt *time.Time, afterID *string) ([]models.Folder, error) {
+func (r *Repository) ListChildFoldersAfter(ctx context.Context, db database.PgExecutor, userID string, parentID *string, limit int, afterCreatedAt *time.Time, afterID *string, inclusive bool) ([]models.Folder, error) {
 	query := `WITH RECURSIVE folder_page AS MATERIALIZED (
 		SELECT
 			id, vault_id, parent_folder_id, encrypted_name, encrypted_metadata, created_at, updated_at
@@ -153,16 +153,25 @@ func (r *Repository) ListChildFoldersAfter(ctx context.Context, db database.PgEx
 				($2::uuid IS NULL AND parent_folder_id IS NULL)
 				OR parent_folder_id = $2
 			)`
-	args := []any{userID, parentID, limit}
+	args := []any{userID, parentID, limit, limit - 1}
 	if afterCreatedAt != nil {
-		query += ` AND (created_at, id) < ($4, $5::uuid)`
+		operator := "<"
+		if inclusive {
+			operator = "<="
+		}
+		query += ` AND (created_at, id) ` + operator + ` ($5, $6::uuid)`
 		args = append(args, afterCreatedAt, afterID)
 	}
 	query += `
 		ORDER BY created_at DESC, id DESC
 		LIMIT $3
+	), folder_size_roots AS (
+		SELECT id
+		FROM folder_page
+		ORDER BY created_at DESC, id DESC
+		LIMIT $4
 	), folder_tree(root_id, folder_id) AS (
-		SELECT id, id FROM folder_page
+		SELECT id, id FROM folder_size_roots
 		UNION
 		SELECT tree.root_id, child.id
 		FROM folder_tree tree
@@ -222,6 +231,18 @@ func (r *Repository) ListChildFoldersAfter(ctx context.Context, db database.PgEx
 		return nil, rows.Err()
 	}
 	return folders, nil
+}
+
+func (r *Repository) GetChildFolderCreatedAt(ctx context.Context, db database.PgExecutor, userID string, parentID *string, folderID string) (time.Time, error) {
+	var createdAt time.Time
+	err := db.QueryRow(ctx, `SELECT created_at
+		FROM folders
+		WHERE id = $1
+			AND user_id = $2
+			AND deleted_at IS NULL
+			AND (($3::uuid IS NULL AND parent_folder_id IS NULL) OR parent_folder_id = $3)`,
+		folderID, userID, parentID).Scan(&createdAt)
+	return createdAt, err
 }
 
 func (r *Repository) MoveFolders(ctx context.Context, db database.PgExecutor, userID string, folderIDs []string, targetFolderID *string) (int64, error) {

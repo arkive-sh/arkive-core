@@ -31,20 +31,16 @@ func (r *Repository) ReplaceSearchTokensForFolder(ctx context.Context, db databa
 	return r.InsertSearchTokensForFolder(ctx, db, userID, vaultID, folderID, tokens)
 }
 
-func (r *Repository) SearchFoldersForTokens(ctx context.Context, db database.PgExecutor, userID, vaultID string, tokenHashes [][]byte, limit int) ([]models.Folder, error) {
+func (r *Repository) SearchFoldersForTokens(ctx context.Context, db database.PgExecutor, userID, vaultID string, tokenHashes [][]byte, minimumMatches, limit int) ([]models.Folder, error) {
 	if limit <= 0 {
 		limit = 20
 	}
 	rows, err := db.Query(ctx, `SELECT
 		f.id,
-		f.user_id,
 		f.vault_id,
 		f.parent_folder_id,
 		f.encrypted_name,
 		f.encrypted_metadata,
-		f.created_at,
-		f.updated_at,
-		f.deleted_at,
 		SUM(fst.weight) AS score
 	FROM
 		folder_search_tokens fst
@@ -57,11 +53,13 @@ func (r *Repository) SearchFoldersForTokens(ctx context.Context, db database.PgE
 	GROUP BY
 		f.id
 	HAVING
-		COUNT(DISTINCT fst.token_hash) = cardinality($3::bytea[])
+		COUNT(DISTINCT fst.token_hash) >= $4
 	ORDER BY
+		COUNT(DISTINCT fst.token_hash) DESC,
 		score DESC,
-		f.updated_at DESC
-	LIMIT $4`, userID, vaultID, tokenHashes, limit)
+		f.updated_at DESC,
+		f.id
+	LIMIT $5`, userID, vaultID, tokenHashes, minimumMatches, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -73,14 +71,10 @@ func (r *Repository) SearchFoldersForTokens(ctx context.Context, db database.PgE
 		var parentFolderID *string
 		if err := rows.Scan(
 			&folder.ID,
-			&folder.UserID,
 			&folder.VaultID,
 			&parentFolderID,
 			&folder.EncryptedName,
 			&folder.EncryptedMetadata,
-			&folder.CreatedAt,
-			&folder.UpdatedAt,
-			&folder.DeletedAt,
 			&folder.SearchScore,
 		); err != nil {
 			return nil, err

@@ -215,7 +215,22 @@ func (s *Service) ListEntriesCursor(ctx context.Context, input ListEntriesCursor
 		}
 		input.FolderID = &folderID
 	}
-	return s.listEntriesByCursor(ctx, userID, input.FolderID, input.PageSize, strings.TrimSpace(input.Cursor))
+	cursor := strings.TrimSpace(input.Cursor)
+	seekEntryID := strings.TrimSpace(input.SeekEntryID)
+	if seekEntryID != "" {
+		if cursor != "" {
+			return ListEntriesCursorResult{}, ErrInvalidInput
+		}
+		seekEntryID, err := validateUUIDValue(seekEntryID)
+		if err != nil {
+			return ListEntriesCursorResult{}, ErrInvalidInput
+		}
+		cursor, err = s.cursorForEntry(ctx, userID, input.FolderID, seekEntryID)
+		if err != nil {
+			return ListEntriesCursorResult{}, err
+		}
+	}
+	return s.listEntriesByCursor(ctx, userID, input.FolderID, input.PageSize, cursor)
 }
 
 type listEntriesCursor struct {
@@ -223,12 +238,14 @@ type listEntriesCursor struct {
 	Stage     string `json:"stage"`
 	CreatedAt string `json:"createdAt,omitempty"`
 	ID        string `json:"id,omitempty"`
+	Inclusive bool   `json:"inclusive,omitempty"`
 }
 
 type listEntriesCursorState struct {
 	stage          string
 	afterCreatedAt *time.Time
 	afterID        *string
+	inclusive      bool
 }
 
 func decodeListEntriesCursor(value, folderID string) (listEntriesCursorState, error) {
@@ -253,8 +270,11 @@ func decodeListEntriesCursor(value, folderID string) (listEntriesCursorState, er
 	if (cursor.CreatedAt == "") != (cursor.ID == "") {
 		return listEntriesCursorState{}, ErrInvalidInput
 	}
+	if cursor.Inclusive && cursor.CreatedAt == "" {
+		return listEntriesCursorState{}, ErrInvalidInput
+	}
 
-	state := listEntriesCursorState{stage: cursor.Stage}
+	state := listEntriesCursorState{stage: cursor.Stage, inclusive: cursor.Inclusive}
 	if cursor.CreatedAt == "" {
 		if cursor.Stage == "folders" {
 			return listEntriesCursorState{}, ErrInvalidInput
@@ -275,14 +295,34 @@ func decodeListEntriesCursor(value, folderID string) (listEntriesCursorState, er
 	return state, nil
 }
 
-func encodeListEntriesCursor(folderID, stage string, createdAt *time.Time, id string) string {
-	cursor := listEntriesCursor{FolderID: folderID, Stage: stage}
+func encodeListEntriesCursor(folderID, stage string, createdAt *time.Time, id string, inclusive bool) string {
+	cursor := listEntriesCursor{FolderID: folderID, Stage: stage, Inclusive: inclusive}
 	if createdAt != nil {
 		cursor.CreatedAt = createdAt.UTC().Format(time.RFC3339Nano)
 		cursor.ID = id
 	}
 	encoded, _ := json.Marshal(cursor)
 	return base64.RawURLEncoding.EncodeToString(encoded)
+}
+
+func (s *Service) cursorForEntry(ctx context.Context, userID string, folderID *string, entryID string) (string, error) {
+	createdAt, err := s.fileRepo.GetListedFileCreatedAt(ctx, s.db, userID, folderID, entryID)
+	stage := "files"
+	if errors.Is(err, pgx.ErrNoRows) {
+		createdAt, err = s.folderRepo.GetChildFolderCreatedAt(ctx, s.db, userID, folderID, entryID)
+		stage = "folders"
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrEntryNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	folderScope := ""
+	if folderID != nil {
+		folderScope = *folderID
+	}
+	return encodeListEntriesCursor(folderScope, stage, &createdAt, entryID, true), nil
 }
 
 func (s *Service) listEntriesByCursor(ctx context.Context, userID string, folderID *string, pageSize int, value string) (ListEntriesCursorResult, error) {
@@ -313,7 +353,7 @@ func (s *Service) listEntriesByCursor(ctx context.Context, userID string, folder
 	}
 
 	if cursor.stage == "folders" {
-		folders, err := s.folderRepo.ListChildFoldersAfter(ctx, s.db, userID, folderID, pageSize+1, cursor.afterCreatedAt, cursor.afterID)
+		folders, err := s.folderRepo.ListChildFoldersAfter(ctx, s.db, userID, folderID, pageSize+1, cursor.afterCreatedAt, cursor.afterID, cursor.inclusive)
 		if err != nil {
 			return ListEntriesCursorResult{}, err
 		}
@@ -321,7 +361,7 @@ func (s *Service) listEntriesByCursor(ctx context.Context, userID string, folder
 			folders = folders[:pageSize]
 			result.Folders = folders
 			last := folders[len(folders)-1]
-			next := encodeListEntriesCursor(folderScope, "folders", &last.CreatedAt, last.ID)
+			next := encodeListEntriesCursor(folderScope, "folders", &last.CreatedAt, last.ID, false)
 			result.NextCursor = &next
 			result.HasMore = true
 			return result, nil
@@ -340,20 +380,20 @@ func (s *Service) listEntriesByCursor(ctx context.Context, userID string, folder
 		afterCreatedAt = cursor.afterCreatedAt
 		afterID = cursor.afterID
 	}
-	files, err := s.fileRepo.ListByFolderAfter(ctx, s.db, userID, folderID, fileLimit, afterCreatedAt, afterID)
+	files, err := s.fileRepo.ListByFolderAfter(ctx, s.db, userID, folderID, fileLimit, afterCreatedAt, afterID, cursor.inclusive)
 	if err != nil {
 		return ListEntriesCursorResult{}, err
 	}
 	if len(files) > remaining {
 		result.HasMore = true
 		if remaining == 0 {
-			next := encodeListEntriesCursor(folderScope, "files", nil, "")
+			next := encodeListEntriesCursor(folderScope, "files", nil, "", false)
 			result.NextCursor = &next
 			return result, nil
 		}
 		files = files[:remaining]
 		last := files[len(files)-1]
-		next := encodeListEntriesCursor(folderScope, "files", &last.CreatedAt, last.ID)
+		next := encodeListEntriesCursor(folderScope, "files", &last.CreatedAt, last.ID, false)
 		result.NextCursor = &next
 	}
 	result.Files = files
@@ -425,7 +465,7 @@ func (s *Service) RenameFolder(ctx context.Context, input RenameFolderInput) err
 	return nil
 }
 
-func (s *Service) SearchFoldersByTokens(ctx context.Context, userID, vaultID string, tokenHashes [][]byte, limit int) ([]models.Folder, error) {
+func (s *Service) SearchFoldersByTokens(ctx context.Context, userID, vaultID string, tokenHashes [][]byte, minimumMatches, limit int) ([]models.Folder, error) {
 	userID = strings.TrimSpace(userID)
 	vaultID = strings.TrimSpace(vaultID)
 	if userID == "" || vaultID == "" {
@@ -437,7 +477,10 @@ func (s *Service) SearchFoldersByTokens(ctx context.Context, userID, vaultID str
 	if len(tokenHashes) > filessvc.MaxSearchQueryTokens {
 		return nil, ErrInvalidInput
 	}
-	return s.folderRepo.SearchFoldersForTokens(ctx, s.db, userID, vaultID, tokenHashes, limit)
+	if minimumMatches < 1 || minimumMatches > len(tokenHashes) {
+		return nil, ErrInvalidInput
+	}
+	return s.folderRepo.SearchFoldersForTokens(ctx, s.db, userID, vaultID, tokenHashes, minimumMatches, limit)
 }
 
 func (s *Service) folderPath(ctx context.Context, db database.PgExecutor, userID, folderID string) ([]models.Folder, error) {

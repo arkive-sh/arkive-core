@@ -50,6 +50,8 @@ type searchRequest struct {
 	Limit  int      `json:"limit"`
 }
 
+const maxSearchCandidates = 40
+
 func APISearch(filesService *filessvc.Service, folderService *folderssvc.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		user, ok := appcontext.UserFromContext(c)
@@ -67,23 +69,40 @@ func APISearch(filesService *filessvc.Service, folderService *folderssvc.Service
 			c.JSON(http.StatusOK, gin.H{"results": gin.H{}})
 			return
 		}
+		if len(req.Tokens) > filessvc.MaxSearchQueryTokens {
+			apierror.InvalidPayload(c)
+			return
+		}
 
 		tokenHashes := make([][]byte, 0, len(req.Tokens))
+		seenTokens := make(map[string]struct{}, len(req.Tokens))
 		for _, token := range req.Tokens {
 			decoded, err := filessvc.DecodeSearchTokenString(token)
 			if err != nil {
 				apierror.InvalidPayload(c)
 				return
 			}
+			if _, exists := seenTokens[string(decoded)]; exists {
+				continue
+			}
+			seenTokens[string(decoded)] = struct{}{}
 			tokenHashes = append(tokenHashes, decoded)
+		}
+		if len(tokenHashes) == 0 {
+			c.JSON(http.StatusOK, gin.H{"results": gin.H{}})
+			return
 		}
 
 		limit := req.Limit
-		if limit <= 0 || limit > 20 {
+		if limit <= 0 {
 			limit = 20
+		} else if limit > maxSearchCandidates {
+			limit = maxSearchCandidates
 		}
+		// shortcut: queries with no shared trigram cannot match; add prefix/bigram tokens if needed.
+		minimumMatches := max(1, (len(tokenHashes)+2)/3)
 
-		files, err := filesService.SearchCompletedUploadsByTokens(c.Request.Context(), user.ID, user.ID, tokenHashes, limit)
+		files, err := filesService.SearchCompletedUploadsByTokens(c.Request.Context(), user.ID, user.ID, tokenHashes, minimumMatches, limit)
 		if err != nil {
 			if err == filessvc.ErrInvalidInput {
 				apierror.InvalidPayload(c)
@@ -92,7 +111,7 @@ func APISearch(filesService *filessvc.Service, folderService *folderssvc.Service
 			apierror.Internal(c, "Search failed")
 			return
 		}
-		folders, err := folderService.SearchFoldersByTokens(c.Request.Context(), user.ID, user.ID, tokenHashes, limit)
+		folders, err := folderService.SearchFoldersByTokens(c.Request.Context(), user.ID, user.ID, tokenHashes, minimumMatches, limit)
 		if err != nil {
 			if err == folderssvc.ErrInvalidInput {
 				apierror.InvalidPayload(c)
