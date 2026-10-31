@@ -95,8 +95,12 @@ export class DecryptedFileReader {
 		}
 	}
 
-	async readRange(start: number, end: number): Promise<Uint8Array> {
+	async readRange(start: number, end: number, requestSignal?: AbortSignal): Promise<Uint8Array> {
+		// A canceled media range and closing the viewer must both stop the same fetch.
+		const signal = this.signal && requestSignal ? AbortSignal.any([this.signal, requestSignal]) : requestSignal ?? this.signal;
+		signal?.throwIfAborted();
 		const { record, plaintextSize } = await this.load();
+		signal?.throwIfAborted();
 		if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || end > plaintextSize) {
 			throw new RangeError('File range is outside its contents.');
 		}
@@ -108,7 +112,8 @@ export class DecryptedFileReader {
 		let outputOffset = 0;
 		try {
 			for (let index = firstChunk; index <= lastChunk; index++) {
-				const chunk = await this.readChunk(index);
+				const chunk = await this.readChunk(index, signal);
+				signal?.throwIfAborted();
 				const chunkStart = index * record.chunkSize;
 				const from = Math.max(0, start - chunkStart);
 				const to = Math.min(chunk.byteLength, end - chunkStart);
@@ -145,8 +150,10 @@ export class DecryptedFileReader {
 		await this.closeContext();
 	}
 
-	private async readChunk(index: number): Promise<Uint8Array> {
+	private async readChunk(index: number, signal?: AbortSignal): Promise<Uint8Array> {
+		signal?.throwIfAborted();
 		const context = await this.load();
+		signal?.throwIfAborted();
 		const cached = this.chunkCache.get(index);
 		if (cached) {
 			this.chunkCache.delete(index);
@@ -159,18 +166,20 @@ export class DecryptedFileReader {
 		const cipherStart = this.cipherStarts[index];
 		const response = await fetch(context.record.sourceUrl, {
 			headers: { Range: `bytes=${cipherStart}-${cipherStart + chunk.cipher_size - 1}` },
-			signal: this.signal
+			signal
 		});
 		if (response.status !== 206) throw new Error(`Could not load file data (${response.status}).`);
 
 		const encryptedChunk = new Uint8Array(await response.arrayBuffer());
 		try {
+			signal?.throwIfAborted();
 			if (this.disposed) throw new Error('File reader is closed.');
 			if (encryptedChunk.byteLength !== chunk.cipher_size) throw new Error('The file data is incomplete.');
 			const aad = `arkive:file-chunk:v1:${context.record.vaultId}:${context.record.fileId}:${index + 1}:${context.record.chunkSize}:${context.record.totalChunks}`;
 			const { chunkBytes } = await decryptFileChunk(this.contextId, encryptedChunk, aad, chunk.hash);
-			if (this.disposed) {
+			if (this.disposed || signal?.aborted) {
 				chunkBytes.fill(0);
+				if (signal?.aborted) signal.throwIfAborted();
 				throw new Error('File reader is closed.');
 			}
 			this.storeChunk(index, chunkBytes);

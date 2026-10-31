@@ -28,7 +28,7 @@ interface StreamOptions {
 }
 
 export interface StreamReader {
-	readRange(start: number, end: number): Promise<Uint8Array>;
+	readRange(start: number, end: number, signal?: AbortSignal): Promise<Uint8Array>;
 }
 
 export interface EncryptedStream {
@@ -36,8 +36,13 @@ export interface EncryptedStream {
 	close(): void;
 }
 
-const providers = new Map<string, { reader: StreamReader }>();
+const providers = new Map<string, { reader: StreamReader; reads: Map<string, AbortController> }>();
 let providerBridgeBound = false;
+
+function cancelProviderReads(provider: { reads: Map<string, AbortController> }): void {
+	for (const controller of provider.reads.values()) controller.abort();
+	provider.reads.clear();
+}
 
 function postToServiceWorker(message: Record<string, unknown>, transfer: Transferable[] = []): void {
 	const controller = navigator.serviceWorker.controller;
@@ -51,14 +56,21 @@ function bindProviderBridge(): void {
 	navigator.serviceWorker.addEventListener('message', (event: MessageEvent<Record<string, unknown>>) => {
 		const message = event.data;
 		const sessionId = String(message.sessionId || '');
+		const provider = providers.get(sessionId);
 		if (message.type === 'ARKIVE_STREAM_FINISH') {
+			if (provider) cancelProviderReads(provider);
 			providers.delete(sessionId);
+			return;
+		}
+		if (message.type === 'ARKIVE_STREAM_READ_CANCEL') {
+			const requestId = String(message.requestId || '');
+			provider?.reads.get(requestId)?.abort();
+			provider?.reads.delete(requestId);
 			return;
 		}
 		if (message.type !== 'ARKIVE_STREAM_READ') return;
 
 		const requestId = String(message.requestId || '');
-		const provider = providers.get(sessionId);
 		if (!provider) {
 			try {
 				postToServiceWorker({ type: 'ARKIVE_STREAM_READ_ERROR', sessionId, requestId, error: 'Stream session is unavailable.' });
@@ -66,12 +78,20 @@ function bindProviderBridge(): void {
 			return;
 		}
 
-		void provider.reader.readRange(Number(message.start), Number(message.end) + 1)
+		// Cancel the storage fetch and discard any decrypt result when this range is abandoned.
+		const controller = new AbortController();
+		provider.reads.set(requestId, controller);
+		void provider.reader.readRange(Number(message.start), Number(message.end) + 1, controller.signal)
 			.then((bytes) => {
+				if (controller.signal.aborted) {
+					bytes.fill(0);
+					return;
+				}
 				const buffer = bytes.buffer as ArrayBuffer;
 				postToServiceWorker({ type: 'ARKIVE_STREAM_READ_RESULT', sessionId, requestId, bytes: buffer }, [buffer]);
 			})
 			.catch((error: unknown) => {
+				if (controller.signal.aborted) return;
 				try {
 					postToServiceWorker({
 						type: 'ARKIVE_STREAM_READ_ERROR',
@@ -80,7 +100,8 @@ function bindProviderBridge(): void {
 						error: error instanceof Error ? error.message : 'Stream read failed.'
 					});
 				} catch {}
-			});
+			})
+			.finally(() => provider.reads.delete(requestId));
 	});
 }
 
@@ -122,7 +143,7 @@ export async function openEncryptedStream(options: StreamOptions): Promise<Encry
 		concurrency: Math.min(8, Math.max(1, Math.floor(options.concurrency || 1)))
 	};
 
-	providers.set(registration.sessionId, { reader: options.reader });
+	providers.set(registration.sessionId, { reader: options.reader, reads: new Map() });
 	try {
 		postToServiceWorker({ type: 'ARKIVE_STREAM_OPEN', session: registration });
 	} catch (error) {
@@ -137,6 +158,8 @@ export async function openEncryptedStream(options: StreamOptions): Promise<Encry
 		close() {
 			if (closed) return;
 			closed = true;
+			const provider = providers.get(registration.sessionId);
+			if (provider) cancelProviderReads(provider);
 			providers.delete(registration.sessionId);
 			try {
 				postToServiceWorker({ type: 'ARKIVE_STREAM_CLOSE', sessionId: registration.sessionId });
