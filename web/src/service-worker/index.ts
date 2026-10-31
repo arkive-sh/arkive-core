@@ -5,12 +5,12 @@ interface StreamSession {
 	sessionId: string;
 	purpose: 'preview' | 'download';
 	fileId: string;
-	filename: string;
 	plaintextSize: number;
 	mimeType: string;
 	concurrency: number;
 	clientId: string;
 	downloadOffset: number;
+	downloadController?: ReadableStreamDefaultController<Uint8Array>;
 	maxLifetimeMs: number;
 	expiresAt: number;
 }
@@ -73,7 +73,6 @@ self.addEventListener("message", function(event) {
       sessionId: session.sessionId,
       purpose: session.purpose,
       fileId: session.fileId,
-      filename: String(session.filename || "download"),
       plaintextSize: Number(session.plaintextSize || 0),
       mimeType: String(session.mimeType || "application/octet-stream"),
       concurrency: Math.min(8, Math.max(1, Math.floor(Number(session.concurrency || 1)))),
@@ -122,8 +121,18 @@ self.addEventListener("fetch", function(event) {
   if (!url.pathname.startsWith("/arkive-stream/") && !url.pathname.startsWith("/arkive-download/")) {
     return;
   }
+	const clientId = event.clientId;
   event.respondWith(
-    handleRequest(event.request, url, event.clientId).catch(function(error: unknown) {
+    handleRequest(event.request, url, clientId).catch(async function(error: unknown) {
+      if (isDownloadRequest(url)) {
+        const sessionId = url.searchParams.get('session');
+        if (sessionId) await notifyClient(clientId, {
+          type: 'ARKIVE_STREAM_FINISH',
+          sessionId,
+          status: 'error',
+          error: error instanceof Error ? error.message : 'Encrypted download failed.'
+        });
+      }
       return new Response(error instanceof Error ? error.message : "Encrypted stream failed.", {
         status: 504,
         headers: {
@@ -188,10 +197,17 @@ async function handleStreamRequest(request: Request, url: URL, clientId: string)
 async function handleDownloadRequest(url: URL, clientId: string, signal: AbortSignal): Promise<Response> {
   const session = await findOrRestoreSession(url, clientId, 'download');
   if (!session) {
+    const sessionId = url.searchParams.get('session');
+    if (sessionId) await notifyClient(clientId, {
+      type: 'ARKIVE_STREAM_FINISH',
+      sessionId,
+      status: 'error',
+      error: 'Download session could not be found.'
+    });
     return new Response("Download session not found.", { status: 404 });
   }
   if (isSessionExpired(session)) {
-    finalizeSession(session, "expired");
+    finalizeSession(session, "expired", "Download session expired.");
     return new Response("Download session expired.", { status: 410 });
   }
   touchSession(session);
@@ -199,11 +215,13 @@ async function handleDownloadRequest(url: URL, clientId: string, signal: AbortSi
   const headers = {
     "Cache-Control": "no-store",
     "Content-Type": session.mimeType || "application/octet-stream",
-    "Content-Disposition": buildContentDisposition(session.filename || "download"),
     "Content-Length": String(session.plaintextSize || 0),
   };
 
   const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      session.downloadController = controller;
+    },
     async pull(controller) {
       const total = Number(session.plaintextSize || 0);
       if (Number(session.downloadOffset || 0) >= total) {
@@ -233,10 +251,12 @@ async function handleDownloadRequest(url: URL, clientId: string, signal: AbortSi
         }
 
         for (let i = 0; i < ranges.length; i++) {
-          touchSession(session);
-          session.downloadOffset = ranges[i].end + 1;
           const result = results[i];
-          if (result?.status === 'fulfilled') controller.enqueue(result.value);
+          if (result?.status === 'fulfilled') {
+            controller.enqueue(result.value);
+            session.downloadOffset = ranges[i].end + 1;
+            touchSession(session);
+          }
         }
         if (session.downloadOffset >= total) {
           controller.close();
@@ -245,7 +265,7 @@ async function handleDownloadRequest(url: URL, clientId: string, signal: AbortSi
       } catch (error) {
         if (!sessions.has(session.sessionId)) return;
         controller.error(error);
-        finalizeSession(session, "error");
+        finalizeSession(session, "error", error instanceof Error ? error.message : 'Encrypted download failed.');
       }
     },
     cancel() {
@@ -273,7 +293,7 @@ function findSession(url: URL, clientId: string, purpose: StreamSession['purpose
 
 	const sessionId = url.searchParams.get('session');
 	const session = sessionId ? sessions.get(sessionId) : undefined;
-	// The URL acts as a temporary capability, so tie it to its file and original page.
+	// Stream URLs remain bound to the page that registered them.
 	if (!clientId || !session || session.clientId !== clientId || session.fileId !== fileId || session.purpose !== purpose) return;
 	return session;
 }
@@ -367,15 +387,14 @@ async function requestBytesFromClient(session: StreamSession, start: number, end
   });
 }
 
-function buildContentDisposition(filename: string): string {
-  const fallback = String(filename || "download").replace(/[^\x20-\x7E]+/g, "_").replace(/["\\]/g, "_");
-  const encoded = encodeURIComponent(String(filename || "download")).replace(/['()]/g, escape).replace(/\*/g, "%2A");
-  return 'attachment; filename="' + fallback + '"; filename*=UTF-8\'\'' + encoded;
-}
-
-function finalizeSession(session: StreamSession | undefined, status: string): void {
+function finalizeSession(session: StreamSession | undefined, status: string, error?: string): void {
   if (!session || !session.sessionId) {
     return;
+  }
+  if (session.purpose === 'download' && status !== 'complete') {
+    try {
+      session.downloadController?.error(new DOMException('Download stream closed.', 'AbortError'));
+    } catch {}
   }
   cancelSessionReads(session.sessionId, status);
   sessions.delete(String(session.sessionId));
@@ -383,6 +402,7 @@ function finalizeSession(session: StreamSession | undefined, status: string): vo
     type: "ARKIVE_STREAM_FINISH",
     sessionId: String(session.sessionId),
     status: String(status || "complete"),
+    error,
   });
 }
 

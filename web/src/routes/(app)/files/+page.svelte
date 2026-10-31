@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { Trash2, X } from '@lucide/svelte';
+	import { Download, Trash2, X } from '@lucide/svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { createInfiniteQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { api } from '#lib/api.ts';
@@ -16,12 +16,18 @@
 	import FilesViewOptions from './FilesViewOptions.svelte';
 	import ImageViewer from './ImageViewer.svelte';
 	import { fileManagerEntryKey, type FileManagerEntry, type FilesView } from './types';
+	import { useTransferManager } from '#lib/transfers/manager.ts';
 	import { decryptSearchFile, decryptSearchFolder } from '#lib/vault/search.ts';
 	import { waitUntilReady } from '#lib/vault/session.ts';
 	import { vaultUnlocked } from '#lib/vault/state.ts';
 	import type { PageProps } from './$types';
 
 	const PAGE_SIZE = 50;
+	// shortcut: browsers without File System Access cannot download; add another streaming file sink when supporting them.
+	type FilePickerWindow = Window & {
+		showSaveFilePicker?: (options?: { suggestedName?: string }) => Promise<FileSystemFileHandle>;
+		showDirectoryPicker?: (options?: { mode?: 'read' | 'readwrite' }) => Promise<FileSystemDirectoryHandle>;
+	};
 
 	type ApiFolder = {
 		ID: string;
@@ -69,6 +75,7 @@
 	let showSize = $state(true);
 	let viewOptionsReady = $state(false);
 	const selectedIds = new SvelteSet<string>();
+	const transfers = useTransferManager();
 	const queryClient = useQueryClient();
 	let decryptGeneration = 0;
 	let hydratedPageCount = 0;
@@ -94,14 +101,19 @@
 		},
 		getNextPageParam: (lastPage) => lastPage.HasMore ? lastPage.NextCursor || undefined : undefined
 	}));
-	const loadedEntries = $derived([...new Map([
+	const loadedEntries = $derived([...new Map<string, FileManagerEntry>([
 		...(entriesQuery.data?.pages ?? []).flatMap((response) => [
-			...response.Folders.map((folder) => ({ id: folder.ID, kind: 'folder' as const })),
-			...response.Files.map((file) => ({ id: file.ID, kind: 'file' as const }))
+			...response.Folders.map((folder): FileManagerEntry => ({
+				id: folder.ID, kind: 'folder', name: 'Encrypted folder', type: 'Folder', size: folder.SizeBytes ?? null, updatedAt: folder.UpdatedAt
+			})),
+			...response.Files.map((file): FileManagerEntry => ({
+				id: file.ID, kind: 'file', name: 'Encrypted file', type: 'application/octet-stream', size: null, updatedAt: file.UpdatedAt
+			}))
 		]),
 		...rows
 	].map((entry) => [fileManagerEntryKey(entry), entry] as const)).values()]);
 	const selectedEntries = $derived(loadedEntries.filter((entry) => selectedIds.has(fileManagerEntryKey(entry))));
+	const selectedFiles = $derived(selectedEntries.filter((entry) => entry.kind === 'file'));
 	// shortcut: PhotoSwipe navigates loaded rows; add paged image lookup if full-folder navigation is needed.
 	const imageEntries = $derived(rows.filter((entry) => entry.kind === 'file' && entry.type.startsWith('image/')));
 	const allRowsSelected = $derived(loadedEntries.length > 0 && selectedEntries.length === loadedEntries.length);
@@ -327,6 +339,89 @@
 		if (!VideoViewer) void import('./VideoViewer.svelte').then(({ default: component }) => VideoViewer = component);
 	}
 
+	function enqueueDownload(entry: FileManagerEntry, fileName: string, getTarget: () => Promise<FileSystemFileHandle>): void {
+		transfers.enqueueDownload(fileName, entry.size ?? 0, async (signal, onProgress, concurrency) => {
+			const { downloadEncryptedFile } = await import('#lib/downloads/download-file.ts');
+			await downloadEncryptedFile(entry.id, getTarget, signal, onProgress, concurrency);
+		});
+	}
+
+	function showDownloadError(error: unknown): void {
+		if (error instanceof DOMException && error.name === 'AbortError') return;
+		toast.error(error instanceof Error ? error.message : 'Could not start download.');
+	}
+
+	function safeDownloadName(name: string): string {
+		return name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').replace(/[. ]+$/g, '') || 'download';
+	}
+
+	function downloadEntry(entry: FileManagerEntry): void {
+		if (entry.kind !== 'file') return;
+		const picker = window as FilePickerWindow;
+		if (!picker.showSaveFilePicker) {
+			toast.error('This browser cannot save streamed files directly to disk.');
+			return;
+		}
+		try {
+			void picker.showSaveFilePicker({ suggestedName: safeDownloadName(entry.name || 'download') })
+				.then((target) => enqueueDownload(entry, target.name, async () => target))
+				.catch(showDownloadError);
+		} catch (error) {
+			showDownloadError(error);
+		}
+	}
+
+	function downloadSelected(): void {
+		const entries = [...selectedFiles];
+		if (entries.length === 1) {
+			downloadEntry(entries[0]!);
+			return;
+		}
+		if (!entries.length) return;
+
+		const picker = window as FilePickerWindow;
+		if (!picker.showDirectoryPicker) {
+			toast.error('This browser cannot save multiple streamed files to a folder.');
+			return;
+		}
+		try {
+			void picker.showDirectoryPicker({ mode: 'readwrite' }).then(async (directory) => {
+				const reserved = new Set<string>();
+				const targets: Array<{ entry: FileManagerEntry; name: string }> = [];
+				for (const entry of entries) {
+					const safeName = safeDownloadName(entry.name || 'download');
+					const extensionAt = safeName.lastIndexOf('.');
+					const stem = extensionAt > 0 ? safeName.slice(0, extensionAt) : safeName;
+					const extension = extensionAt > 0 ? safeName.slice(extensionAt) : '';
+					for (let suffix = 0; ; suffix++) {
+						const name = suffix ? `${stem} (${suffix})${extension}` : safeName;
+						const key = name.toLowerCase();
+						if (reserved.has(key)) continue;
+						try {
+							await directory.getFileHandle(name);
+							reserved.add(key);
+						} catch (error) {
+							if (!(error instanceof DOMException)) throw error;
+							if (error.name === 'TypeMismatchError') {
+								reserved.add(key);
+								continue;
+							}
+							if (error.name !== 'NotFoundError') throw error;
+							reserved.add(key);
+							targets.push({ entry, name });
+							break;
+						}
+					}
+				}
+				for (const { entry, name } of targets) {
+					enqueueDownload(entry, name, () => directory.getFileHandle(name, { create: true }));
+				}
+			}).catch(showDownloadError);
+		} catch (error) {
+			showDownloadError(error);
+		}
+	}
+
 	function requestDelete(entry?: FileManagerEntry): void {
 		if (entry) {
 			const entryIsSelected = selectedIds.has(fileManagerEntryKey(entry));
@@ -414,6 +509,12 @@
 							{/if}
 							{#if selectedEntries.length}
 								<span class="px-2 text-sm text-(--muted)">{selectedEntries.length} selected</span>
+								{#if selectedFiles.length}
+									<button class="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded px-2 text-sm text-(--text) hover:bg-(--surface-highest)" type="button" aria-label={`Download ${selectedFiles.length} selected ${selectedFiles.length === 1 ? 'file' : 'files'}`} onclick={downloadSelected}>
+										<Download class="size-4" aria-hidden="true" />
+										<span>Download</span>
+									</button>
+								{/if}
 								<button class="inline-flex size-8 cursor-pointer items-center justify-center rounded text-red-400 hover:bg-red-500/10 hover:text-red-300" type="button" aria-label="Delete selected items" onclick={() => requestDelete()}>
 									<Trash2 class="size-4" aria-hidden="true" />
 								</button>
@@ -517,6 +618,7 @@
 	y={contextMenuPosition.y}
 	onClose={() => contextMenuEntry = null}
 	onOpenFolder={openFolder}
+	onDownload={downloadEntry}
 	onProperties={(entry) => propertiesEntry = entry}
 	onDelete={requestDelete}
 />

@@ -2,7 +2,8 @@
 	import { onMount } from 'svelte';
 	import '@videojs/html/video/player';
 	import '@videojs/html/video/compat-skin';
-	import { openEncryptedStream, type EncryptedStream } from '#lib/streaming/source.ts';
+	import { openEncryptedStream } from '#lib/streaming/source.ts';
+	import type { EncryptedStream } from '#lib/streaming/types.ts';
 	import { canStreamVideo } from '#lib/utils/video.ts';
 	import { DecryptedFileReader } from '#lib/vault/read-file.ts';
 
@@ -67,7 +68,9 @@
 		}
 
 		const onMediaError = () => { void recoverPlayback(); };
+		const onPlaybackResumed = () => { recoveryAttempts = 0; };
 		media.addEventListener('error', onMediaError);
+		media.addEventListener('playing', onPlaybackResumed);
 
 		void (async () => {
 			try {
@@ -93,6 +96,7 @@
 			disposed = true;
 			controller.abort();
 			media.removeEventListener('error', onMediaError);
+			media.removeEventListener('playing', onPlaybackResumed);
 			stream?.close();
 			media.pause();
 			media.removeAttribute('src');

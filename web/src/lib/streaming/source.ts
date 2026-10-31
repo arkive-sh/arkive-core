@@ -1,45 +1,14 @@
-interface StreamRecord {
-	fileId: string;
-	plaintextSize: number;
-}
+import type {
+	EncryptedStream,
+	EncryptedStreamOptions,
+	StreamProvider,
+	StreamRegistration
+} from './types.ts';
 
-interface StreamMetadata {
-	name?: string;
-	mime?: string;
-	size?: number;
-}
-
-interface StreamRegistration {
-	sessionId: string;
-	purpose: 'preview' | 'download';
-	fileId: string;
-	filename: string;
-	plaintextSize: number;
-	mimeType: string;
-	concurrency: number;
-}
-
-interface StreamOptions {
-	reader: StreamReader;
-	record: StreamRecord;
-	metadata: StreamMetadata;
-	purpose?: StreamRegistration['purpose'];
-	concurrency?: number;
-}
-
-export interface StreamReader {
-	readRange(start: number, end: number, signal?: AbortSignal): Promise<Uint8Array>;
-}
-
-export interface EncryptedStream {
-	url: string;
-	close(): void;
-}
-
-const providers = new Map<string, { reader: StreamReader; registration: StreamRegistration; reads: Map<string, AbortController> }>();
+const providers = new Map<string, StreamProvider>();
 let providerBridgeBound = false;
 
-function cancelProviderReads(provider: { reads: Map<string, AbortController> }): void {
+function cancelProviderReads(provider: Pick<StreamProvider, 'reads'>): void {
 	for (const controller of provider.reads.values()) controller.abort();
 	provider.reads.clear();
 }
@@ -70,6 +39,8 @@ function bindProviderBridge(): void {
 		}
 		if (message.type === 'ARKIVE_STREAM_RESTORE') {
 			if (provider) {
+				// These reads belonged to the worker instance that lost its pending-read state.
+				cancelProviderReads(provider);
 				try {
 					postToServiceWorker({ type: 'ARKIVE_STREAM_OPEN', session: provider.registration });
 				} catch {}
@@ -137,7 +108,7 @@ async function waitForServiceWorkerController(): Promise<ServiceWorker> {
 	});
 }
 
-export async function openEncryptedStream(options: StreamOptions): Promise<EncryptedStream> {
+export async function openEncryptedStream(options: EncryptedStreamOptions): Promise<EncryptedStream> {
 	bindProviderBridge();
 	await waitForServiceWorkerController();
 
@@ -145,13 +116,16 @@ export async function openEncryptedStream(options: StreamOptions): Promise<Encry
 		sessionId: crypto.randomUUID(),
 		purpose: options.purpose || 'preview',
 		fileId: options.record.fileId,
-		filename: options.metadata.name || 'download',
 		plaintextSize: options.metadata.size ?? options.record.plaintextSize,
 		mimeType: options.metadata.mime || 'application/octet-stream',
 		concurrency: Math.min(8, Math.max(1, Math.floor(options.concurrency || 1)))
 	};
 
-	providers.set(registration.sessionId, { reader: options.reader, registration, reads: new Map() });
+	providers.set(registration.sessionId, {
+		reader: options.reader,
+		registration,
+		reads: new Map()
+	});
 	try {
 		postToServiceWorker({ type: 'ARKIVE_STREAM_OPEN', session: registration });
 	} catch (error) {
@@ -174,17 +148,4 @@ export async function openEncryptedStream(options: StreamOptions): Promise<Encry
 			} catch {}
 		}
 	};
-}
-
-export async function startServiceWorkerDownload(options: Omit<StreamOptions, 'purpose'>): Promise<EncryptedStream> {
-	const stream = await openEncryptedStream({ ...options, purpose: 'download' });
-	const anchor = document.createElement('a');
-	anchor.href = stream.url;
-	anchor.download = options.metadata.name || 'download';
-	anchor.rel = 'noopener';
-	anchor.hidden = true;
-	document.body.appendChild(anchor);
-	anchor.click();
-	anchor.remove();
-	return stream;
 }
