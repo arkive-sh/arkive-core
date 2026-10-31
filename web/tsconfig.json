@@ -11,5 +11,6 @@
 		"strict": true,
 		"allowImportingTsExtensions": true,
 		"moduleResolution": "bundler"
-	}
+	},
+	"exclude": ["src/service-worker"]
 }

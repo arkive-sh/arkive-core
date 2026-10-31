@@ -12,6 +12,7 @@ export default defineConfig({
 		tailwindcss(),
 		sveltekit({
 			adapter: adapter(),
+			serviceWorker: { register: false },
 			csp: {
 				mode: 'auto',
 				directives: {

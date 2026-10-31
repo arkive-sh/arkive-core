@@ -60,6 +60,8 @@
 	let deleteTargets = $state<FileManagerEntry[]>([]);
 	let propertiesEntry = $state<FileManagerEntry | null>(null);
 	let imagePreviewRequest = $state<{ fileId: string; trigger: HTMLElement } | null>(null);
+	let videoPreviewEntry = $state<FileManagerEntry | null>(null);
+	let VideoViewer = $state<typeof import('./VideoViewer.svelte').default>();
 	let contextMenuEntry = $state<FileManagerEntry | null>(null);
 	let contextMenuPosition = $state({ x: 0, y: 0 });
 	let tileSize = $state(150);
@@ -320,6 +322,11 @@
 		imagePreviewRequest = { fileId: entry.id, trigger };
 	}
 
+	function previewVideo(entry: FileManagerEntry): void {
+		videoPreviewEntry = entry;
+		if (!VideoViewer) void import('./VideoViewer.svelte').then(({ default: component }) => VideoViewer = component);
+	}
+
 	function requestDelete(entry?: FileManagerEntry): void {
 		if (entry) {
 			const entryIsSelected = selectedIds.has(fileManagerEntryKey(entry));
@@ -457,6 +464,7 @@
 						onOpenFolder={openFolder}
 						onShowContextMenu={showContextMenu}
 						onPreviewImage={previewImage}
+						onPreviewVideo={previewVideo}
 					/>
 				{:else}
 					<FilesListView
@@ -469,6 +477,7 @@
 						onOpenFolder={openFolder}
 						onShowContextMenu={showContextMenu}
 						onPreviewImage={previewImage}
+						onPreviewVideo={previewVideo}
 					/>
 				{/if}
 
@@ -497,6 +506,10 @@
 	onClose={() => imagePreviewRequest = null}
 	onError={(message) => toast.error(message)}
 />
+
+{#if VideoViewer}
+	<VideoViewer entry={videoPreviewEntry} onClose={() => videoPreviewEntry = null} />
+{/if}
 
 <FileEntryContextMenu
 	entry={contextMenuEntry}
