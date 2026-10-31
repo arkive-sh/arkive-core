@@ -5,6 +5,7 @@
 	import { api } from '#lib/api.ts';
 	import { formatBytes, formatRelativeTime } from '#lib/utils/format.ts';
 	import FileTypeIcon from '#lib/components/FileTypeIcon.svelte';
+	import { fileLocationHref } from '#lib/utils/navigation.ts';
 	import type { DashboardRecentFile, DashboardResponse } from './dashboard';
 	import FileUploader from '#lib/components/FileUploader.svelte';
 	import { decryptSearchFile } from '#lib/vault/search.ts';
@@ -151,9 +152,9 @@
 									<td class="px-4 py-3">
 										<div class="flex min-w-0 items-center gap-2.5">
 											<FileTypeIcon name={file.name} mime={file.mime ?? 'application/octet-stream'} className="size-4 shrink-0" />
-											<span class="min-w-0 truncate text-(--text)" aria-busy={!file.hydrated}>
+											<a class="min-w-0 truncate text-(--text) hover:text-(--accent)" href={fileLocationHref(file.id, file.folderId)} aria-busy={!file.hydrated}>
 												{#if file.hydrated}{file.name}{:else}<span class="inline-block h-[1.05rem] w-[min(240px,60vw)] animate-pulse rounded-full bg-(--surface-highest)" aria-hidden="true"></span>{/if}
-											</span>
+											</a>
 											<Lock class="size-3.5 shrink-0 text-(--accent)" aria-hidden="true" />
 										</div>
 									</td>

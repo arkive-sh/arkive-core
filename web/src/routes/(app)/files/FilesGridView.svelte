@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, tick } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 	import { Folder } from '@lucide/svelte';
 	import { createWindowVirtualizer } from '@tanstack/svelte-virtual';
@@ -14,6 +14,7 @@
 	const THUMBNAIL_CONCURRENCY = 4;
 	let {
 		rows,
+		focusFileId,
 		selectedIds,
 		tileSize,
 		showType,
@@ -25,6 +26,7 @@
 		onPreviewVideo
 	}: {
 		rows: FileManagerEntry[];
+		focusFileId: string | null;
 		selectedIds: ReadonlySet<string>;
 		tileSize: number;
 		showType: boolean;
@@ -106,6 +108,18 @@
 			resizeObserver.disconnect();
 			window.removeEventListener('resize', updateOptions);
 		};
+	});
+
+	$effect(() => {
+		const targetId = focusFileId;
+		const index = rows.findIndex((entry) => entry.kind === 'file' && entry.id === targetId);
+		if (!targetId || index < 0) return;
+
+		let canceled = false;
+		void tick().then(() => {
+			if (!canceled) get(rowVirtualizer).scrollToIndex(Math.floor(index / columnCount), { align: 'center' });
+		});
+		return () => { canceled = true; };
 	});
 
 	function measureGridRow(element: HTMLDivElement, index: number) {
@@ -236,7 +250,7 @@
 				>
 					{#each rows.slice(start, start + columnCount) as entry (`${entry.kind}:${entry.id}`)}
 						<article
-							class={`relative min-w-0 overflow-hidden rounded-md border bg-(--surface) transition-colors hover:border-(--accent) ${selectedIds.has(fileManagerEntryKey(entry)) ? 'border-(--accent)' : 'border-(--border)'}`}
+							class={`relative min-w-0 overflow-hidden rounded-md border bg-(--surface) transition-colors hover:border-(--accent) ${selectedIds.has(fileManagerEntryKey(entry)) || focusFileId === entry.id ? 'border-(--accent)' : 'border-(--border)'} ${focusFileId === entry.id ? 'ring-2 ring-(--accent)' : ''}`}
 							oncontextmenu={(event) => {
 								event.preventDefault();
 								onShowContextMenu(entry, event.clientX, event.clientY);

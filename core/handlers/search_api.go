@@ -24,13 +24,14 @@ type searchResult struct {
 }
 
 type encryptedSearchFileResult struct {
-	ID                string `json:"id"`
-	Kind              string `json:"kind"`
-	VaultID           string `json:"vaultId"`
-	EncryptedMetadata string `json:"encryptedMetadata"`
-	EncryptedFileKey  string `json:"encryptedFileKey"`
-	Score             int64  `json:"score"`
-	URL               string `json:"url"`
+	ID                string  `json:"id"`
+	Kind              string  `json:"kind"`
+	FolderID          *string `json:"folderId"`
+	VaultID           string  `json:"vaultId"`
+	EncryptedMetadata string  `json:"encryptedMetadata"`
+	EncryptedFileKey  string  `json:"encryptedFileKey"`
+	Score             int64   `json:"score"`
+	URL               string  `json:"url"`
 }
 
 type encryptedSearchFolderResult struct {
@@ -135,6 +136,7 @@ func mapEncryptedFileResults(files []models.File) []encryptedSearchFileResult {
 		results = append(results, encryptedSearchFileResult{
 			ID:                file.ID,
 			Kind:              "file",
+			FolderID:          file.FolderID,
 			VaultID:           file.UserID,
 			EncryptedMetadata: base64.StdEncoding.EncodeToString(file.EncryptedMetadata),
 			EncryptedFileKey:  base64.StdEncoding.EncodeToString(file.EncryptedFileKey),

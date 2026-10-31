@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { Folder } from '@lucide/svelte';
 	import { createTable, FlexRender, tableFeatures, type ColumnDef } from '@tanstack/svelte-table';
 	import { createWindowVirtualizer } from '@tanstack/svelte-virtual';
@@ -11,6 +12,7 @@
 
 	let {
 		rows,
+		focusFileId,
 		selectedIds,
 		selectedCount,
 		loadedCount,
@@ -22,6 +24,7 @@
 		onPreviewVideo
 	}: {
 		rows: FileManagerEntry[];
+		focusFileId: string | null;
 		selectedIds: ReadonlySet<string>;
 		selectedCount: number;
 		loadedCount: number;
@@ -87,6 +90,18 @@
 			window.removeEventListener('resize', updateOptions);
 		};
 	});
+
+	$effect(() => {
+		const targetId = focusFileId;
+		const index = tableRows.findIndex((row) => row.original.kind === 'file' && row.original.id === targetId);
+		if (!targetId || index < 0) return;
+
+		let canceled = false;
+		void tick().then(() => {
+			if (!canceled) get(rowVirtualizer).scrollToIndex(index, { align: 'center' });
+		});
+		return () => { canceled = true; };
+	});
 </script>
 
 <div class="overflow-x-auto">
@@ -121,7 +136,7 @@
 					{@const row = tableRows[virtualRow.index]}
 					<tr
 						data-index={virtualRow.index}
-						class={`absolute top-0 left-0 grid h-11.25 w-full transition-colors hover:bg-(--surface-highest) ${selectedIds.has(fileManagerEntryKey(row.original)) ? 'bg-(--surface-highest)' : 'bg-(--surface-raised)'}`}
+						class={`absolute top-0 left-0 grid h-11.25 w-full transition-colors hover:bg-(--surface-highest) ${selectedIds.has(fileManagerEntryKey(row.original)) ? 'bg-(--surface-highest)' : 'bg-(--surface-raised)'} ${focusFileId === row.original.id ? 'ring-2 ring-inset ring-(--accent)' : ''}`}
 						style={`grid-template-columns: ${GRID_COLUMNS}; transform: translateY(${virtualRow.start - rowScrollMargin}px)`}
 						oncontextmenu={(event) => {
 							event.preventDefault();
