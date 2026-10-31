@@ -29,8 +29,14 @@ interface ByteRange {
 }
 
 interface PendingRead {
+	sessionId: string;
+	requestId: string;
+	clientId: string;
 	resolve(bytes: Uint8Array<ArrayBuffer>): void;
 	reject(error: Error): void;
+	timeout?: ReturnType<typeof setTimeout>;
+	signal?: AbortSignal;
+	onAbort?: () => void;
 }
 
 const sessions = new Map<string, StreamSession>();
@@ -77,28 +83,30 @@ self.addEventListener("message", function(event) {
   }
 
   if (message.type === "ARKIVE_STREAM_CLOSE") {
-    sessions.delete(String(message.sessionId || ""));
+    const sessionId = String(message.sessionId || "");
+    const session = sessions.get(sessionId);
+    if (session) finalizeSession(session, 'closed');
+    else cancelSessionReads(sessionId, 'closed');
     return;
   }
 
   if (message.type === "ARKIVE_STREAM_READ_RESULT") {
     const key = String(message.sessionId || "") + ":" + String(message.requestId || "");
-    const pending = pendingReads.get(key);
+    const pending = takePendingRead(key);
     if (!pending) {
+      if (message.bytes) new Uint8Array(message.bytes).fill(0);
       return;
     }
-    pendingReads.delete(key);
     pending.resolve(new Uint8Array(message.bytes || new ArrayBuffer(0)));
     return;
   }
 
   if (message.type === "ARKIVE_STREAM_READ_ERROR") {
     const key = String(message.sessionId || "") + ":" + String(message.requestId || "");
-    const pending = pendingReads.get(key);
+    const pending = takePendingRead(key);
     if (!pending) {
       return;
     }
-    pendingReads.delete(key);
     pending.reject(new Error(String(message.error || "Stream read failed.")));
   }
 });
@@ -170,7 +178,7 @@ function clampRange(range: ByteRange, size: number): ByteRange {
 
 async function handleRequest(request: Request, url: URL, clientId: string): Promise<Response> {
   if (isDownloadRequest(url)) {
-    return handleDownloadRequest(url, clientId);
+    return handleDownloadRequest(url, clientId, request.signal);
   }
   return handleStreamRequest(request, url, clientId);
 }
@@ -199,7 +207,11 @@ async function handleStreamRequest(request: Request, url: URL, clientId: string)
     });
   }
 
-  const bytes = await requestBytesFromClient(session, range.start, range.end);
+  const bytes = await requestBytesFromClient(session, range.start, range.end, request.signal);
+  if (request.signal.aborted) {
+    bytes.fill(0);
+    request.signal.throwIfAborted();
+  }
 
   return new Response(bytes.buffer, {
     status: 206,
@@ -213,7 +225,7 @@ async function handleStreamRequest(request: Request, url: URL, clientId: string)
   });
 }
 
-async function handleDownloadRequest(url: URL, clientId: string): Promise<Response> {
+async function handleDownloadRequest(url: URL, clientId: string, signal: AbortSignal): Promise<Response> {
   const session = findSession(url, clientId, 'download');
   if (!session) {
     return new Response("Download session not found.", { status: 404 });
@@ -249,10 +261,16 @@ async function handleDownloadRequest(url: URL, clientId: string): Promise<Respon
           offset = end + 1;
         }
         const results = await Promise.allSettled(ranges.map((range) =>
-          requestBytesFromClient(session, range.start, range.end)
+          requestBytesFromClient(session, range.start, range.end, signal)
         ));
         const failed = results.find((result) => result.status === 'rejected');
-        if (failed?.status === 'rejected') throw failed.reason;
+        if (signal.aborted || failed?.status === 'rejected') {
+          for (const result of results) {
+            if (result.status === 'fulfilled') result.value.fill(0);
+          }
+          signal.throwIfAborted();
+          if (failed?.status === 'rejected') throw failed.reason;
+        }
 
         for (let i = 0; i < ranges.length; i++) {
           touchSession(session);
@@ -265,6 +283,7 @@ async function handleDownloadRequest(url: URL, clientId: string): Promise<Respon
           finalizeSession(session, "complete");
         }
       } catch (error) {
+        if (!sessions.has(session.sessionId)) return;
         controller.error(error);
         finalizeSession(session, "error");
       }
@@ -299,10 +318,11 @@ function findSession(url: URL, clientId: string, purpose: StreamSession['purpose
 	return session;
 }
 
-async function requestBytesFromClient(session: StreamSession, start: number, end: number): Promise<Uint8Array<ArrayBuffer>> {
+async function requestBytesFromClient(session: StreamSession, start: number, end: number, signal?: AbortSignal): Promise<Uint8Array<ArrayBuffer>> {
   if (isSessionExpired(session)) {
     throw new Error("Stream session expired.");
   }
+  signal?.throwIfAborted();
   const client = await self.clients.get(session.clientId);
   if (!client) {
     throw new Error("Stream page is unavailable.");
@@ -311,25 +331,38 @@ async function requestBytesFromClient(session: StreamSession, start: number, end
   const requestId = String(Date.now()) + "-" + Math.random().toString(36).slice(2);
   const key = session.sessionId + ":" + requestId;
 
-  return new Promise<Uint8Array<ArrayBuffer>>(function(resolve, reject) {
-    pendingReads.set(key, { resolve: resolve, reject: reject });
-
-    client.postMessage({
-      type: "ARKIVE_STREAM_READ",
+  return new Promise<Uint8Array<ArrayBuffer>>((resolve, reject) => {
+    const pending: PendingRead = {
       sessionId: session.sessionId,
-      requestId: requestId,
-      start: start,
-      end: end,
-    });
+      requestId,
+      clientId: session.clientId,
+      resolve,
+      reject,
+      signal,
+    };
+    pendingReads.set(key, pending);
+    pending.timeout = setTimeout(() => cancelPendingRead(key, new Error('Timed out waiting for encrypted stream data.')), STREAM_READ_TIMEOUT_MS);
 
-    setTimeout(function() {
-      const pending = pendingReads.get(key);
-      if (!pending) {
+    if (signal) {
+      pending.onAbort = () => cancelPendingRead(key, new DOMException('Stream read was cancelled.', 'AbortError'));
+      signal.addEventListener('abort', pending.onAbort, { once: true });
+      if (signal.aborted) {
+        pending.onAbort();
         return;
       }
-      pendingReads.delete(key);
-      reject(new Error("Timed out waiting for encrypted stream data."));
-    }, STREAM_READ_TIMEOUT_MS);
+    }
+
+    try {
+      client.postMessage({
+        type: "ARKIVE_STREAM_READ",
+        sessionId: session.sessionId,
+        requestId: requestId,
+        start: start,
+        end: end,
+      });
+    } catch (error) {
+      cancelPendingRead(key, error instanceof Error ? error : new Error('Could not request encrypted stream data.'));
+    }
   });
 }
 
@@ -343,12 +376,43 @@ function finalizeSession(session: StreamSession | undefined, status: string): vo
   if (!session || !session.sessionId) {
     return;
   }
+  cancelSessionReads(session.sessionId, status);
   sessions.delete(String(session.sessionId));
   notifyClient(session.clientId, {
     type: "ARKIVE_STREAM_FINISH",
     sessionId: String(session.sessionId),
     status: String(status || "complete"),
   });
+}
+
+function takePendingRead(key: string): PendingRead | undefined {
+	// Settled requests must release their fallback timer and abort listener immediately.
+	const pending = pendingReads.get(key);
+	if (!pending) return;
+	pendingReads.delete(key);
+	if (pending.timeout !== undefined) clearTimeout(pending.timeout);
+	if (pending.signal && pending.onAbort) pending.signal.removeEventListener('abort', pending.onAbort);
+	return pending;
+}
+
+function cancelPendingRead(key: string, error: Error): void {
+	const pending = takePendingRead(key);
+	if (!pending) return;
+	pending.reject(error);
+	void notifyClient(pending.clientId, {
+		type: 'ARKIVE_STREAM_READ_CANCEL',
+		sessionId: pending.sessionId,
+		requestId: pending.requestId
+	});
+}
+
+function cancelSessionReads(sessionId: string, reason: string): void {
+	// Closing a stream must stop the page-side range reads already dispatched for it.
+	for (const [key, pending] of pendingReads) {
+		if (pending.sessionId === sessionId) {
+			cancelPendingRead(key, new DOMException(`Stream ${reason}.`, 'AbortError'));
+		}
+	}
 }
 
 function touchSession(session: StreamSession): void {
@@ -377,7 +441,7 @@ function sessionLifetimeMs(session: Partial<StreamSession>): number {
   return PREVIEW_SESSION_MAX_LIFETIME_MS;
 }
 
-async function notifyClient(clientId: string, message: StreamMessage & { type: string; sessionId: string; status: string }): Promise<void> {
+async function notifyClient(clientId: string, message: Record<string, unknown>): Promise<void> {
   if (!clientId) {
     return;
   }
