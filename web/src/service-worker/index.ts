@@ -2,7 +2,7 @@ import { self } from '$app/service-worker';
 
 interface StreamSession {
 	sessionId: string;
-	purpose: string;
+	purpose: 'preview' | 'download';
 	fileId: string;
 	filename: string;
 	plaintextSize: number;
@@ -56,16 +56,19 @@ self.addEventListener("message", function(event) {
   if (message.type === "ARKIVE_STREAM_OPEN" && message.session) {
     const now = Date.now();
     const session = message.session;
+    // Use the browser-provided opener ID so another tab cannot claim this stream.
+    const clientId = event.source && 'id' in event.source ? String(event.source.id) : "";
+    if (!clientId || !session.sessionId || !session.fileId || (session.purpose !== 'preview' && session.purpose !== 'download')) return;
     const maxLifetimeMs = sessionLifetimeMs(session);
-    sessions.set(String(session.sessionId || ""), {
-      sessionId: String(session.sessionId || ""),
-      purpose: String(session.purpose || "preview"),
-      fileId: String(session.fileId || ""),
+    sessions.set(session.sessionId, {
+      sessionId: session.sessionId,
+      purpose: session.purpose,
+      fileId: session.fileId,
       filename: String(session.filename || "download"),
       plaintextSize: Number(session.plaintextSize || 0),
       mimeType: String(session.mimeType || "application/octet-stream"),
       concurrency: Math.min(8, Math.max(1, Math.floor(Number(session.concurrency || 1)))),
-      clientId: event.source && 'id' in event.source ? String(event.source.id) : "",
+      clientId,
       downloadOffset: 0,
       maxLifetimeMs,
       expiresAt: now + maxLifetimeMs,
@@ -107,7 +110,7 @@ self.addEventListener("fetch", function(event) {
     return;
   }
   event.respondWith(
-    handleRequest(event.request, url).catch(function(error: unknown) {
+    handleRequest(event.request, url, event.clientId).catch(function(error: unknown) {
       return new Response(error instanceof Error ? error.message : "Encrypted stream failed.", {
         status: 504,
         headers: {
@@ -165,16 +168,15 @@ function clampRange(range: ByteRange, size: number): ByteRange {
   };
 }
 
-async function handleRequest(request: Request, url: URL): Promise<Response> {
+async function handleRequest(request: Request, url: URL, clientId: string): Promise<Response> {
   if (isDownloadRequest(url)) {
-    return handleDownloadRequest(url);
+    return handleDownloadRequest(url, clientId);
   }
-  return handleStreamRequest(request, url);
+  return handleStreamRequest(request, url, clientId);
 }
 
-async function handleStreamRequest(request: Request, url: URL): Promise<Response> {
-  const sessionId = String(url.searchParams.get("session") || "");
-  const session = sessions.get(sessionId);
+async function handleStreamRequest(request: Request, url: URL, clientId: string): Promise<Response> {
+  const session = findSession(url, clientId, 'preview');
   if (!session) {
     return new Response("Stream session not found.", { status: 404 });
   }
@@ -211,9 +213,8 @@ async function handleStreamRequest(request: Request, url: URL): Promise<Response
   });
 }
 
-async function handleDownloadRequest(url: URL): Promise<Response> {
-  const sessionId = String(url.searchParams.get("session") || "");
-  const session = sessions.get(sessionId);
+async function handleDownloadRequest(url: URL, clientId: string): Promise<Response> {
+  const session = findSession(url, clientId, 'download');
   if (!session) {
     return new Response("Download session not found.", { status: 404 });
   }
@@ -277,6 +278,25 @@ async function handleDownloadRequest(url: URL): Promise<Response> {
     status: 200,
     headers: headers,
   });
+}
+
+function findSession(url: URL, clientId: string, purpose: StreamSession['purpose']): StreamSession | undefined {
+	const prefix = purpose === 'download' ? '/arkive-download/' : '/arkive-stream/';
+	const encodedFileId = url.pathname.slice(prefix.length);
+	if (!url.pathname.startsWith(prefix) || !encodedFileId || encodedFileId.includes('/')) return;
+
+	let fileId: string;
+	try {
+		fileId = decodeURIComponent(encodedFileId);
+	} catch {
+		return;
+	}
+
+	const sessionId = url.searchParams.get('session');
+	const session = sessionId ? sessions.get(sessionId) : undefined;
+	// The URL acts as a temporary capability, so tie it to its file and original page.
+	if (!clientId || !session || session.clientId !== clientId || session.fileId !== fileId || session.purpose !== purpose) return;
+	return session;
 }
 
 async function requestBytesFromClient(session: StreamSession, start: number, end: number): Promise<Uint8Array<ArrayBuffer>> {
