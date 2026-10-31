@@ -46,10 +46,11 @@ type ListEntriesPageInput struct {
 }
 
 type ListEntriesCursorInput struct {
-	UserID   string
-	FolderID *string
-	PageSize int
-	Cursor   string
+	UserID      string
+	FolderID    *string
+	PageSize    int
+	Cursor      string
+	SeekEntryID string
 }
 
 type MoveEntriesInput struct {

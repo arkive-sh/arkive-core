@@ -21,11 +21,12 @@
 		url: string;
 		category: Category;
 		score?: number;
+		matchScore?: number;
 		preview?: SearchPreview;
 		file?: EncryptedSearchFile;
 		thumbnailUrl?: string;
 	};
-	type SearchAPIItem = Omit<SearchResult, 'category' | 'score' | 'preview' | 'file' | 'thumbnailUrl'>;
+	type SearchAPIItem = Omit<SearchResult, 'category' | 'score' | 'matchScore' | 'preview' | 'file' | 'thumbnailUrl'>;
 	type SearchResponse = {
 		results?: {
 			files?: EncryptedSearchFile[];
@@ -59,6 +60,23 @@
 
 	function normalizeQuery(value: string) {
 		return value.toLowerCase().normalize('NFKD').replace(/[^\p{L}\p{N}.]+/gu, ' ').trim();
+	}
+
+	function queryTrigrams(value: string): string[] {
+		if (value.length < 3) return value ? [value] : [];
+		return [...new Set(Array.from({ length: value.length - 2 }, (_, index) => value.slice(index, index + 3)))];
+	}
+
+	function rankName(query: string, name: string): number {
+		const normalizedQuery = normalizeQuery(query);
+		const normalizedName = normalizeQuery(name);
+		if (normalizedName === normalizedQuery) return 4;
+		if (normalizedName.startsWith(normalizedQuery)) return 3;
+		if (normalizedName.includes(normalizedQuery)) return 2;
+		const terms = queryTrigrams(normalizedQuery).slice(0, 32);
+		if (!terms.length) return 0;
+		const indexedTerms = new Set(queryTrigrams(normalizedName));
+		return terms.filter((term) => indexedTerms.has(term)).length / terms.length;
 	}
 
 	function searchSettings(query: string): SearchResult[] {
@@ -128,7 +146,7 @@
 				queryKey: ['search', vaultId, tokens],
 				queryFn: async ({ signal }) => (await api.post<SearchResponse>(
 					'/api/search',
-					{ tokens, limit: 20 },
+					{ tokens, limit: 40 },
 					{ signal, headers: { Accept: 'application/json' } }
 				)).data,
 				retry: false
@@ -144,6 +162,7 @@
 						title: opened.name?.name || opened.metadata?.name || 'Encrypted folder',
 						meta: 'Folder',
 						score: Number(folder.score || 0),
+						matchScore: rankName(query, opened.name?.name || opened.metadata?.name || 'Encrypted folder'),
 						url: `/files?folder_id=${encodeURIComponent(folder.id)}`,
 						category: 'results'
 					};
@@ -160,6 +179,7 @@
 						title: opened.metadata?.name || 'Encrypted file',
 						meta: opened.metadata?.mime || 'Encrypted',
 						score: Number(file.score || 0),
+						matchScore: rankName(query, opened.metadata?.name || 'Encrypted file'),
 						preview: opened.metadata?.preview,
 						file,
 						url: fileLocationHref(file.id, file.folderId),
@@ -173,12 +193,12 @@
 
 			const ranked = [...folders, ...files]
 				.filter((result): result is SearchResult => result !== null)
-				.sort((a, b) => (b.score || 0) - (a.score || 0) || a.title.localeCompare(b.title));
+				.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0) || (b.score || 0) - (a.score || 0) || a.title.localeCompare(b.title));
 			const shares = (data.results?.shares ?? []).map((result) => ({ ...result, category: 'shares' as const }));
 			results = [...ranked, ...shares, ...settings];
 			activeIndex = 0;
 			hasSearched = true;
-			void hydrateThumbnails(ranked, query, controller.signal);
+			void hydrateThumbnails(ranked.slice(0, 20), query, controller.signal);
 		} catch {
 			if (!controller.signal.aborted && latestQuery === query) {
 				results = settings;

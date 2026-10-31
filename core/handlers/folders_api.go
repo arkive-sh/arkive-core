@@ -180,10 +180,11 @@ func apiListFolderEntries(c *gin.Context, folderService *folderssvc.Service, fol
 		return
 	}
 	result, err := folderService.ListEntriesCursor(c.Request.Context(), folderssvc.ListEntriesCursorInput{
-		UserID:   userID.(string),
-		FolderID: folderID,
-		PageSize: pagination.ParsePageSizeParam(c.DefaultQuery("pageSize", "50")),
-		Cursor:   cursorValue,
+		UserID:      userID.(string),
+		FolderID:    folderID,
+		PageSize:    pagination.ParsePageSizeParam(c.DefaultQuery("pageSize", "50")),
+		Cursor:      cursorValue,
+		SeekEntryID: strings.TrimSpace(c.Query("seekEntryId")),
 	})
 	if err != nil {
 		switch err {
@@ -191,6 +192,8 @@ func apiListFolderEntries(c *gin.Context, folderService *folderssvc.Service, fol
 			apierror.InvalidPayload(c)
 		case folderssvc.ErrNotFound:
 			apierror.Write(c, http.StatusNotFound, "folder_not_found", "Folder not found", nil)
+		case folderssvc.ErrEntryNotFound:
+			apierror.Write(c, http.StatusNotFound, "entry_not_found", "That entry is no longer in this folder.", nil)
 		default:
 			_ = c.Error(errs.WithStack(err))
 			apierror.Internal(c, "List entries failed")

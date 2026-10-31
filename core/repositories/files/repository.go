@@ -471,7 +471,7 @@ func (r *Repository) ListByFolder(ctx context.Context, db database.PgExecutor, u
 	return files, nil
 }
 
-func (r *Repository) ListByFolderAfter(ctx context.Context, db database.PgExecutor, userID string, folderID *string, limit int, afterCreatedAt *time.Time, afterID *string) ([]models.File, error) {
+func (r *Repository) ListByFolderAfter(ctx context.Context, db database.PgExecutor, userID string, folderID *string, limit int, afterCreatedAt *time.Time, afterID *string, inclusive bool) ([]models.File, error) {
 	query := `SELECT
 		id, folder_id, encrypted_metadata, encrypted_file_key, created_at, updated_at
 	FROM
@@ -487,7 +487,11 @@ func (r *Repository) ListByFolderAfter(ctx context.Context, db database.PgExecut
 		)`
 	args := []any{userID, folderID, limit}
 	if afterCreatedAt != nil {
-		query += ` AND (created_at, id) < ($4, $5::uuid)`
+		operator := "<"
+		if inclusive {
+			operator = "<="
+		}
+		query += ` AND (created_at, id) ` + operator + ` ($4, $5::uuid)`
 		args = append(args, afterCreatedAt, afterID)
 	}
 	query += ` ORDER BY created_at DESC, id DESC LIMIT $3`
@@ -518,6 +522,20 @@ func (r *Repository) ListByFolderAfter(ctx context.Context, db database.PgExecut
 		return nil, rows.Err()
 	}
 	return files, nil
+}
+
+func (r *Repository) GetListedFileCreatedAt(ctx context.Context, db database.PgExecutor, userID string, folderID *string, fileID string) (time.Time, error) {
+	var createdAt time.Time
+	err := db.QueryRow(ctx, `SELECT created_at
+		FROM files
+		WHERE id = $1
+			AND user_id = $2
+			AND upload_status = 'complete'
+			AND expires_at IS NULL
+			AND deleted_at IS NULL
+			AND (($3::uuid IS NULL AND folder_id IS NULL) OR folder_id = $3)`,
+		fileID, userID, folderID).Scan(&createdAt)
+	return createdAt, err
 }
 
 func (r *Repository) MoveFilesToFolder(ctx context.Context, db database.PgExecutor, userID string, fileIDs []string, targetFolderID *string) (int64, error) {

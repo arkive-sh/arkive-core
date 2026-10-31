@@ -31,7 +31,7 @@ func (r *Repository) ReplaceSearchTokensForFile(ctx context.Context, db database
 	return r.InsertSearchTokensForFile(ctx, db, userID, vaultID, fileID, tokens)
 }
 
-func (r *Repository) SearchCompletedForTokens(ctx context.Context, db database.PgExecutor, userID, vaultID string, tokenHashes [][]byte, limit int) ([]models.File, error) {
+func (r *Repository) SearchCompletedForTokens(ctx context.Context, db database.PgExecutor, userID, vaultID string, tokenHashes [][]byte, minimumMatches, limit int) ([]models.File, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -41,23 +41,6 @@ func (r *Repository) SearchCompletedForTokens(ctx context.Context, db database.P
 		f.folder_id,
 		f.encrypted_metadata,
 		f.encrypted_file_key,
-		f.encrypted_manifest,
-		f.encryption_version,
-		f.chunk_size,
-		f.chunk_count,
-		f.plaintext_size,
-		f.actual_encrypted_size,
-		f.encrypted_hash,
-		f.upload_status,
-		f.thumbnail_status,
-		f.thumbnail_size_bytes,
-		f.thumbnail_mime,
-		f.thumbnail_width,
-		f.thumbnail_height,
-		f.completed_at,
-		f.created_at,
-		f.updated_at,
-		f.expires_at,
 		SUM(fst.weight) AS score
 	FROM
 		file_search_tokens fst
@@ -72,11 +55,13 @@ func (r *Repository) SearchCompletedForTokens(ctx context.Context, db database.P
 	GROUP BY
 		f.id
 	HAVING
-		COUNT(DISTINCT fst.token_hash) = cardinality($3::bytea[])
+		COUNT(DISTINCT fst.token_hash) >= $4
 	ORDER BY
+		COUNT(DISTINCT fst.token_hash) DESC,
 		score DESC,
-		f.updated_at DESC
-	LIMIT $4`, userID, vaultID, tokenHashes, limit)
+		f.updated_at DESC,
+		f.id
+	LIMIT $5`, userID, vaultID, tokenHashes, minimumMatches, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -92,23 +77,6 @@ func (r *Repository) SearchCompletedForTokens(ctx context.Context, db database.P
 			&folderID,
 			&file.EncryptedMetadata,
 			&file.EncryptedFileKey,
-			&file.EncryptedManifest,
-			&file.EncryptionVersion,
-			&file.ChunkSize,
-			&file.ChunkCount,
-			&file.PlaintextSize,
-			&file.ActualEncryptedSize,
-			&file.EncryptedHash,
-			&file.UploadStatus,
-			&file.ThumbnailStatus,
-			&file.ThumbnailSizeBytes,
-			&file.ThumbnailMime,
-			&file.ThumbnailWidth,
-			&file.ThumbnailHeight,
-			&file.CompletedAt,
-			&file.CreatedAt,
-			&file.UpdatedAt,
-			&file.ExpiresAt,
 			&file.SearchScore,
 		); err != nil {
 			return nil, err
