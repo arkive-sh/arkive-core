@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
-	import { File, Lock } from '@lucide/svelte';
+	import { Lock } from '@lucide/svelte';
 	import { api } from '#lib/api.ts';
 	import { formatBytes, formatRelativeTime } from '#lib/utils/format.ts';
+	import FileTypeIcon from '#lib/components/FileTypeIcon.svelte';
 	import type { DashboardRecentFile, DashboardResponse } from './dashboard';
 	import FileUploader from '#lib/components/FileUploader.svelte';
 	import { decryptSearchFile } from '#lib/vault/search.ts';
@@ -11,7 +12,7 @@
 	import { vaultUnlocked } from '#lib/vault/state.ts';
 	import type { PageProps } from './$types';
 
-	type RecentFile = DashboardRecentFile & { name: string; size?: number; hydrated: boolean };
+	type RecentFile = DashboardRecentFile & { name: string; mime?: string; size?: number; hydrated: boolean };
 	let { data }: PageProps = $props();
 	const queryClient = useQueryClient();
 	const dashboardQuery = createQuery(() => ({
@@ -58,6 +59,7 @@
 				return {
 					...file,
 					name: typeof metadata.name === 'string' ? metadata.name : 'Encrypted file',
+					mime: typeof metadata.mime === 'string' ? metadata.mime : 'application/octet-stream',
 					size: typeof metadata.size === 'number' ? metadata.size : undefined,
 					hydrated: true
 				};
@@ -148,7 +150,7 @@
 								<tr class="border-b border-(--border) last:border-0 hover:bg-(--surface)">
 									<td class="px-4 py-3">
 										<div class="flex min-w-0 items-center gap-2.5">
-											<File class="size-4 shrink-0 text-(--muted-strong)" aria-hidden="true" />
+											<FileTypeIcon name={file.name} mime={file.mime ?? 'application/octet-stream'} className="size-4 shrink-0" />
 											<span class="min-w-0 truncate text-(--text)" aria-busy={!file.hydrated}>
 												{#if file.hydrated}{file.name}{:else}<span class="inline-block h-[1.05rem] w-[min(240px,60vw)] animate-pulse rounded-full bg-(--surface-highest)" aria-hidden="true"></span>{/if}
 											</span>
