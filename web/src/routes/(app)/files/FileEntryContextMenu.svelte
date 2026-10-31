@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { FolderOpen, Info, Trash2 } from '@lucide/svelte';
+	import { Download, FolderOpen, Info, Trash2 } from '@lucide/svelte';
 	import type { FileManagerEntry } from './types';
 
 	type Props = {
@@ -9,11 +9,12 @@
 		y: number;
 		onClose: () => void;
 		onOpenFolder: (id: string) => void;
+		onDownload: (entry: FileManagerEntry) => void;
 		onProperties: (entry: FileManagerEntry) => void;
 		onDelete: (entry: FileManagerEntry) => void;
 	};
 
-	let { entry, x, y, onClose, onOpenFolder, onProperties, onDelete }: Props = $props();
+	let { entry, x, y, onClose, onOpenFolder, onDownload, onProperties, onDelete }: Props = $props();
 	let menu = $state<HTMLDivElement>();
 	let position = $state({ left: 8, top: 8 });
 
@@ -70,6 +71,13 @@
 		onProperties(selected);
 	}
 
+	function downloadFile(): void {
+		if (!entry || entry.kind !== 'file') return;
+		const selected = entry;
+		onClose();
+		onDownload(selected);
+	}
+
 	function confirmDelete(): void {
 		if (!entry) return;
 		const selected = entry;
@@ -92,6 +100,12 @@
 			<button class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)" type="button" role="menuitem" onclick={openFolder}>
 				<FolderOpen class="size-4 text-(--muted)" aria-hidden="true" />
 				<span>Open folder</span>
+			</button>
+		{/if}
+		{#if entry.kind === 'file'}
+			<button class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)" type="button" role="menuitem" onclick={downloadFile}>
+				<Download class="size-4 text-(--muted)" aria-hidden="true" />
+				<span>Download</span>
 			</button>
 		{/if}
 		<button class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)" type="button" role="menuitem" onclick={showProperties}>

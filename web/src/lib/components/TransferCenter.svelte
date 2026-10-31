@@ -16,7 +16,6 @@
 		let active = 0;
 		let completed = 0;
 		let selected = 0;
-		let selectedActive = 0;
 		let selectedRetryable = 0;
 		let selectedRemovable = 0;
 		for (const job of transfers.jobs) {
@@ -26,11 +25,10 @@
 			if (job.status === 'completed') completed++;
 			if (!selectedIds.has(job.id)) continue;
 			selected++;
-			if (isActive) selectedActive++;
 			if (isRetryable) selectedRetryable++;
 			if (job.status !== 'queued' && job.status !== 'running') selectedRemovable++;
 		}
-		return { active, completed, selected, selectedActive, selectedRetryable, selectedRemovable };
+		return { active, completed, selected, selectedRetryable, selectedRemovable };
 	});
 	const allSelected = $derived(transfers.jobs.length > 0 && counts.selected === transfers.jobs.length);
 	const rowVirtualizer = createVirtualizer<HTMLDivElement, HTMLLIElement>({
@@ -108,7 +106,7 @@
 						<p class="m-0 text-xs text-(--muted)">{counts.active} active</p>
 					</div>
 					<div class="flex items-center gap-1">
-						{#if counts.active && !counts.selectedActive}
+						{#if counts.active}
 							<button class="cursor-pointer rounded-md px-2 py-1 text-xs text-(--muted) hover:bg-(--surface-highest) hover:text-(--danger)" type="button" onclick={() => void manager.cancelAll()}>Cancel all</button>
 						{/if}
 						<Tooltip label="Minimize transfers" side="left">
@@ -129,18 +127,15 @@
 							aria-label="Select all transfers"
 							onchange={toggleAll}
 						/>
-						<span>{counts.selected ? `${counts.selected} selected` : 'Select all'}</span>
+						{#if counts.selected}<span>{counts.selected} selected</span>{/if}
 					</label>
 					{#if counts.selected}
 						<div class="flex flex-wrap items-center justify-end gap-1">
-							{#if counts.selectedActive}
-								<button class="cursor-pointer rounded px-2 py-1 text-xs text-(--muted) hover:bg-(--surface-highest) hover:text-(--danger)" type="button" onclick={() => manager.cancelMany([...selectedIds])}>Cancel {counts.selectedActive}</button>
-							{/if}
 							{#if counts.selectedRetryable}
-								<button class="inline-flex cursor-pointer items-center gap-1 rounded px-2 py-1 text-xs text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)" type="button" onclick={() => manager.retryMany([...selectedIds])}><RotateCcw class="size-3.5" aria-hidden="true" />Retry {counts.selectedRetryable}</button>
+								<button class="inline-flex cursor-pointer items-center gap-1 rounded px-2 py-1 text-xs text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)" type="button" onclick={() => manager.retryMany([...selectedIds])}><RotateCcw class="size-3.5" aria-hidden="true" />Retry</button>
 							{/if}
 							{#if counts.selectedRemovable}
-								<button class="inline-flex cursor-pointer items-center gap-1 rounded px-2 py-1 text-xs text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)" type="button" onclick={removeSelected}><Trash2 class="size-3.5" aria-hidden="true" />Remove {counts.selectedRemovable}</button>
+								<button class="inline-flex cursor-pointer items-center gap-1 rounded px-2 py-1 text-xs text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)" type="button" onclick={removeSelected}><Trash2 class="size-3.5" aria-hidden="true" />Remove</button>
 							{/if}
 							<Tooltip label="Clear selection" side="left">
 								<button class="inline-flex size-7 cursor-pointer items-center justify-center rounded text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)" type="button" aria-label="Clear selection" onclick={() => selectedIds = new Set()}><X class="size-4" aria-hidden="true" /></button>
