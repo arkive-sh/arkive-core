@@ -1,6 +1,5 @@
 <script lang="ts">
 	import axios from 'axios';
-	import * as opaque from '@serenity-kit/opaque';
 	import { goto } from '$app/navigation';
 	import { BadgeInfo, Database, LockKeyhole, Rocket, Server, ShieldAlert } from '@lucide/svelte';
 	import Button from '#lib/components/Button.svelte';
@@ -8,8 +7,9 @@
 	import SetupSection from '#lib/components/SetupSection.svelte';
 	import StorageSelector from '#lib/components/StorageSelector.svelte';
 	import { api, type APIErrorResponse } from '#lib/api.ts';
+	import { opaqueAuth } from '#lib/opaque-auth.ts';
 	import { callVaultWorker } from '#lib/vault/worker-client.ts';
-	import { fromBase64Url, toBase64 } from '#lib/vault/bytes.ts';
+	import { toBase64 } from '#lib/vault/bytes.ts';
 	import { SETUP_MASTER_KEY_STORAGE, type InitialSetupRequest, type SetupStatus, type StorageProvider } from './types';
 	import { validateSetup, type SetupFormValues } from './validation';
 
@@ -70,7 +70,7 @@
 		const form = event.currentTarget;
 		const values = new FormData(form);
 		const formValues = readFormValues(values);
-		const password = formValues.password;
+		let password: string | null = formValues.password;
 		generalError = '';
 		fieldErrors = {};
 
@@ -87,22 +87,26 @@
 		submitting = true;
 
 		let vault: { masterKey: Uint8Array<ArrayBuffer>; vaultSalt: string; encryptedMasterKey: string } | null = null;
+		let registration: Awaited<ReturnType<typeof opaqueAuth.registerSetup>> | null = null;
+		let exportKey: Uint8Array<ArrayBuffer> | null = null;
+		let registrationRecord = '';
 		try {
-			const { clientRegistrationState, registrationRequest } = opaque.client.startRegistration({ password });
-			const { data: registrationStart } = await api.post<{ registrationResponse: string }>(
-				'/api/setup/opaque/registration/start',
-				{ username: formValues.username, registrationRequest }
-			);
-			const registration = opaque.client.finishRegistration({
-				clientRegistrationState,
-				registrationResponse: registrationStart.registrationResponse,
-				password
-			});
-			const exportKey = new Uint8Array(fromBase64Url(registration.exportKey));
+			if (password === null) throw new Error('Password is unavailable.');
+			registration = await opaqueAuth.registerSetup(formValues.username, password);
+			password = null;
+			formValues.password = '';
+			formValues.confirm_password = '';
+			values.set('password', '');
+			values.set('confirm_password', '');
+			registrationRecord = registration.registrationRecord;
+			exportKey = registration.exportKey;
+			registration = null;
+			if (!exportKey) throw new Error('Vault export key is unavailable.');
 			try {
 				vault = await callVaultWorker('createInitialVault', { exportKey: exportKey.buffer }, [exportKey.buffer]);
 			} finally {
-				if (exportKey.buffer.byteLength) exportKey.fill(0);
+				if (exportKey.byteLength) exportKey.fill(0);
+				exportKey = null;
 			}
 			const vaultSalt = vault.vaultSalt;
 			const encryptedMasterKey = vault.encryptedMasterKey;
@@ -113,7 +117,7 @@
 				name: formValues.name,
 				username: formValues.username,
 				email: formValues.email,
-				opaqueRegistrationRecord: registration.registrationRecord,
+				opaqueRegistrationRecord: registrationRecord,
 				vaultSalt,
 				encryptedMasterKey,
 				storage: {
@@ -151,6 +155,15 @@
 			}
 			showError(error);
 		} finally {
+			password = null;
+			formValues.password = '';
+			formValues.confirm_password = '';
+			values.set('password', '');
+			values.set('confirm_password', '');
+			for (const input of form.querySelectorAll<HTMLInputElement>('input[type="password"]')) input.value = '';
+			if (exportKey?.byteLength) exportKey.fill(0);
+			exportKey = null;
+			registration = null;
 			vault?.masterKey.fill(0);
 			vault = null;
 			submitting = false;

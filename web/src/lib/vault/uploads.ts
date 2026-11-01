@@ -1,4 +1,4 @@
-import { normalizeAAD, toWorkerBytes } from './bytes';
+import { encodeJSON, normalizeAAD, toWorkerBytes } from './bytes';
 import { touchSessionUnlock } from './session';
 import type { VaultAAD, VaultBytes, VaultMetadata, VaultWorkerCalls } from './types';
 import { callVaultWorker } from './worker-client';
@@ -24,11 +24,12 @@ export function encryptUploadMetadata(
 	fileId: string
 ): Promise<VaultWorkerCalls['encryptUploadMetadata']['result']> {
 	touchSessionUnlock();
+	const metadataBytes = encodeJSON(metadata);
 	return callVaultWorker('encryptUploadMetadata', {
 		uploadToken,
-		metadata,
+		metadataBytes,
 		metadataAad: `arkive:file-metadata:v1:${vaultId}:${fileId}`
-	});
+	}, [metadataBytes]);
 }
 
 export function encryptUploadThumbnail(
@@ -64,12 +65,13 @@ export function finalizeUpload(
 	partHashes: string[]
 ): Promise<VaultWorkerCalls['finalizeUpload']['result']> {
 	touchSessionUnlock();
+	const manifestBytes = encodeJSON(manifest);
 	return callVaultWorker('finalizeUpload', {
 		uploadToken,
-		manifest,
+		manifestBytes,
 		partHashes,
 		manifestAad: `arkive:file-manifest:v1:${vaultId}:${fileId}`
-	});
+	}, [manifestBytes]);
 }
 
 export function clearUploadContext(uploadToken: string): Promise<{ cleared: boolean }> {

@@ -1,4 +1,5 @@
 import { api } from '#lib/api.ts';
+import { decodeJSON } from './bytes.ts';
 import { closeFileContext, decryptFileChunk, openFileContext } from './files.ts';
 import { waitUntilReady } from './session.ts';
 import type { FileCryptoRecord, VaultMetadata } from './types.ts';
@@ -35,6 +36,21 @@ interface PendingChunkRead {
 	promise: Promise<Uint8Array>;
 }
 
+function clearMetadata(metadata?: VaultMetadata): void {
+	if (metadata) for (const key of Object.keys(metadata)) delete metadata[key];
+}
+
+function clearManifest(manifest?: FileManifest): void {
+	if (!manifest || !Array.isArray(manifest.chunks)) return;
+	for (const chunk of manifest.chunks) {
+		if (!chunk || typeof chunk !== 'object') continue;
+		chunk.plain_size = 0;
+		chunk.cipher_size = 0;
+		chunk.hash = '';
+	}
+	manifest.chunks.length = 0;
+}
+
 export class DecryptedFileReader {
 	private readonly contextId = crypto.randomUUID();
 	private readonly chunkCache = new Map<number, Uint8Array>();
@@ -45,6 +61,7 @@ export class DecryptedFileReader {
 	private contextOpened = false;
 	private disposed = false;
 	private manifest?: FileManifest;
+	private metadata?: FileReadContext['metadata'];
 	private cipherStarts: number[] = [];
 
 	constructor(
@@ -71,10 +88,17 @@ export class DecryptedFileReader {
 
 		const opened = await openFileContext(this.contextId, record);
 		this.contextOpened = true;
+		let metadataBytes: Uint8Array | null = opened.metadataBytes;
+		let manifestBytes: Uint8Array | null = opened.manifestBytes;
+		let metadata: FileReadContext['metadata'] | undefined;
+		let manifest: FileManifest | undefined;
 		try {
 			if (this.disposed) throw new Error('File reader is closed.');
-			const metadata = JSON.parse(opened.metadata) as FileReadContext['metadata'];
-			const manifest = JSON.parse(opened.manifest) as FileManifest;
+			if (!metadataBytes || !manifestBytes) throw new Error('The file context is incomplete.');
+			metadata = decodeJSON<FileReadContext['metadata']>(metadataBytes);
+			metadataBytes = null;
+			manifest = decodeJSON<FileManifest>(manifestBytes);
+			manifestBytes = null;
 			const plaintextSize = typeof metadata.size === 'number' ? metadata.size : record.plaintextSize;
 			if (!Number.isSafeInteger(plaintextSize) || plaintextSize < 0 || !Array.isArray(manifest.chunks) || manifest.chunks.length !== record.totalChunks) {
 				throw new Error('The file manifest is invalid.');
@@ -96,10 +120,18 @@ export class DecryptedFileReader {
 			if (plainOffset !== plaintextSize) throw new Error('The file manifest is invalid.');
 
 			this.manifest = manifest;
+			this.metadata = metadata;
 			return { record, metadata, plaintextSize };
 		} catch (error) {
 			await this.closeContext();
 			throw error;
+		} finally {
+			metadataBytes?.fill(0);
+			metadataBytes = null;
+			manifestBytes?.fill(0);
+			manifestBytes = null;
+			if (metadata !== this.metadata) clearMetadata(metadata);
+			if (manifest !== this.manifest) clearManifest(manifest);
 		}
 	}
 
@@ -151,14 +183,21 @@ export class DecryptedFileReader {
 
 	async dispose(): Promise<void> {
 		if (this.disposed) return;
-    this.disposed = true;
+		this.disposed = true;
 
 		for (const pending of this.pendingChunks.values()) pending.controller.abort();
-    this.pendingChunks.clear();
+		this.pendingChunks.clear();
 
 		for (const chunk of this.chunkCache.values()) chunk.fill(0);
 		this.chunkCache.clear();
-    this.chunkCacheBytes = 0;
+		this.chunkCacheBytes = 0;
+		clearMetadata(this.metadata);
+		this.metadata = undefined;
+		clearManifest(this.manifest);
+		this.manifest = undefined;
+		this.cipherStarts.fill(0);
+		this.cipherStarts.length = 0;
+		this.loadPromise = undefined;
 
 		await this.closeContext();
 	}

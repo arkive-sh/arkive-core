@@ -29,6 +29,7 @@
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : 'Could not unlock the vault.';
 		} finally {
+			password = '';
 			submitting = false;
 		}
 	}

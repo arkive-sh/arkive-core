@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { Key, Lock, Shield } from '@lucide/svelte';
 	import { loginAndUnlock } from '#lib/auth.ts';
 	import Button from '#lib/components/Button.svelte';
@@ -8,29 +8,32 @@
 	import InputField from '#lib/components/InputField.svelte';
 
 	const queryClient = useQueryClient();
-	const loginMutation = createMutation(() => ({
-		mutationFn: ({ email, password }: { email: string; password: string }) => loginAndUnlock(email, password)
-	}));
 	let generalError = $state('');
-	let submitting = $derived(loginMutation.isPending);
+	let submitting = $state(false);
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
-		if (loginMutation.isPending) return;
+		if (submitting) return;
 
 		const form = event.currentTarget as HTMLFormElement;
 		const passwordInput = form.elements.namedItem('password') as HTMLInputElement;
 		const email = String(new FormData(form).get('email') || '').trim();
-		const password = passwordInput.value;
+		let password: string | null = passwordInput.value;
+		passwordInput.value = '';
 		generalError = '';
+		submitting = true;
 
 		try {
 			queryClient.clear();
-			await loginMutation.mutateAsync({ email, password });
-			passwordInput.value = '';
+			if (password === null) throw new Error('Password is unavailable.');
+			await loginAndUnlock(email, password);
 			await goto('/', { replace: true });
 		} catch (cause) {
 			generalError = cause instanceof Error ? cause.message : 'Unlock failed. Try again.';
+		} finally {
+			password = null;
+			passwordInput.value = '';
+			submitting = false;
 		}
 	}
 </script>
