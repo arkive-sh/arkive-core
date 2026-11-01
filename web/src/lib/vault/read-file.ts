@@ -8,7 +8,6 @@ interface EncryptedFileRecord extends FileCryptoRecord {
 	encryptionVersion: number;
 	chunkSize: number;
 	totalChunks: number;
-	plaintextSize: number;
 	encryptedHash: string;
 	sourceUrl: string;
 }
@@ -99,8 +98,8 @@ export class DecryptedFileReader {
 			metadataBytes = null;
 			manifest = decodeJSON<FileManifest>(manifestBytes);
 			manifestBytes = null;
-			const plaintextSize = typeof metadata.size === 'number' ? metadata.size : record.plaintextSize;
-			if (!Number.isSafeInteger(plaintextSize) || plaintextSize < 0 || !Array.isArray(manifest.chunks) || manifest.chunks.length !== record.totalChunks) {
+			const plaintextSize = metadata.size;
+			if (typeof plaintextSize !== 'number' || !Number.isSafeInteger(plaintextSize) || plaintextSize < 0 || !Array.isArray(manifest.chunks) || manifest.chunks.length !== record.totalChunks) {
 				throw new Error('The file manifest is invalid.');
 			}
 

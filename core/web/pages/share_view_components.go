@@ -308,8 +308,8 @@ func publicShareExtensionLabel(props PublicShareViewProps) string {
 }
 
 func publicShareSizeText(props PublicShareViewProps) string {
-	if props.PlaintextSize > 0 {
-		return format.Bytes(props.PlaintextSize)
+	if props.File.ActualEncryptedSize > 0 {
+		return format.Bytes(props.File.ActualEncryptedSize)
 	}
 	return "Encrypted"
 }

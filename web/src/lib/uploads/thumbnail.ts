@@ -217,7 +217,7 @@ export async function createAndUploadThumbnail(input: UploadThumbnailInput): Pro
 		if (controller.signal.aborted) return null;
 		const { data } = await api.post<{ url: string }>(
 			`/api/uploads/${encodeURIComponent(input.uploadSessionId)}/thumbnail/presign`,
-			{ encryptedSize: encrypted.encryptedSize, mime: thumbnail.mime, width: thumbnail.width, height: thumbnail.height },
+			{ encryptedSize: encrypted.encryptedSize },
 			{ signal: controller.signal }
 		);
 		const response = await fetch(new URL(data.url, CORE_API_ORIGIN), {

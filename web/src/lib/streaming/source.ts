@@ -111,12 +111,16 @@ async function waitForServiceWorkerController(): Promise<ServiceWorker> {
 export async function openEncryptedStream(options: EncryptedStreamOptions): Promise<EncryptedStream> {
 	bindProviderBridge();
 	await waitForServiceWorkerController();
+	const plaintextSize = options.metadata.size;
+	if (typeof plaintextSize !== 'number' || !Number.isSafeInteger(plaintextSize) || plaintextSize < 0) {
+		throw new Error('Encrypted file metadata has an invalid size.');
+	}
 
 	const registration: StreamRegistration = {
 		sessionId: crypto.randomUUID(),
 		purpose: options.purpose || 'preview',
 		fileId: options.record.fileId,
-		plaintextSize: options.metadata.size ?? options.record.plaintextSize,
+		plaintextSize,
 		mimeType: options.metadata.mime || 'application/octet-stream',
 		concurrency: Math.min(8, Math.max(1, Math.floor(options.concurrency || 1)))
 	};

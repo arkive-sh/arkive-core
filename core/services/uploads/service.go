@@ -121,7 +121,7 @@ func (s *Service) CleanupExpiredUploads(ctx context.Context) (int, error) {
 			updated, err = s.fileRepo.UpdateEncryptedFileStatusIf(ctx, tx, upload.FileID, FileUploadFailed, []string{FileUploadUploading, FileUploadPending})
 		}
 		if err == nil && updated {
-			_, err = s.storageRepo.ReleaseReservedStorage(ctx, tx, upload.UserID, reservedUploadSize(upload.PlaintextSize, upload.ChunkCount))
+			_, err = s.storageRepo.ReleaseReservedStorage(ctx, tx, upload.UserID, reservedUploadSize(upload.EncryptedSize))
 		}
 		if err != nil {
 			_ = tx.Rollback(ctx)

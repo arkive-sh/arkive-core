@@ -90,6 +90,5 @@ type PublicShareRecord struct {
 	EncryptionVersion        int16
 	ChunkSize                int64
 	TotalChunks              int
-	PlaintextSize            int64
 	SourceURL                string
 }

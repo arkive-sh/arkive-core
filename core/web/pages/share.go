@@ -163,8 +163,8 @@ func publicSharePasswordName() string {
 }
 
 func publicSharePasswordSize(file models.File) string {
-	if file.PlaintextSize <= 0 {
+	if file.ActualEncryptedSize <= 0 {
 		return "Unknown"
 	}
-	return format.Bytes(file.PlaintextSize)
+	return format.Bytes(file.ActualEncryptedSize)
 }

@@ -20,6 +20,7 @@ type UploadSession struct {
 	ID               string
 	FileID           string
 	ProviderUploadID string
+	EncryptedSize    int64
 	UploadPartSize   int64
 	UploadPartCount  int
 	Status           string

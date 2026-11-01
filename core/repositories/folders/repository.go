@@ -166,6 +166,7 @@ func (r *Repository) ListChildFoldersAfter(ctx context.Context, db database.PgEx
 		ORDER BY created_at DESC, id DESC
 		LIMIT $3
 	), folder_size_roots AS (
+		-- Sum ciphertext sizes only for folders on this page; avoid persisted folder totals that need updates on every mutation.
 		SELECT id
 		FROM folder_page
 		ORDER BY created_at DESC, id DESC
@@ -178,7 +179,7 @@ func (r *Repository) ListChildFoldersAfter(ctx context.Context, db database.PgEx
 		INNER JOIN folders child ON child.parent_folder_id = tree.folder_id
 		WHERE child.user_id = $1 AND child.deleted_at IS NULL
 	), folder_sizes AS (
-		SELECT tree.root_id, COALESCE(SUM(file.plaintext_size), 0)::bigint AS size_bytes
+		SELECT tree.root_id, COALESCE(SUM(file.actual_encrypted_size), 0)::bigint AS size_bytes
 		FROM folder_tree tree
 		INNER JOIN files file ON file.folder_id = tree.folder_id
 		WHERE

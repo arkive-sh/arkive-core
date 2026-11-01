@@ -303,9 +303,6 @@ export async function uploadFile(
 				encryptedHash: finalized.encryptedHash,
 				searchTokens,
 				hasThumbnail: !!uploadedThumbnail,
-				thumbnailMime: uploadedThumbnail?.mime ?? '',
-				thumbnailWidth: uploadedThumbnail?.width ?? 0,
-				thumbnailHeight: uploadedThumbnail?.height ?? 0,
 				thumbnailSize: uploadedThumbnail?.encryptedSize ?? 0
 			},
 			{ signal }
