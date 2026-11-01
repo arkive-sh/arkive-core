@@ -1,59 +1,13 @@
 import initArkiveCrypto, * as arkiveCrypto from '../../../../core/web/static/vendor/arkive-crypto/arkive_crypto.js';
 import { deriveRecoveryProofPublicKey, signRecoveryProof } from '../recovery-proof';
-import type { VaultWorkerMethod } from './types';
+import type { VaultWorkerCalls, VaultWorkerMethod } from './types';
 
 type CryptoApi = typeof arkiveCrypto;
 
-interface WorkerParams {
-	[key: string]: unknown;
-	aad?: unknown;
-	chunkBytes?: unknown;
-	bytes?: unknown;
-	contextId?: unknown;
-	encryptedChunk?: unknown;
-	encryptedFileKey?: unknown;
-	encryptedFileKeyForShare?: string;
-	encryptedManifest?: string;
-	encryptedMasterKey?: string;
-	encryptedMasterKeyRecovery?: string;
-	encryptedMetadata?: string;
-	encryptedName?: string;
-	encryptedShareKey?: string;
-	encryptedThumbnail?: unknown;
-	exportKey?: unknown;
-	expectedHash?: string;
-	fileKey?: string;
-	fileKeyAad?: string;
-	hashEncoding?: string;
-	manifest?: Record<string, unknown>;
-	manifestAad?: string;
-	masterKey?: string;
-	masterKeyBytes?: ArrayBuffer;
-	metadata?: Record<string, unknown>;
-	metadataAad?: string;
-	nameAad?: string;
-	partHashes?: string[];
-	recoveryKey?: string;
-	resetToken?: string;
-	salt?: string;
-	shareFileKeyAad?: string;
-	shareKeyAad?: string;
-	shareSecret?: string;
-	terms?: unknown;
-	thumbnailAad?: string;
-	thumbnailBytes?: unknown;
-	totalParts?: number;
-	uploadToken?: string;
-	userID?: string;
-	vaultId?: string;
-	wrappedMasterKey?: string;
-}
-
-interface WorkerRequest {
-	id: number;
-	method: VaultWorkerMethod;
-	params: WorkerParams;
-}
+type WorkerInput<K extends VaultWorkerMethod> = VaultWorkerCalls[K]['params'];
+type WorkerRequest = {
+	[K in VaultWorkerMethod]: { id: number; method: K; params: WorkerInput<K> };
+}[VaultWorkerMethod];
 
 interface WorkerResult {
 	[key: string]: unknown;
@@ -64,7 +18,8 @@ interface WorkerResult {
 }
 
 type WorkerResponse = { id: number; ok: true; result: WorkerResult } | { id: number; ok: false; error: string };
-type WorkerHandler = (params: WorkerParams, crypto: CryptoApi) => WorkerResult | Promise<WorkerResult>;
+type WorkerHandler<K extends VaultWorkerMethod> = (params: WorkerInput<K>, crypto: CryptoApi) => WorkerResult | Promise<WorkerResult>;
+type WorkerHandlers = { [K in VaultWorkerMethod]: WorkerHandler<K> };
 type ActiveUpload = { fileKey: Uint8Array };
 
 let readyPromise: Promise<CryptoApi> | null = null;
@@ -108,7 +63,7 @@ function decodeBase64(value: unknown): Uint8Array {
   return bytes;
 }
 
-async function deriveOpaqueVaultKEK(exportKey: Uint8Array, salt: Uint8Array): Promise<Uint8Array> {
+async function deriveVaultKEK(exportKey: Uint8Array, salt: Uint8Array): Promise<Uint8Array> {
   let rawKey: Uint8Array<ArrayBuffer> | null = new Uint8Array(exportKey);
   let rawSalt: Uint8Array<ArrayBuffer> | null = new Uint8Array(salt);
   try {
@@ -217,7 +172,7 @@ function unwrapRecoveryMasterKey(
   }
 }
 
-async function handleUnlockVault(params: WorkerParams, crypto: CryptoApi) {
+async function handleUnlockVault(params: WorkerInput<'unlockVault'>, crypto: CryptoApi) {
   let exportKey;
   let salt;
   let encryptedMasterKey;
@@ -227,7 +182,7 @@ async function handleUnlockVault(params: WorkerParams, crypto: CryptoApi) {
 		exportKey = toUint8Array(params.exportKey);
 		salt = decodeBase64(params.salt);
     encryptedMasterKey = decodeBase64(params.encryptedMasterKey);
-		kek = await deriveOpaqueVaultKEK(exportKey, salt);
+		kek = await deriveVaultKEK(exportKey, salt);
     masterKey = crypto.unwrap_master_key(
       encryptedMasterKey,
       kek,
@@ -243,7 +198,7 @@ async function handleUnlockVault(params: WorkerParams, crypto: CryptoApi) {
   }
 }
 
-async function handleCreateInitialVault(params: WorkerParams, crypto: CryptoApi) {
+async function handleCreateInitialVault(params: WorkerInput<'createInitialVault'>, crypto: CryptoApi) {
   let exportKey;
   let salt;
   let masterKey;
@@ -253,7 +208,7 @@ async function handleCreateInitialVault(params: WorkerParams, crypto: CryptoApi)
     exportKey = toUint8Array(params.exportKey);
     salt = crypto.generate_salt();
     masterKey = crypto.generate_master_key();
-    kek = await deriveOpaqueVaultKEK(exportKey, salt);
+		kek = await deriveVaultKEK(exportKey, salt);
     encryptedMasterKey = crypto.wrap_master_key(
       masterKey,
       kek,
@@ -274,7 +229,7 @@ async function handleCreateInitialVault(params: WorkerParams, crypto: CryptoApi)
   }
 }
 
-async function handlePrepareInitialRecovery(params: WorkerParams, crypto: CryptoApi) {
+async function handlePrepareInitialRecovery(params: WorkerInput<'prepareInitialRecovery'>, crypto: CryptoApi) {
   const userID = String(params.userID || '').trim();
   if (!userID) throw new Error('Recovery setup context is unavailable');
 
@@ -302,12 +257,12 @@ async function handlePrepareInitialRecovery(params: WorkerParams, crypto: Crypto
   }
 }
 
-function handleLockVault(params: WorkerParams, crypto: CryptoApi) {
+function handleLockVault(params: WorkerInput<'lockVault'>, crypto: CryptoApi) {
   lockVault(crypto);
   return { unlocked: false };
 }
 
-async function handlePreparePasswordReset(params: WorkerParams, crypto: CryptoApi) {
+async function handlePreparePasswordReset(params: WorkerInput<'preparePasswordReset'>, crypto: CryptoApi) {
   let exportKey;
   let encryptedMasterKeyRecovery;
   let recoveryKey;
@@ -335,7 +290,7 @@ async function handlePreparePasswordReset(params: WorkerParams, crypto: CryptoAp
       userID,
       String(params.resetToken || ""),
     );
-    kek = await deriveOpaqueVaultKEK(exportKey, salt);
+		kek = await deriveVaultKEK(exportKey, salt);
     wrappedMasterKey = crypto.wrap_master_key(
       masterKey,
       kek,
@@ -354,7 +309,7 @@ async function handlePreparePasswordReset(params: WorkerParams, crypto: CryptoAp
   }
 }
 
-function handleGenerateFileKey(params: WorkerParams, crypto: CryptoApi) {
+function handleGenerateFileKey(params: WorkerInput<'generateFileKey'>, crypto: CryptoApi) {
   let fileKey;
   try {
     fileKey = crypto.generate_file_key();
@@ -364,7 +319,7 @@ function handleGenerateFileKey(params: WorkerParams, crypto: CryptoApi) {
   }
 }
 
-function handlePrepareShare(params: WorkerParams, crypto: CryptoApi) {
+function handlePrepareShare(params: WorkerInput<'prepareShare'>, crypto: CryptoApi) {
   if (!unlockedMasterKey) {
     throw new Error("Vault is locked");
   }
@@ -403,7 +358,7 @@ function handlePrepareShare(params: WorkerParams, crypto: CryptoApi) {
   }
 }
 
-function handleOpenShareKey(params: WorkerParams, crypto: CryptoApi) {
+function handleOpenShareKey(params: WorkerInput<'openShareKey'>, crypto: CryptoApi) {
   if (!unlockedMasterKey) {
     throw new Error("Vault is locked");
   }
@@ -422,7 +377,7 @@ function handleOpenShareKey(params: WorkerParams, crypto: CryptoApi) {
   }
 }
 
-function handlePrepareUpload(params: WorkerParams, crypto: CryptoApi) {
+function handlePrepareUpload(params: WorkerInput<'prepareUpload'>, crypto: CryptoApi) {
   const uploadToken = String(params.uploadToken || "");
   if (!uploadToken) {
     throw new Error("Missing upload token");
@@ -451,7 +406,7 @@ function handlePrepareUpload(params: WorkerParams, crypto: CryptoApi) {
   }
 }
 
-function handleEncryptUploadMetadata(params: WorkerParams, crypto: CryptoApi) {
+function handleEncryptUploadMetadata(params: WorkerInput<'encryptUploadMetadata'>, crypto: CryptoApi) {
 	const uploadToken = String(params.uploadToken || '');
 	const upload = activeUploads.get(uploadToken);
 	if (!upload || !upload.fileKey) {
@@ -469,7 +424,7 @@ function handleEncryptUploadMetadata(params: WorkerParams, crypto: CryptoApi) {
 	}
 }
 
-function handleEncryptUploadThumbnail(params: WorkerParams, crypto: CryptoApi) {
+function handleEncryptUploadThumbnail(params: WorkerInput<'encryptUploadThumbnail'>, crypto: CryptoApi) {
 	const uploadToken = String(params.uploadToken || '');
 	const upload = activeUploads.get(uploadToken);
 	if (!upload || !upload.fileKey) {
@@ -490,7 +445,7 @@ function handleEncryptUploadThumbnail(params: WorkerParams, crypto: CryptoApi) {
 	}
 }
 
-function handleEncryptUploadPart(params: WorkerParams, crypto: CryptoApi) {
+function handleEncryptUploadPart(params: WorkerInput<'encryptUploadPart'>, crypto: CryptoApi) {
   const uploadToken = String(params.uploadToken || "");
   const upload = activeUploads.get(uploadToken);
   if (!upload || !upload.fileKey) {
@@ -519,7 +474,7 @@ function handleEncryptUploadPart(params: WorkerParams, crypto: CryptoApi) {
   }
 }
 
-function handleHashUploadPayload(params: WorkerParams, crypto: CryptoApi) {
+function handleHashUploadPayload(params: WorkerInput<'hashUploadPayload'>, crypto: CryptoApi) {
 	const bytes = toUint8Array(params.bytes);
 	let hash;
 	try {
@@ -531,7 +486,7 @@ function handleHashUploadPayload(params: WorkerParams, crypto: CryptoApi) {
 	}
 }
 
-function handleFinalizeUpload(params: WorkerParams, crypto: CryptoApi) {
+function handleFinalizeUpload(params: WorkerInput<'finalizeUpload'>, crypto: CryptoApi) {
   const uploadToken = String(params.uploadToken || "");
   const upload = activeUploads.get(uploadToken);
   if (!upload || !upload.fileKey) {
@@ -578,7 +533,7 @@ function handleFinalizeUpload(params: WorkerParams, crypto: CryptoApi) {
   }
 }
 
-function handleClearUploadContext(params: WorkerParams, crypto: CryptoApi) {
+function handleClearUploadContext(params: WorkerInput<'clearUploadContext'>, crypto: CryptoApi) {
   const uploadToken = String(params.uploadToken || "");
   const upload = activeUploads.get(uploadToken);
   if (upload && upload.fileKey) {
@@ -588,7 +543,7 @@ function handleClearUploadContext(params: WorkerParams, crypto: CryptoApi) {
   return { cleared: true };
 }
 
-function handleOpenFileContext(params: WorkerParams, crypto: CryptoApi) {
+function handleOpenFileContext(params: WorkerInput<'openFileContext'>, crypto: CryptoApi) {
   const contextID = String(params.contextId || "");
   if (!contextID) {
     throw new Error("Missing file context");
@@ -633,7 +588,7 @@ function handleOpenFileContext(params: WorkerParams, crypto: CryptoApi) {
   }
 }
 
-function handleCloseFileContext(params: WorkerParams, crypto: CryptoApi) {
+function handleCloseFileContext(params: WorkerInput<'closeFileContext'>, crypto: CryptoApi) {
   const contextID = String(params.contextId || "");
   const fileKey = activeReaders.get(contextID);
   if (fileKey) {
@@ -643,7 +598,7 @@ function handleCloseFileContext(params: WorkerParams, crypto: CryptoApi) {
   return { cleared: true };
 }
 
-function handleOpenPublicShareContext(params: WorkerParams, crypto: CryptoApi) {
+function handleOpenPublicShareContext(params: WorkerInput<'openPublicShareContext'>, crypto: CryptoApi) {
   const contextID = String(params.contextId || "");
   if (!contextID) {
     throw new Error("Missing share context");
@@ -688,7 +643,7 @@ function handleOpenPublicShareContext(params: WorkerParams, crypto: CryptoApi) {
   }
 }
 
-function handleClosePublicShareContext(params: WorkerParams, crypto: CryptoApi) {
+function handleClosePublicShareContext(params: WorkerInput<'closePublicShareContext'>, crypto: CryptoApi) {
   const contextID = String(params.contextId || "");
   const fileKey = activeShareReaders.get(contextID);
   if (fileKey) {
@@ -698,7 +653,7 @@ function handleClosePublicShareContext(params: WorkerParams, crypto: CryptoApi) 
   return { cleared: true };
 }
 
-function handleDecryptFileChunk(params: WorkerParams, crypto: CryptoApi) {
+function handleDecryptFileChunk(params: WorkerInput<'decryptFileChunk'>, crypto: CryptoApi) {
   const contextID = String(params.contextId || "");
   const fileKey = activeReaders.get(contextID);
   if (!fileKey) {
@@ -727,7 +682,7 @@ function handleDecryptFileChunk(params: WorkerParams, crypto: CryptoApi) {
   }
 }
 
-function handleDecryptPublicShareChunk(params: WorkerParams, crypto: CryptoApi) {
+function handleDecryptPublicShareChunk(params: WorkerInput<'decryptPublicShareChunk'>, crypto: CryptoApi) {
   const contextID = String(params.contextId || "");
   const fileKey = activeShareReaders.get(contextID);
   if (!fileKey) {
@@ -762,7 +717,7 @@ function handleDecryptPublicShareChunk(params: WorkerParams, crypto: CryptoApi) 
   }
 }
 
-function handleEncryptFileMetadataInContext(params: WorkerParams, crypto: CryptoApi) {
+function handleEncryptFileMetadataInContext(params: WorkerInput<'encryptFileMetadataInContext'>, crypto: CryptoApi) {
   const contextID = String(params.contextId || "");
   const fileKey = activeReaders.get(contextID);
   if (!fileKey) {
@@ -783,7 +738,7 @@ function handleEncryptFileMetadataInContext(params: WorkerParams, crypto: Crypto
   }
 }
 
-function handleEncryptFileMetadata(params: WorkerParams, crypto: CryptoApi) {
+function handleEncryptFileMetadata(params: WorkerInput<'encryptFileMetadata'>, crypto: CryptoApi) {
   const master = activeMasterKey(params.masterKey);
   let metadata;
   let encrypted;
@@ -801,7 +756,7 @@ function handleEncryptFileMetadata(params: WorkerParams, crypto: CryptoApi) {
   }
 }
 
-function handleDecryptFileMetadata(params: WorkerParams, crypto: CryptoApi) {
+function handleDecryptFileMetadata(params: WorkerInput<'decryptFileMetadata'>, crypto: CryptoApi) {
   const master = activeMasterKey(params.masterKey);
   let encryptedMetadata;
   let metadata;
@@ -819,7 +774,7 @@ function handleDecryptFileMetadata(params: WorkerParams, crypto: CryptoApi) {
   }
 }
 
-function handleEncryptFileKey(params: WorkerParams, crypto: CryptoApi) {
+function handleEncryptFileKey(params: WorkerInput<'encryptFileKey'>, crypto: CryptoApi) {
   const master = activeMasterKey(params.masterKey);
   let fileKey;
   let encryptedFileKey;
@@ -837,7 +792,7 @@ function handleEncryptFileKey(params: WorkerParams, crypto: CryptoApi) {
   }
 }
 
-function handleEncryptChunk(params: WorkerParams, crypto: CryptoApi) {
+function handleEncryptChunk(params: WorkerInput<'encryptChunk'>, crypto: CryptoApi) {
   let fileKey;
   let chunkBytes;
   let encryptedChunk;
@@ -856,7 +811,7 @@ function handleEncryptChunk(params: WorkerParams, crypto: CryptoApi) {
   }
 }
 
-function handleDecryptChunk(params: WorkerParams, crypto: CryptoApi) {
+function handleDecryptChunk(params: WorkerInput<'decryptChunk'>, crypto: CryptoApi) {
   let fileKey;
   let encryptedChunk;
   let chunkBytes;
@@ -875,7 +830,7 @@ function handleDecryptChunk(params: WorkerParams, crypto: CryptoApi) {
   }
 }
 
-function handleCreateSearchTokens(params: WorkerParams, crypto: CryptoApi) {
+function handleCreateSearchTokens(params: WorkerInput<'createSearchTokens'>, crypto: CryptoApi) {
   if (!unlockedMasterKey) {
     throw new Error("Vault is locked");
   }
@@ -901,7 +856,7 @@ function handleCreateSearchTokens(params: WorkerParams, crypto: CryptoApi) {
   }
 }
 
-function handleDecryptSearchFile(params: WorkerParams, crypto: CryptoApi) {
+function handleDecryptSearchFile(params: WorkerInput<'decryptSearchFile'>, crypto: CryptoApi) {
   if (!unlockedMasterKey) {
     throw new Error("Vault is locked");
   }
@@ -929,7 +884,7 @@ function handleDecryptSearchFile(params: WorkerParams, crypto: CryptoApi) {
   }
 }
 
-function handleDecryptSearchFolder(params: WorkerParams, crypto: CryptoApi) {
+function handleDecryptSearchFolder(params: WorkerInput<'decryptSearchFolder'>, crypto: CryptoApi) {
   if (!unlockedMasterKey) {
     throw new Error("Vault is locked");
   }
@@ -960,7 +915,7 @@ function handleDecryptSearchFolder(params: WorkerParams, crypto: CryptoApi) {
   }
 }
 
-function handleDecryptSearchThumbnail(params: WorkerParams, crypto: CryptoApi) {
+function handleDecryptSearchThumbnail(params: WorkerInput<'decryptSearchThumbnail'>, crypto: CryptoApi) {
   if (!unlockedMasterKey) {
     throw new Error("Vault is locked");
   }
@@ -988,7 +943,7 @@ function handleDecryptSearchThumbnail(params: WorkerParams, crypto: CryptoApi) {
   }
 }
 
-const messageHandlers: Record<VaultWorkerMethod, WorkerHandler> = {
+const messageHandlers: WorkerHandlers = {
 	createInitialVault: handleCreateInitialVault,
 	prepareInitialRecovery: handlePrepareInitialRecovery,
 	unlockVault: handleUnlockVault,
@@ -1026,7 +981,9 @@ const messageHandlers: Record<VaultWorkerMethod, WorkerHandler> = {
 
 async function handleMessage(message: WorkerRequest): Promise<WorkerResult> {
   const crypto = await ensureCrypto();
-  return messageHandlers[message.method](message.params, crypto);
+  // Map lookup loses the method/params correlation; WorkerRequest preserves it.
+  const handler = messageHandlers[message.method] as WorkerHandler<VaultWorkerMethod>;
+  return handler(message.params, crypto);
 }
 
 const workerScope = self as unknown as {
