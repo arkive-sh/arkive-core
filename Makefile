@@ -16,7 +16,7 @@ build: build-opaque
 
 dev:
 	@command -v CompileDaemon >/dev/null 2>&1 || (echo "CompileDaemon not found. Run: go install github.com/githubnemo/CompileDaemon@latest" && exit 1)
-	@CompileDaemon -build="make build" -command="./bin/arkive" -pattern=".+\\.(go|rs|toml|lock|css|js|svg)$$"
+	@CompileDaemon -build="make build" -command="./bin/arkive" -pattern=".+\\.(go|rs|toml|lock|css|js|svg)$$" -exclude-dir=".git" -exclude-dir="target" -exclude-dir="node_modules" -exclude-dir=".svelte-kit"
 
 verify: test lint deadcode vulncheck gosec
 

@@ -1,6 +1,6 @@
 module arkive
 
-go 1.25.1
+go 1.27.0
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.41.0
@@ -13,6 +13,7 @@ require (
 	github.com/gin-gonic/gin v1.11.0
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/joho/godotenv v1.5.1
+	github.com/robfig/cron/v3 v3.0.0
 	golang.org/x/crypto v0.45.0
 	maragu.dev/gomponents v1.2.0
 )
@@ -55,7 +56,6 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.57.0 // indirect
-	github.com/robfig/cron/v3 v3.0.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.0 // indirect
 	golang.org/x/arch v0.20.0 // indirect

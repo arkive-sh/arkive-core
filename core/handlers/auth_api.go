@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/base64"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -12,30 +13,59 @@ import (
 	"arkive/pkg/errs"
 )
 
-type apiLoginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+type apiOpaqueLoginStartRequest struct {
+	Email             string `json:"email"`
+	StartLoginRequest string `json:"startLoginRequest"`
 }
 
-type apiUnlockRequest struct {
-	Password string `json:"password"`
+type apiOpaqueLoginFinishRequest struct {
+	AttemptID          string `json:"attemptId"`
+	FinishLoginRequest string `json:"finishLoginRequest"`
 }
 
-func APILogin(svc *auth.Service) gin.HandlerFunc {
+func APIOpaqueLoginStart(svc *auth.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var req apiLoginRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
+		var req apiOpaqueLoginStartRequest
+		if err := c.ShouldBindJSON(&req); err != nil || len(req.StartLoginRequest) == 0 || len(req.StartLoginRequest) > 2048 {
 			apierror.InvalidPayload(c)
 			return
 		}
-
-		result, validationErrors, err := svc.LoginAndLoadVault(c.Request.Context(), req.Email, req.Password, c.ClientIP())
-		if validationErrors != nil && validationErrors.HasAny() {
-			apierror.Validation(c, validationErrors)
+		startRequest, err := base64.RawURLEncoding.DecodeString(req.StartLoginRequest)
+		if err != nil {
+			apierror.InvalidPayload(c)
 			return
 		}
+		result, err := svc.StartOpaqueLogin(c.Request.Context(), req.Email, startRequest)
+		if err != nil {
+			if err == auth.ErrInvalidProtocolMessage {
+				apierror.InvalidPayload(c)
+				return
+			}
+			_ = c.Error(errs.WithStack(err))
+			apierror.Internal(c, "Login failed")
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"attemptId": result.AttemptID, "loginResponse": result.LoginResponse})
+	}
+}
+
+func APIOpaqueLoginFinish(svc *auth.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req apiOpaqueLoginFinishRequest
+		if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.AttemptID) == "" || len(req.FinishLoginRequest) == 0 || len(req.FinishLoginRequest) > 2048 {
+			apierror.InvalidPayload(c)
+			return
+		}
+		finalization, err := base64.RawURLEncoding.DecodeString(req.FinishLoginRequest)
+		if err != nil {
+			apierror.InvalidPayload(c)
+			return
+		}
+		result, err := svc.FinishOpaqueLogin(c.Request.Context(), req.AttemptID, finalization, c.ClientIP())
 		if err != nil {
 			switch err {
+			case auth.ErrInvalidCredentials:
+				apierror.Write(c, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password", nil)
 			case auth.ErrVaultNotConfigured:
 				apierror.Write(c, http.StatusConflict, "vault_not_configured", "Vault is not configured", nil)
 			default:
@@ -45,7 +75,7 @@ func APILogin(svc *auth.Service) gin.HandlerFunc {
 			return
 		}
 
-		cookies.SetSession(c, result.SessionID, result.ExpiresAt)
+		cookies.SetSession(c, result.SessionToken, result.ExpiresAt)
 		c.JSON(http.StatusOK, gin.H{
 			"salt":               base64.StdEncoding.EncodeToString(result.VaultSalt),
 			"encryptedMasterKey": base64.StdEncoding.EncodeToString(result.EncryptedMasterKey),
@@ -55,13 +85,13 @@ func APILogin(svc *auth.Service) gin.HandlerFunc {
 
 func APILogout(svc *auth.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		sessionID := ""
+		sessionToken := ""
 		cookie, err := c.Request.Cookie(cookies.SessionName)
 		if err == nil && cookie.Value != "" {
-			sessionID = cookie.Value
+			sessionToken = cookie.Value
 		}
 
-		if err := svc.LogoutSession(c.Request.Context(), sessionID); err != nil {
+		if err := svc.LogoutSession(c.Request.Context(), sessionToken); err != nil {
 			_ = c.Error(errs.WithStack(err))
 			apierror.Internal(c, "Logout failed")
 			return
@@ -69,49 +99,5 @@ func APILogout(svc *auth.Service) gin.HandlerFunc {
 
 		cookies.ClearSession(c)
 		c.Status(http.StatusNoContent)
-	}
-}
-
-func APIUnlockVault(svc *auth.Service) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var req apiUnlockRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			apierror.InvalidPayload(c)
-			return
-		}
-
-		userID, ok := c.Get("user_id")
-		if !ok {
-			apierror.Unauthorized(c)
-			return
-		}
-		userIDStr, ok := userID.(string)
-		if !ok || userIDStr == "" {
-			apierror.Unauthorized(c)
-			return
-		}
-
-		result, validationErrors, err := svc.UnlockVaultWithSession(c.Request.Context(), userIDStr, req.Password)
-		if validationErrors != nil && validationErrors.HasAny() {
-			apierror.Validation(c, validationErrors)
-			return
-		}
-		if err != nil {
-			switch err {
-			case auth.ErrUnauthorized:
-				apierror.Unauthorized(c)
-			case auth.ErrVaultNotConfigured:
-				apierror.Write(c, http.StatusConflict, "vault_not_configured", "Vault is not configured", nil)
-			default:
-				_ = c.Error(errs.WithStack(err))
-				apierror.Internal(c, "Unlock failed")
-			}
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"salt":               base64.StdEncoding.EncodeToString(result.VaultSalt),
-			"encryptedMasterKey": base64.StdEncoding.EncodeToString(result.EncryptedMasterKey),
-		})
 	}
 }

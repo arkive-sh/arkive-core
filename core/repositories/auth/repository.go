@@ -2,9 +2,11 @@ package authrepo
 
 import (
 	"context"
+	"time"
 
 	"arkive/core/database"
 	"arkive/core/models"
+	"github.com/jackc/pgx/v5"
 )
 
 type Repository struct {
@@ -14,15 +16,15 @@ func New() *Repository {
 	return &Repository{}
 }
 
-func (r *Repository) CreateVerifiedUser(ctx context.Context, db database.PgExecutor, name, username, email, passwordHash string, vaultSalt, encryptedMasterKey []byte) (models.User, error) {
+func (r *Repository) CreateVerifiedUser(ctx context.Context, db database.PgExecutor, name, username, email string, opaqueRegistrationRecord, vaultSalt, encryptedMasterKey []byte) (models.User, error) {
 	var user models.User
 	query := `INSERT INTO users
-		(name, username, email, password_hash, vault_salt, encrypted_master_key)
+		(name, username, email, opaque_registration_record, vault_salt, encrypted_master_key)
 	VALUES
 		($1, $2, $3, $4, $5, $6)
 	RETURNING
 		id, name, username, email, vault_salt, encrypted_master_key`
-	if err := db.QueryRow(ctx, query, name, username, email, passwordHash, vaultSalt, encryptedMasterKey).Scan(
+	if err := db.QueryRow(ctx, query, name, username, email, opaqueRegistrationRecord, vaultSalt, encryptedMasterKey).Scan(
 		&user.ID,
 		&user.Name,
 		&user.Username,
@@ -38,7 +40,7 @@ func (r *Repository) CreateVerifiedUser(ctx context.Context, db database.PgExecu
 func (r *Repository) GetUserByEmail(ctx context.Context, db database.PgExecutor, email string) (models.User, error) {
 	var user models.User
 	query := `SELECT
-		id, name, username, email, vault_salt, encrypted_master_key, encrypted_master_key_recovery
+		id, name, username, email, opaque_registration_record, vault_salt, encrypted_master_key, encrypted_master_key_recovery
 	FROM
 		users
 	WHERE
@@ -48,6 +50,7 @@ func (r *Repository) GetUserByEmail(ctx context.Context, db database.PgExecutor,
 		&user.Name,
 		&user.Username,
 		&user.Email,
+		&user.OpaqueRegistrationRecord,
 		&user.VaultSalt,
 		&user.EncryptedMasterKey,
 		&user.EncryptedMasterKeyRecovery,
@@ -66,15 +69,6 @@ func (r *Repository) GetPasswordRecoveryInfoByEmail(ctx context.Context, db data
 		return models.User{}, err
 	}
 	return user, nil
-}
-
-func (r *Repository) GetPasswordHashByEmail(ctx context.Context, db database.PgExecutor, email string) (*string, error) {
-	var hash *string
-	query := `SELECT password_hash FROM users WHERE email = $1`
-	if err := db.QueryRow(ctx, query, email).Scan(&hash); err != nil {
-		return nil, err
-	}
-	return hash, nil
 }
 
 func (r *Repository) GetUserByID(ctx context.Context, db database.PgExecutor, userID string) (models.User, error) {
@@ -97,6 +91,51 @@ func (r *Repository) GetUserByID(ctx context.Context, db database.PgExecutor, us
 		return models.User{}, err
 	}
 	return user, nil
+}
+
+func (r *Repository) GetAuthUserByID(ctx context.Context, db database.PgExecutor, userID string) (models.User, error) {
+	var user models.User
+	query := `SELECT id, username, email, opaque_registration_record, vault_salt, encrypted_master_key
+		FROM users WHERE id = $1`
+	if err := db.QueryRow(ctx, query, userID).Scan(
+		&user.ID,
+		&user.Username,
+		&user.Email,
+		&user.OpaqueRegistrationRecord,
+		&user.VaultSalt,
+		&user.EncryptedMasterKey,
+	); err != nil {
+		return models.User{}, err
+	}
+	return user, nil
+}
+
+type OpaqueLoginAttempt struct {
+	UserID    *string
+	State     []byte
+	ExpiresAt time.Time
+}
+
+func (r *Repository) CreateOpaqueLoginAttempt(ctx context.Context, db database.PgExecutor, id string, userID *string, state []byte, expiresAt time.Time) error {
+	_, err := db.Exec(ctx, `DELETE FROM opaque_login_attempts WHERE expires_at <= now()`)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(ctx, `INSERT INTO opaque_login_attempts (id, user_id, server_state, expires_at)
+		VALUES ($1, $2, $3, $4)`, id, userID, state, expiresAt)
+	return err
+}
+
+func (r *Repository) ConsumeOpaqueLoginAttempt(ctx context.Context, tx pgx.Tx, id string) (OpaqueLoginAttempt, error) {
+	var attempt OpaqueLoginAttempt
+	if err := tx.QueryRow(ctx, `SELECT user_id, server_state, expires_at FROM opaque_login_attempts
+		WHERE id = $1 AND expires_at > now() FOR UPDATE`, id).Scan(&attempt.UserID, &attempt.State, &attempt.ExpiresAt); err != nil {
+		return OpaqueLoginAttempt{}, err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM opaque_login_attempts WHERE id = $1`, id); err != nil {
+		return OpaqueLoginAttempt{}, err
+	}
+	return attempt, nil
 }
 
 func (r *Repository) UpdateLastLogin(ctx context.Context, db database.PgExecutor, userID, lastIP string) error {

@@ -8,7 +8,7 @@ COPY rust/opaque-ffi/cbindgen.toml ./cbindgen.toml
 COPY rust/opaque-ffi/src ./src
 RUN cargo build --release --locked
 
-FROM golang:1.25.1-bookworm AS builder
+FROM golang:1.27.3-bookworm AS builder
 
 WORKDIR /app
 ENV CGO_ENABLED=0

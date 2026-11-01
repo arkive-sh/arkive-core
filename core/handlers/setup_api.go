@@ -29,14 +29,18 @@ type apiSetupStorageInput struct {
 }
 
 type apiCreateSetupRequest struct {
-	Name               string               `json:"name"`
-	Username           string               `json:"username"`
-	Email              string               `json:"email"`
-	Password           string               `json:"password"`
-	ConfirmPassword    string               `json:"confirmPassword"`
-	VaultSalt          string               `json:"vaultSalt"`
-	EncryptedMasterKey string               `json:"encryptedMasterKey"`
-	Storage            apiSetupStorageInput `json:"storage"`
+	Name                     string               `json:"name"`
+	Username                 string               `json:"username"`
+	Email                    string               `json:"email"`
+	OpaqueRegistrationRecord string               `json:"opaqueRegistrationRecord"`
+	VaultSalt                string               `json:"vaultSalt"`
+	EncryptedMasterKey       string               `json:"encryptedMasterKey"`
+	Storage                  apiSetupStorageInput `json:"storage"`
+}
+
+type apiSetupOpaqueRegistrationRequest struct {
+	Username            string `json:"username"`
+	RegistrationRequest string `json:"registrationRequest"`
 }
 
 type apiSetupRecoveryRequest struct {
@@ -77,6 +81,37 @@ func APISetupStatus(svc *setup.Service) gin.HandlerFunc {
 	}
 }
 
+func APISetupOpaqueRegistrationStart(svc *setup.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req apiSetupOpaqueRegistrationRequest
+		if err := c.ShouldBindJSON(&req); err != nil || len(req.RegistrationRequest) == 0 || len(req.RegistrationRequest) > 2048 {
+			apierror.InvalidPayload(c)
+			return
+		}
+		registrationRequest, err := base64.RawURLEncoding.DecodeString(req.RegistrationRequest)
+		if err != nil {
+			apierror.InvalidPayload(c)
+			return
+		}
+		response, err := svc.StartOpaqueRegistration(c.Request.Context(), req.Username, registrationRequest)
+		if errors.Is(err, setup.ErrAlreadyInitialized) {
+			apierror.Write(c, http.StatusConflict, "already_initialized", "This instance is already set up", nil)
+			return
+		}
+		if errors.Is(err, setup.ErrInvalidRegistrationInput) {
+			apierror.InvalidPayload(c)
+			return
+		}
+		if err != nil {
+			_ = c.Error(errs.WithStack(err))
+			apierror.Internal(c, "Registration could not be started")
+			return
+		}
+		defer response.Close()
+		c.JSON(http.StatusOK, gin.H{"registrationResponse": base64.RawURLEncoding.EncodeToString(response.Bytes())})
+	}
+}
+
 func APICreateInitialSetup(svc *setup.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req apiCreateSetupRequest
@@ -104,6 +139,18 @@ func APICreateInitialSetup(svc *setup.Service) gin.HandlerFunc {
 			return
 		}
 
+		if len(req.OpaqueRegistrationRecord) == 0 || len(req.OpaqueRegistrationRecord) > 2048 {
+			validationErrors.Add(validation.GeneralKey, "Password registration is missing or invalid")
+			apierror.Validation(c, validationErrors)
+			return
+		}
+		registrationRecord, err := base64.RawURLEncoding.DecodeString(req.OpaqueRegistrationRecord)
+		if err != nil || len(registrationRecord) == 0 {
+			validationErrors.Add(validation.GeneralKey, "Password registration is missing or invalid")
+			apierror.Validation(c, validationErrors)
+			return
+		}
+
 		vaultSalt, err := base64.StdEncoding.DecodeString(req.VaultSalt)
 		if err != nil {
 			validationErrors.Add(validation.GeneralKey, "Vault bootstrap failed. Reload the page and try again.")
@@ -118,15 +165,14 @@ func APICreateInitialSetup(svc *setup.Service) gin.HandlerFunc {
 		}
 
 		user, validationErrors, err := svc.CreateInitialAdmin(c.Request.Context(), setup.InitialAdminInput{
-			Name:               req.Name,
-			Username:           req.Username,
-			Email:              req.Email,
-			Password:           req.Password,
-			ConfirmPassword:    req.ConfirmPassword,
-			VaultSalt:          vaultSalt,
-			EncryptedMasterKey: encryptedMasterKey,
-			Storage:            storage,
-			LocalStorageGB:     req.Storage.StorageGB,
+			Name:                     req.Name,
+			Username:                 req.Username,
+			Email:                    req.Email,
+			OpaqueRegistrationRecord: registrationRecord,
+			VaultSalt:                vaultSalt,
+			EncryptedMasterKey:       encryptedMasterKey,
+			Storage:                  storage,
+			LocalStorageGB:           req.Storage.StorageGB,
 		})
 		if validationErrors.HasAny() {
 			apierror.Validation(c, validationErrors)

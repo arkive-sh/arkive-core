@@ -37,10 +37,11 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 		SessionTTL:            cfg.SessionTTL,
 		PasswordResetTokenTTL: cfg.PasswordResetTokenTTL,
 		BaseURL:               cfg.BaseURL,
+		OpaqueServerSetup:     cfg.OpaqueServerSetup,
 	})
 	settingsRepo := settingsrepo.New()
 	settingsService := settingssvc.NewService(db, settingsRepo)
-	setupService := setup.NewService(db, authRepo, usersRepo, settingsRepo)
+	setupService := setup.NewService(db, authRepo, usersRepo, settingsRepo, cfg.OpaqueServerSetup)
 	shareService := shares.NewService(db, filerepo.New(), sharerepo.New())
 	syncService := syncsvc.NewService(db, syncrepo.New())
 
@@ -61,14 +62,11 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 	r.GET("/", handlers.WebRoot(authService, setupService))
 	r.GET("/s/:token", handlers.PublicShareView(shareService, filesService, settingsService, cfg.CookieSecret))
 	r.POST("/s/:token", handlers.PublicShareUnlock(shareService, filesService, settingsService, cfg.CookieSecret))
-	r.GET("/login", handlers.WebLoginGet(authService, setupService))
-	r.GET("/forgot-password", handlers.WebForgotPasswordGet(authService, setupService))
-	r.GET("/reset-password", handlers.WebResetPasswordGet(authService, setupService))
 
+	// Auth pages live in SvelteKit; the legacy Go forms submit plaintext passwords.
 	// Protected
 	protected := r.Group("/")
 	protected.Use(middleware.RequireSessionRedirect(authService))
-	protected.GET("/lock", handlers.WebLockGet())
 	protected.GET("/dashboard", handlers.WebDashboard(filesService, folderService, settingsService))
 	protected.GET("/files", handlers.WebFiles(filesService, folderService))
 	protected.GET("/folders/:id", handlers.WebFolder(filesService, folderService))
@@ -84,16 +82,23 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 		api.Use(corsMiddleware)
 		r.OPTIONS("/api/*path", corsMiddleware)
 	}
+	publicAuth := api.Group("")
+	// Bound auth and setup JSON before ShouldBindJSON reads it; uploads have their own larger limit.
+	publicAuth.Use(middleware.LimitBody(16 << 10))
 	{
-		api.GET("/setup/status", handlers.APISetupStatus(setupService))
-		api.POST("/setup", handlers.APICreateInitialSetup(setupService))
-		api.POST("/setup/recovery-key", handlers.APICompleteInitialSetup(setupService))
-		api.POST("/auth/login", handlers.APILogin(authService))
-		api.POST("/auth/logout", handlers.APILogout(authService))
-		api.POST("/auth/forgot-password", handlers.APIForgotPassword(authService))
-		api.GET("/auth/password-reset/vault", handlers.APIPasswordResetVault(authService))
-		api.POST("/auth/password-reset/complete", handlers.APICompletePasswordReset(authService))
-		api.POST("/auth/unlock", middleware.RequireSessionJSON(authService), handlers.APIUnlockVault(authService))
+		publicAuth.GET("/setup/status", handlers.APISetupStatus(setupService))
+		publicAuth.POST("/setup/opaque/registration/start", handlers.APISetupOpaqueRegistrationStart(setupService))
+		publicAuth.POST("/setup", handlers.APICreateInitialSetup(setupService))
+		publicAuth.POST("/setup/recovery-key", handlers.APICompleteInitialSetup(setupService))
+		publicAuth.POST("/auth/opaque/login/start", handlers.APIOpaqueLoginStart(authService))
+		publicAuth.POST("/auth/opaque/login/finish", handlers.APIOpaqueLoginFinish(authService))
+		publicAuth.POST("/auth/logout", handlers.APILogout(authService))
+		publicAuth.POST("/auth/forgot-password", handlers.APIForgotPassword(authService))
+		publicAuth.GET("/auth/password-reset/vault", handlers.APIPasswordResetVault(authService))
+		publicAuth.POST("/auth/password-reset/opaque/start", handlers.APIStartPasswordResetRegistration(authService))
+		publicAuth.POST("/auth/password-reset/complete", handlers.APICompletePasswordReset(authService))
+	}
+	{
 		api.GET("/me", middleware.RequireSessionJSON(authService), handlers.APIMe(authService))
 		api.GET("/dashboard", middleware.RequireSessionJSON(authService), handlers.APIDashboard(filesService, settingsService))
 		api.GET("/health", handlers.Health(db))
