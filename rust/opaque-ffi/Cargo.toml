@@ -1,0 +1,20 @@
+[package]
+name = "arkive-opaque-ffi"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "arkive_opaque"
+crate-type = ["cdylib"]
+
+[dependencies]
+base64 = "0.22.1"
+argon2 = { version = "0.5", features = ["alloc"], default-features = false }
+opaque-ke = { version = "=4.0.0", features = ["argon2"] }
+rand = { version = "0.8.5", features = ["getrandom"] }
+sha2 = "0.10.9"
+zeroize = "=1.9.1"
+
+[build-dependencies]
+cbindgen = "=0.29.4"
