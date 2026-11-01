@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
+	import { get } from 'svelte/store';
 	import { Bell, CircleUser, Lock, Menu, Search, Unlock } from '@lucide/svelte';
 	import { logoutAndLock } from '#lib/auth.ts';
 	import Dropdown from '#lib/components/Dropdown.svelte';
@@ -23,16 +24,25 @@
 	const queryClient = useQueryClient();
 	const logoutMutation = createMutation(() => ({
 		mutationFn: async () => {
-			await transfers.cancelUploads();
-			await logoutAndLock();
+			const transferIDs = get(transfers.state).jobs.map((job) => job.id);
+			const clearTransfers = (async () => {
+				await transfers.cancelAll();
+				transfers.removeMany(transferIDs);
+			})();
+			transfers.setOpen(false);
+			try {
+				await logoutAndLock();
+			} finally {
+				await clearTransfers;
+			}
 		}
 	}));
 	let loggingOut = $derived(logoutMutation.isPending);
 
 	async function logout() {
+		queryClient.clear();
 		try {
 			await logoutMutation.mutateAsync();
-			queryClient.clear();
 			await goto('/login', { replace: true });
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'Logout failed. Please try again.');
