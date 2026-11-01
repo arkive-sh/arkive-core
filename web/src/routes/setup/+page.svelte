@@ -1,5 +1,6 @@
 <script lang="ts">
 	import axios from 'axios';
+	import * as opaque from '@serenity-kit/opaque';
 	import { goto } from '$app/navigation';
 	import { BadgeInfo, Database, LockKeyhole, Rocket, Server, ShieldAlert } from '@lucide/svelte';
 	import Button from '#lib/components/Button.svelte';
@@ -8,6 +9,7 @@
 	import StorageSelector from '#lib/components/StorageSelector.svelte';
 	import { api, type APIErrorResponse } from '#lib/api.ts';
 	import { callVaultWorker } from '#lib/vault/worker-client.ts';
+	import { fromBase64Url, toBase64 } from '#lib/vault/bytes.ts';
 	import { SETUP_MASTER_KEY_STORAGE, type InitialSetupRequest, type SetupStatus, type StorageProvider } from './types';
 	import { validateSetup, type SetupFormValues } from './validation';
 
@@ -84,17 +86,36 @@
 
 		submitting = true;
 
+		let vault: { masterKey: Uint8Array<ArrayBuffer>; vaultSalt: string; encryptedMasterKey: string } | null = null;
 		try {
-			const vault = await callVaultWorker('createInitialVault', { password });
-			sessionStorage.setItem(SETUP_MASTER_KEY_STORAGE, vault.masterKey);
+			const { clientRegistrationState, registrationRequest } = opaque.client.startRegistration({ password });
+			const { data: registrationStart } = await api.post<{ registrationResponse: string }>(
+				'/api/setup/opaque/registration/start',
+				{ username: formValues.username, registrationRequest }
+			);
+			const registration = opaque.client.finishRegistration({
+				clientRegistrationState,
+				registrationResponse: registrationStart.registrationResponse,
+				password
+			});
+			const exportKey = new Uint8Array(fromBase64Url(registration.exportKey));
+			try {
+				vault = await callVaultWorker('createInitialVault', { exportKey: exportKey.buffer }, [exportKey.buffer]);
+			} finally {
+				if (exportKey.buffer.byteLength) exportKey.fill(0);
+			}
+			const vaultSalt = vault.vaultSalt;
+			const encryptedMasterKey = vault.encryptedMasterKey;
+			sessionStorage.setItem(SETUP_MASTER_KEY_STORAGE, toBase64(vault.masterKey));
+			vault.masterKey.fill(0);
+			vault = null;
 			const request: InitialSetupRequest = {
 				name: formValues.name,
 				username: formValues.username,
 				email: formValues.email,
-				password,
-				confirmPassword: formValues.confirm_password,
-				vaultSalt: vault.vaultSalt,
-				encryptedMasterKey: vault.encryptedMasterKey,
+				opaqueRegistrationRecord: registration.registrationRecord,
+				vaultSalt,
+				encryptedMasterKey,
 				storage: {
 					provider: storageProvider,
 					localPath: storageProvider === 'local' ? formValues.local_path : '',
@@ -130,6 +151,8 @@
 			}
 			showError(error);
 		} finally {
+			vault?.masterKey.fill(0);
+			vault = null;
 			submitting = false;
 		}
 	}

@@ -20,6 +20,7 @@ interface WorkerParams {
 	encryptedName?: string;
 	encryptedShareKey?: string;
 	encryptedThumbnail?: unknown;
+	exportKey?: unknown;
 	expectedHash?: string;
 	fileKey?: string;
 	fileKeyAad?: string;
@@ -27,16 +28,14 @@ interface WorkerParams {
 	manifest?: Record<string, unknown>;
 	manifestAad?: string;
 	masterKey?: string;
+	masterKeyBytes?: ArrayBuffer;
 	metadata?: Record<string, unknown>;
 	metadataAad?: string;
 	nameAad?: string;
-	newPassword?: string;
 	partHashes?: string[];
-	password?: string;
 	recoveryKey?: string;
 	resetToken?: string;
 	salt?: string;
-	sessionUnwrapKey?: unknown;
 	shareFileKeyAad?: string;
 	shareKeyAad?: string;
 	shareSecret?: string;
@@ -107,6 +106,30 @@ function decodeBase64(value: unknown): Uint8Array {
     bytes[i] = binary.charCodeAt(i);
   }
   return bytes;
+}
+
+async function deriveOpaqueVaultKEK(exportKey: Uint8Array, salt: Uint8Array): Promise<Uint8Array> {
+  let rawKey: Uint8Array<ArrayBuffer> | null = new Uint8Array(exportKey);
+  let rawSalt: Uint8Array<ArrayBuffer> | null = new Uint8Array(salt);
+  try {
+    const key = await globalThis.crypto.subtle.importKey('raw', rawKey, 'HKDF', false, ['deriveBits']);
+    const bits = await globalThis.crypto.subtle.deriveBits(
+      {
+        name: 'HKDF',
+        hash: 'SHA-256',
+        salt: rawSalt,
+        info: new TextEncoder().encode('arkive:opaque-vault-kek:v1'),
+      },
+      key,
+      256,
+    );
+    return new Uint8Array(bits);
+  } finally {
+    rawKey.fill(0);
+    rawSalt.fill(0);
+    rawKey = null;
+    rawSalt = null;
+  }
 }
 
 function toUint8Array(value: unknown): Uint8Array {
@@ -194,18 +217,17 @@ function unwrapRecoveryMasterKey(
   }
 }
 
-function handleUnlockVault(params: WorkerParams, crypto: CryptoApi) {
+async function handleUnlockVault(params: WorkerParams, crypto: CryptoApi) {
+  let exportKey;
   let salt;
   let encryptedMasterKey;
   let kek;
   let masterKey;
   try {
-    salt = decodeBase64(params.salt);
+		exportKey = toUint8Array(params.exportKey);
+		salt = decodeBase64(params.salt);
     encryptedMasterKey = decodeBase64(params.encryptedMasterKey);
-    kek = crypto.derive_password_kek(
-      String(params.password || "").trim(),
-      salt,
-    );
+		kek = await deriveOpaqueVaultKEK(exportKey, salt);
     masterKey = crypto.unwrap_master_key(
       encryptedMasterKey,
       kek,
@@ -215,20 +237,23 @@ function handleUnlockVault(params: WorkerParams, crypto: CryptoApi) {
     unlockedMasterKey = masterKey.slice();
     return { unlocked: true };
   } finally {
+    if (exportKey) crypto.zeroize(exportKey);
     if (kek) crypto.zeroize(kek);
     if (masterKey) crypto.zeroize(masterKey);
   }
 }
 
-function handleCreateInitialVault(params: WorkerParams, crypto: CryptoApi) {
+async function handleCreateInitialVault(params: WorkerParams, crypto: CryptoApi) {
+  let exportKey;
   let salt;
   let masterKey;
   let kek;
   let encryptedMasterKey;
   try {
+    exportKey = toUint8Array(params.exportKey);
     salt = crypto.generate_salt();
     masterKey = crypto.generate_master_key();
-    kek = crypto.derive_password_kek(String(params.password || '').trim(), salt);
+    kek = await deriveOpaqueVaultKEK(exportKey, salt);
     encryptedMasterKey = crypto.wrap_master_key(
       masterKey,
       kek,
@@ -237,13 +262,15 @@ function handleCreateInitialVault(params: WorkerParams, crypto: CryptoApi) {
     return {
       vaultSalt: encodeBase64(salt),
       encryptedMasterKey: encodeBase64(encryptedMasterKey),
-      masterKey: encodeBase64(masterKey),
+      masterKey: masterKey.slice(),
     };
   } finally {
+    if (exportKey) crypto.zeroize(exportKey);
     if (salt) crypto.zeroize(salt);
     if (masterKey) crypto.zeroize(masterKey);
     if (kek) crypto.zeroize(kek);
     if (encryptedMasterKey) crypto.zeroize(encryptedMasterKey);
+    masterKey = null;
   }
 }
 
@@ -256,7 +283,7 @@ async function handlePrepareInitialRecovery(params: WorkerParams, crypto: Crypto
   let encryptedMasterKeyRecovery;
   let recoveryProofPublicKey;
   try {
-    masterKey = decodeBase64(params.masterKey);
+    masterKey = toUint8Array(params.masterKeyBytes);
     if (!masterKey.length) throw new Error('Setup master key is unavailable');
     recoveryKey = crypto.generate_recovery_key();
     encryptedMasterKeyRecovery = crypto.wrap_master_key_with_recovery_key(masterKey, recoveryKey, userID);
@@ -271,6 +298,7 @@ async function handlePrepareInitialRecovery(params: WorkerParams, crypto: Crypto
     if (recoveryKey) crypto.zeroize(recoveryKey);
     if (encryptedMasterKeyRecovery) crypto.zeroize(encryptedMasterKeyRecovery);
     if (recoveryProofPublicKey) crypto.zeroize(recoveryProofPublicKey);
+    masterKey = null;
   }
 }
 
@@ -279,47 +307,8 @@ function handleLockVault(params: WorkerParams, crypto: CryptoApi) {
   return { unlocked: false };
 }
 
-function handleCreateSessionUnlock(params: WorkerParams, crypto: CryptoApi) {
-  if (!unlockedMasterKey) {
-    throw new Error("Vault is locked");
-  }
-  let sessionUnwrapKey;
-  let wrappedMasterKey;
-  try {
-    sessionUnwrapKey = toUint8Array(params.sessionUnwrapKey);
-    wrappedMasterKey = crypto.wrap_master_key(
-      unlockedMasterKey,
-      sessionUnwrapKey,
-      aadBytes(params.aad),
-    );
-    return { wrappedMasterKey: encodeBase64(wrappedMasterKey) };
-  } finally {
-    if (sessionUnwrapKey) crypto.zeroize(sessionUnwrapKey);
-  }
-}
-
-function handleRestoreSessionUnlock(params: WorkerParams, crypto: CryptoApi) {
-  let sessionUnwrapKey;
-  let wrappedMasterKey;
-  let masterKey;
-  try {
-    sessionUnwrapKey = toUint8Array(params.sessionUnwrapKey);
-    wrappedMasterKey = decodeBase64(params.wrappedMasterKey);
-    masterKey = crypto.unwrap_master_key(
-      wrappedMasterKey,
-      sessionUnwrapKey,
-      aadBytes(params.aad),
-    );
-    lockVault(crypto);
-    unlockedMasterKey = masterKey.slice();
-    return { unlocked: true };
-  } finally {
-    if (sessionUnwrapKey) crypto.zeroize(sessionUnwrapKey);
-    if (masterKey) crypto.zeroize(masterKey);
-  }
-}
-
 async function handlePreparePasswordReset(params: WorkerParams, crypto: CryptoApi) {
+  let exportKey;
   let encryptedMasterKeyRecovery;
   let recoveryKey;
   let salt;
@@ -328,6 +317,7 @@ async function handlePreparePasswordReset(params: WorkerParams, crypto: CryptoAp
   let kek;
   let wrappedMasterKey;
   try {
+    exportKey = toUint8Array(params.exportKey);
     encryptedMasterKeyRecovery = decodeBase64(
       params.encryptedMasterKeyRecovery,
     );
@@ -345,11 +335,7 @@ async function handlePreparePasswordReset(params: WorkerParams, crypto: CryptoAp
       userID,
       String(params.resetToken || ""),
     );
-    // Keep vault wrapping consistent with setup/login: password-derived KEK + AAD.
-    kek = crypto.derive_password_kek(
-      String(params.newPassword || "").trim(),
-      salt,
-    );
+    kek = await deriveOpaqueVaultKEK(exportKey, salt);
     wrappedMasterKey = crypto.wrap_master_key(
       masterKey,
       kek,
@@ -361,6 +347,7 @@ async function handlePreparePasswordReset(params: WorkerParams, crypto: CryptoAp
       recoveryProof: encodeBase64(recoveryProof),
     };
   } finally {
+    if (exportKey) crypto.zeroize(exportKey);
     if (recoveryKey) crypto.zeroize(recoveryKey);
     if (masterKey) crypto.zeroize(masterKey);
     if (kek) crypto.zeroize(kek);
@@ -1006,8 +993,6 @@ const messageHandlers: Record<VaultWorkerMethod, WorkerHandler> = {
 	prepareInitialRecovery: handlePrepareInitialRecovery,
 	unlockVault: handleUnlockVault,
 	lockVault: handleLockVault,
-	createSessionUnlock: handleCreateSessionUnlock,
-	restoreSessionUnlock: handleRestoreSessionUnlock,
 	preparePasswordReset: handlePreparePasswordReset,
 	generateFileKey: handleGenerateFileKey,
 	prepareShare: handlePrepareShare,
@@ -1054,7 +1039,7 @@ workerScope.addEventListener('message', async (event) => {
   try {
     const result = await handleMessage(payload);
     const transfer: Transferable[] = [];
-		for (const value of [result.encryptedChunk, result.encryptedThumbnail, result.chunkBytes, result.thumbnailBytes]) {
+		for (const value of [result.masterKey, result.encryptedChunk, result.encryptedThumbnail, result.chunkBytes, result.thumbnailBytes]) {
 			if (value instanceof Uint8Array && value.buffer instanceof ArrayBuffer) transfer.push(value.buffer);
 		}
 		workerScope.postMessage({ id: payload.id, ok: true, result }, transfer);
