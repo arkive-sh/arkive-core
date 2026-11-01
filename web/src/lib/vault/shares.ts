@@ -19,7 +19,7 @@ export function prepareShare(
 	});
 }
 
-export function openShareKey(encryptedShareKey: string, token: string): Promise<{ shareSecret: string }> {
+export function openShareKey(encryptedShareKey: string, token: string): Promise<{ shareSecret: Uint8Array<ArrayBuffer> }> {
 	touchSessionUnlock();
 	return callVaultWorker('openShareKey', {
 		encryptedShareKey,
@@ -30,9 +30,11 @@ export function openShareKey(encryptedShareKey: string, token: string): Promise<
 export function openPublicShareContext(
 	contextId: string,
 	record: PublicShareCryptoRecord,
-	shareSecret: string
-): Promise<{ metadata: string; manifest: string }> {
-	return callVaultWorker('openPublicShareContext', { contextId, shareSecret, ...record });
+	shareSecret: Uint8Array<ArrayBuffer>
+): Promise<{ metadataBytes: Uint8Array; manifestBytes: Uint8Array }> {
+	const secret = toWorkerBytes(shareSecret);
+	shareSecret.fill(0);
+	return callVaultWorker('openPublicShareContext', { contextId, shareSecret: secret, ...record }, [secret]);
 }
 
 export function closePublicShareContext(contextId: string): Promise<{ cleared: boolean }> {

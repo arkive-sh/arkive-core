@@ -42,6 +42,7 @@ export function callVaultWorker<K extends VaultWorkerMethod>(
 			getWorker().postMessage({ id, method, params }, transfer);
 		} catch (error) {
 			pending.delete(id);
+			for (const item of transfer) if (item instanceof ArrayBuffer) new Uint8Array(item).fill(0);
 			reject(error instanceof Error ? error : new Error('Vault worker failed'));
 		}
 	});

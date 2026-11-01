@@ -7,7 +7,7 @@
 	import { api, type APIErrorResponse } from '#lib/api.ts';
 	import { toast } from '#lib/toast.ts';
 	import { callVaultWorker } from '#lib/vault/worker-client.ts';
-	import { fromBase64Url } from '#lib/vault/bytes.ts';
+	import { fromBase64 } from '#lib/vault/bytes.ts';
 	import { SETUP_MASTER_KEY_STORAGE, type InitialRecoveryRequest } from '../types';
 	import { downloadRecoveryPDF } from './recovery-pdf';
 	import type { PageProps } from './$types';
@@ -34,7 +34,7 @@
 
 		let masterKey: Uint8Array<ArrayBuffer> | null = null;
 		try {
-			masterKey = new Uint8Array(fromBase64Url(storedMasterKey));
+			masterKey = fromBase64(storedMasterKey);
 			storedMasterKey = null;
 		} catch {
 			generating = false;

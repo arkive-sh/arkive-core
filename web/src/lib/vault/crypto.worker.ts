@@ -1,5 +1,6 @@
 import initArkiveCrypto, * as arkiveCrypto from '../../../../core/web/static/vendor/arkive-crypto/arkive_crypto.js';
 import { deriveRecoveryProofPublicKey, signRecoveryProof } from '../recovery-proof';
+import { fromBase64, toBase64, toBase64Url } from './bytes';
 import type { VaultWorkerCalls, VaultWorkerMethod } from './types';
 
 type CryptoApi = typeof arkiveCrypto;
@@ -20,13 +21,13 @@ interface WorkerResult {
 type WorkerResponse = { id: number; ok: true; result: WorkerResult } | { id: number; ok: false; error: string };
 type WorkerHandler<K extends VaultWorkerMethod> = (params: WorkerInput<K>, crypto: CryptoApi) => WorkerResult | Promise<WorkerResult>;
 type WorkerHandlers = { [K in VaultWorkerMethod]: WorkerHandler<K> };
-type ActiveUpload = { fileKey: Uint8Array };
+type ActiveUpload = { fileKey: Uint8Array | null };
 
 let readyPromise: Promise<CryptoApi> | null = null;
 let unlockedMasterKey: Uint8Array | null = null;
 const activeUploads = new Map<string, ActiveUpload>();
-const activeReaders = new Map<string, Uint8Array>();
-const activeShareReaders = new Map<string, Uint8Array>();
+const activeReaders = new Map<string, Uint8Array | null>();
+const activeShareReaders = new Map<string, Uint8Array | null>();
 
 function ensureCrypto(): Promise<CryptoApi> {
   if (readyPromise) {
@@ -38,32 +39,7 @@ function ensureCrypto(): Promise<CryptoApi> {
   return readyPromise;
 }
 
-function encodeBase64(bytes: Uint8Array): string {
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
-}
-
-function encodeBase64URL(bytes: Uint8Array): string {
-  return encodeBase64(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-}
-
-function decodeBase64(value: unknown): Uint8Array {
-  const normalized = String(value || "").trim();
-  if (!normalized) {
-    return new Uint8Array();
-  }
-  const binary = atob(normalized);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
-}
-
-async function deriveVaultKEK(exportKey: Uint8Array, salt: Uint8Array): Promise<Uint8Array> {
+async function deriveVaultKEK(crypto: CryptoApi, exportKey: Uint8Array, salt: Uint8Array): Promise<Uint8Array> {
   let rawKey: Uint8Array<ArrayBuffer> | null = new Uint8Array(exportKey);
   let rawSalt: Uint8Array<ArrayBuffer> | null = new Uint8Array(salt);
   try {
@@ -80,24 +56,32 @@ async function deriveVaultKEK(exportKey: Uint8Array, salt: Uint8Array): Promise<
     );
     return new Uint8Array(bits);
   } finally {
-    rawKey.fill(0);
-    rawSalt.fill(0);
-    rawKey = null;
-    rawSalt = null;
+    rawKey = clearBytes(crypto, rawKey);
+    rawSalt = clearBytes(crypto, rawSalt);
   }
 }
 
-function toUint8Array(value: unknown): Uint8Array {
+function toUint8Array(value: ArrayBuffer | Uint8Array): Uint8Array {
   if (value instanceof Uint8Array) {
     return value;
   }
-  if (value instanceof ArrayBuffer) {
-    return new Uint8Array(value);
-  }
-  if (ArrayBuffer.isView(value)) {
-    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
-  }
-  return decodeBase64(value);
+  return new Uint8Array(value);
+}
+
+function clearBytes(crypto: CryptoApi, bytes: Uint8Array | null | undefined): null {
+	if (bytes) {
+		try {
+			crypto.zeroize(bytes);
+		} catch {
+			// The JavaScript fill below remains the fallback if WASM cannot clear the view.
+		}
+		try {
+			bytes.fill(0);
+		} catch {
+			// A detached buffer no longer exposes its contents to this worker.
+		}
+	}
+	return null;
 }
 
 function aadBytes(value: unknown): Uint8Array {
@@ -111,40 +95,23 @@ function aadBytes(value: unknown): Uint8Array {
 }
 
 function lockVault(crypto: CryptoApi): void {
-  if (unlockedMasterKey) {
-    crypto.zeroize(unlockedMasterKey);
-    unlockedMasterKey = null;
-  }
+  unlockedMasterKey = clearBytes(crypto, unlockedMasterKey);
   activeUploads.forEach(function(fileKey) {
-    if (fileKey && fileKey.fileKey) {
-      crypto.zeroize(fileKey.fileKey);
-    }
+    fileKey.fileKey = clearBytes(crypto, fileKey.fileKey);
   });
   activeUploads.clear();
-  activeReaders.forEach(function(fileKey) {
-    crypto.zeroize(fileKey);
-  });
+  activeReaders.forEach((fileKey, id) => activeReaders.set(id, clearBytes(crypto, fileKey)));
   activeReaders.clear();
-  activeShareReaders.forEach(function(fileKey) {
-    crypto.zeroize(fileKey);
-  });
+  activeShareReaders.forEach((fileKey, id) => activeShareReaders.set(id, clearBytes(crypto, fileKey)));
   activeShareReaders.clear();
 }
 
-function activeMasterKey(supplied?: string): { bytes: Uint8Array; temporary: boolean } {
-  if (supplied) {
-    return {
-      bytes: decodeBase64(supplied),
-      temporary: true,
-    };
-  }
+function activeMasterKey(): Uint8Array {
+	// Operations borrow this buffer; lockVault owns its lifetime and zeroizes it.
   if (!unlockedMasterKey) {
     throw new Error("Vault is locked");
   }
-  return {
-    bytes: unlockedMasterKey,
-    temporary: false,
-  };
+  return unlockedMasterKey;
 }
 
 function parseRecoveryKey(crypto: CryptoApi, value: unknown): Uint8Array {
@@ -179,10 +146,12 @@ async function handleUnlockVault(params: WorkerInput<'unlockVault'>, crypto: Cry
   let kek;
   let masterKey;
   try {
+		if (!params.exportKey) throw new Error('Missing vault export key');
 		exportKey = toUint8Array(params.exportKey);
-		salt = decodeBase64(params.salt);
-    encryptedMasterKey = decodeBase64(params.encryptedMasterKey);
-		kek = await deriveVaultKEK(exportKey, salt);
+		params.exportKey = null;
+		salt = fromBase64(params.salt);
+    encryptedMasterKey = fromBase64(params.encryptedMasterKey);
+		kek = await deriveVaultKEK(crypto, exportKey, salt);
     masterKey = crypto.unwrap_master_key(
       encryptedMasterKey,
       kek,
@@ -192,9 +161,11 @@ async function handleUnlockVault(params: WorkerInput<'unlockVault'>, crypto: Cry
     unlockedMasterKey = masterKey.slice();
     return { unlocked: true };
   } finally {
-    if (exportKey) crypto.zeroize(exportKey);
-    if (kek) crypto.zeroize(kek);
-    if (masterKey) crypto.zeroize(masterKey);
+    exportKey = clearBytes(crypto, exportKey);
+    salt = clearBytes(crypto, salt);
+    encryptedMasterKey = clearBytes(crypto, encryptedMasterKey);
+    kek = clearBytes(crypto, kek);
+    masterKey = clearBytes(crypto, masterKey);
   }
 }
 
@@ -205,27 +176,28 @@ async function handleCreateInitialVault(params: WorkerInput<'createInitialVault'
   let kek;
   let encryptedMasterKey;
   try {
+    if (!params.exportKey) throw new Error('Missing vault export key');
     exportKey = toUint8Array(params.exportKey);
+    params.exportKey = null;
     salt = crypto.generate_salt();
     masterKey = crypto.generate_master_key();
-		kek = await deriveVaultKEK(exportKey, salt);
+		kek = await deriveVaultKEK(crypto, exportKey, salt);
     encryptedMasterKey = crypto.wrap_master_key(
       masterKey,
       kek,
       new TextEncoder().encode('arkive:master-key:v1'),
     );
     return {
-      vaultSalt: encodeBase64(salt),
-      encryptedMasterKey: encodeBase64(encryptedMasterKey),
+      vaultSalt: toBase64(salt),
+      encryptedMasterKey: toBase64(encryptedMasterKey),
       masterKey: masterKey.slice(),
     };
   } finally {
-    if (exportKey) crypto.zeroize(exportKey);
-    if (salt) crypto.zeroize(salt);
-    if (masterKey) crypto.zeroize(masterKey);
-    if (kek) crypto.zeroize(kek);
-    if (encryptedMasterKey) crypto.zeroize(encryptedMasterKey);
-    masterKey = null;
+    exportKey = clearBytes(crypto, exportKey);
+    salt = clearBytes(crypto, salt);
+    masterKey = clearBytes(crypto, masterKey);
+    kek = clearBytes(crypto, kek);
+    encryptedMasterKey = clearBytes(crypto, encryptedMasterKey);
   }
 }
 
@@ -238,22 +210,23 @@ async function handlePrepareInitialRecovery(params: WorkerInput<'prepareInitialR
   let encryptedMasterKeyRecovery;
   let recoveryProofPublicKey;
   try {
+    if (!params.masterKeyBytes) throw new Error('Setup master key is unavailable');
     masterKey = toUint8Array(params.masterKeyBytes);
+    params.masterKeyBytes = null;
     if (!masterKey.length) throw new Error('Setup master key is unavailable');
     recoveryKey = crypto.generate_recovery_key();
     encryptedMasterKeyRecovery = crypto.wrap_master_key_with_recovery_key(masterKey, recoveryKey, userID);
     recoveryProofPublicKey = await deriveRecoveryProofPublicKey(recoveryKey, userID);
     return {
       recoveryKey: crypto.format_recovery_key(recoveryKey),
-      encryptedMasterKeyRecovery: encodeBase64(encryptedMasterKeyRecovery),
-      recoveryProofPublicKey: encodeBase64(recoveryProofPublicKey),
+      encryptedMasterKeyRecovery: toBase64(encryptedMasterKeyRecovery),
+      recoveryProofPublicKey: toBase64(recoveryProofPublicKey),
     };
   } finally {
-    if (masterKey) crypto.zeroize(masterKey);
-    if (recoveryKey) crypto.zeroize(recoveryKey);
-    if (encryptedMasterKeyRecovery) crypto.zeroize(encryptedMasterKeyRecovery);
-    if (recoveryProofPublicKey) crypto.zeroize(recoveryProofPublicKey);
-    masterKey = null;
+    masterKey = clearBytes(crypto, masterKey);
+    recoveryKey = clearBytes(crypto, recoveryKey);
+    encryptedMasterKeyRecovery = clearBytes(crypto, encryptedMasterKeyRecovery);
+    recoveryProofPublicKey = clearBytes(crypto, recoveryProofPublicKey);
   }
 }
 
@@ -265,6 +238,8 @@ function handleLockVault(params: WorkerInput<'lockVault'>, crypto: CryptoApi) {
 async function handlePreparePasswordReset(params: WorkerInput<'preparePasswordReset'>, crypto: CryptoApi) {
   let exportKey;
   let encryptedMasterKeyRecovery;
+  let recoveryKeyBytes;
+  let recoveryKeyText: string | null = null;
   let recoveryKey;
   let salt;
   let masterKey;
@@ -272,11 +247,19 @@ async function handlePreparePasswordReset(params: WorkerInput<'preparePasswordRe
   let kek;
   let wrappedMasterKey;
   try {
+    if (!params.exportKey) throw new Error('Missing vault export key');
     exportKey = toUint8Array(params.exportKey);
-    encryptedMasterKeyRecovery = decodeBase64(
+    params.exportKey = null;
+    encryptedMasterKeyRecovery = fromBase64(
       params.encryptedMasterKeyRecovery,
     );
-    recoveryKey = parseRecoveryKey(crypto, params.recoveryKey);
+    if (!params.recoveryKey) throw new Error('Recovery key is unavailable');
+    recoveryKeyBytes = toUint8Array(params.recoveryKey);
+    params.recoveryKey = null;
+    recoveryKeyText = new TextDecoder().decode(recoveryKeyBytes);
+    recoveryKeyBytes = clearBytes(crypto, recoveryKeyBytes);
+    recoveryKey = parseRecoveryKey(crypto, recoveryKeyText);
+    recoveryKeyText = null;
     const userID = String(params.userID || "");
     salt = crypto.generate_salt();
     masterKey = unwrapRecoveryMasterKey(
@@ -290,32 +273,28 @@ async function handlePreparePasswordReset(params: WorkerInput<'preparePasswordRe
       userID,
       String(params.resetToken || ""),
     );
-		kek = await deriveVaultKEK(exportKey, salt);
+		kek = await deriveVaultKEK(crypto, exportKey, salt);
     wrappedMasterKey = crypto.wrap_master_key(
       masterKey,
       kek,
       aadBytes("arkive:master-key:v1"),
     );
     return {
-      vaultSalt: encodeBase64(salt),
-      encryptedMasterKey: encodeBase64(wrappedMasterKey),
-      recoveryProof: encodeBase64(recoveryProof),
+      vaultSalt: toBase64(salt),
+      encryptedMasterKey: toBase64(wrappedMasterKey),
+      recoveryProof: toBase64(recoveryProof),
     };
   } finally {
-    if (exportKey) crypto.zeroize(exportKey);
-    if (recoveryKey) crypto.zeroize(recoveryKey);
-    if (masterKey) crypto.zeroize(masterKey);
-    if (kek) crypto.zeroize(kek);
-  }
-}
-
-function handleGenerateFileKey(params: WorkerInput<'generateFileKey'>, crypto: CryptoApi) {
-  let fileKey;
-  try {
-    fileKey = crypto.generate_file_key();
-    return { fileKey: encodeBase64(fileKey) };
-  } finally {
-    if (fileKey) crypto.zeroize(fileKey);
+    exportKey = clearBytes(crypto, exportKey);
+    encryptedMasterKeyRecovery = clearBytes(crypto, encryptedMasterKeyRecovery);
+    recoveryKeyBytes = clearBytes(crypto, recoveryKeyBytes);
+    recoveryKeyText = null;
+    recoveryKey = clearBytes(crypto, recoveryKey);
+    salt = clearBytes(crypto, salt);
+    masterKey = clearBytes(crypto, masterKey);
+    recoveryProof = clearBytes(crypto, recoveryProof);
+    kek = clearBytes(crypto, kek);
+    wrappedMasterKey = clearBytes(crypto, wrappedMasterKey);
   }
 }
 
@@ -329,7 +308,7 @@ function handlePrepareShare(params: WorkerInput<'prepareShare'>, crypto: CryptoA
   let encryptedShareKey;
   let encryptedFileKeyForShare;
   try {
-    encryptedFileKey = decodeBase64(params.encryptedFileKey);
+    encryptedFileKey = fromBase64(params.encryptedFileKey);
     fileKey = crypto.unwrap_file_key(
       encryptedFileKey,
       unlockedMasterKey,
@@ -347,14 +326,17 @@ function handlePrepareShare(params: WorkerInput<'prepareShare'>, crypto: CryptoA
       aadBytes(params.shareFileKeyAad),
     );
     return {
-      encryptedShareKey: encodeBase64(encryptedShareKey),
-      encryptedFileKeyForShare: encodeBase64(encryptedFileKeyForShare),
-      shareSecret: encodeBase64(shareKey),
+      encryptedShareKey: toBase64(encryptedShareKey),
+      encryptedFileKeyForShare: toBase64(encryptedFileKeyForShare),
+      shareSecret: shareKey.slice(),
       cryptoVersion: 1,
     };
   } finally {
-    if (fileKey) crypto.zeroize(fileKey);
-    if (shareKey) crypto.zeroize(shareKey);
+    encryptedFileKey = clearBytes(crypto, encryptedFileKey);
+    fileKey = clearBytes(crypto, fileKey);
+    shareKey = clearBytes(crypto, shareKey);
+    encryptedShareKey = clearBytes(crypto, encryptedShareKey);
+    encryptedFileKeyForShare = clearBytes(crypto, encryptedFileKeyForShare);
   }
 }
 
@@ -365,15 +347,16 @@ function handleOpenShareKey(params: WorkerInput<'openShareKey'>, crypto: CryptoA
   let encryptedShareKey;
   let shareKey;
   try {
-    encryptedShareKey = decodeBase64(params.encryptedShareKey);
+    encryptedShareKey = fromBase64(params.encryptedShareKey);
     shareKey = crypto.unwrap_file_key(
       encryptedShareKey,
       unlockedMasterKey,
       aadBytes(params.shareKeyAad),
     );
-    return { shareSecret: encodeBase64(shareKey) };
+    return { shareSecret: shareKey.slice() };
   } finally {
-    if (shareKey) crypto.zeroize(shareKey);
+    encryptedShareKey = clearBytes(crypto, encryptedShareKey);
+    shareKey = clearBytes(crypto, shareKey);
   }
 }
 
@@ -396,66 +379,71 @@ function handlePrepareUpload(params: WorkerInput<'prepareUpload'>, crypto: Crypt
     );
     activeUploads.set(uploadToken, { fileKey: fileKey.slice() });
     return {
-      encryptedFileKey: encodeBase64(encryptedFileKey),
+      encryptedFileKey: toBase64(encryptedFileKey),
       totalParts: Number(params.totalParts || 0),
       encryptionVersion: 1,
     };
   } finally {
-    if (fileKey) crypto.zeroize(fileKey);
-		if (encryptedFileKey) crypto.zeroize(encryptedFileKey);
+    fileKey = clearBytes(crypto, fileKey);
+		encryptedFileKey = clearBytes(crypto, encryptedFileKey);
   }
 }
 
 function handleEncryptUploadMetadata(params: WorkerInput<'encryptUploadMetadata'>, crypto: CryptoApi) {
 	const uploadToken = String(params.uploadToken || '');
-	const upload = activeUploads.get(uploadToken);
-	if (!upload || !upload.fileKey) {
-		throw new Error('Upload context is missing');
-	}
+	let upload: ActiveUpload | undefined;
 	let metadata;
 	let encryptedMetadata;
 	try {
-		metadata = new TextEncoder().encode(JSON.stringify(params.metadata || {}));
+		if (!params.metadataBytes) throw new Error('Metadata is unavailable');
+		metadata = toUint8Array(params.metadataBytes);
+		params.metadataBytes = null;
+		upload = activeUploads.get(uploadToken);
+		if (!upload || !upload.fileKey) throw new Error('Upload context is missing');
 		encryptedMetadata = crypto.encrypt_chunk(metadata, upload.fileKey, aadBytes(params.metadataAad));
-		return { encryptedMetadata: encodeBase64(encryptedMetadata) };
+		return { encryptedMetadata: toBase64(encryptedMetadata) };
 	} finally {
-		if (metadata) crypto.zeroize(metadata);
-		if (encryptedMetadata) crypto.zeroize(encryptedMetadata);
+		params.metadataBytes = null;
+		metadata = clearBytes(crypto, metadata);
+		encryptedMetadata = clearBytes(crypto, encryptedMetadata);
 	}
 }
 
 function handleEncryptUploadThumbnail(params: WorkerInput<'encryptUploadThumbnail'>, crypto: CryptoApi) {
 	const uploadToken = String(params.uploadToken || '');
-	const upload = activeUploads.get(uploadToken);
-	if (!upload || !upload.fileKey) {
-		throw new Error('Upload context is missing');
-	}
+	let upload: ActiveUpload | undefined;
 	let thumbnailBytes;
 	let encryptedThumbnail;
 	try {
+		if (!params.thumbnailBytes) throw new Error('Thumbnail data is unavailable');
 		thumbnailBytes = toUint8Array(params.thumbnailBytes);
+		params.thumbnailBytes = null;
+		upload = activeUploads.get(uploadToken);
+		if (!upload || !upload.fileKey) throw new Error('Upload context is missing');
 		encryptedThumbnail = crypto.encrypt_chunk(thumbnailBytes, upload.fileKey, aadBytes(params.aad));
 		return {
 			encryptedThumbnail: encryptedThumbnail.slice(),
 			encryptedSize: encryptedThumbnail.length
 		};
 	} finally {
-		if (thumbnailBytes) crypto.zeroize(thumbnailBytes);
-		if (encryptedThumbnail) crypto.zeroize(encryptedThumbnail);
+		params.thumbnailBytes = null;
+		thumbnailBytes = clearBytes(crypto, thumbnailBytes);
+		encryptedThumbnail = clearBytes(crypto, encryptedThumbnail);
 	}
 }
 
 function handleEncryptUploadPart(params: WorkerInput<'encryptUploadPart'>, crypto: CryptoApi) {
   const uploadToken = String(params.uploadToken || "");
-  const upload = activeUploads.get(uploadToken);
-  if (!upload || !upload.fileKey) {
-    throw new Error("Upload context is missing");
-  }
+  let upload: ActiveUpload | undefined;
   let chunkBytes;
   let encryptedChunk;
   let encryptedHash;
   try {
+    if (!params.chunkBytes) throw new Error('Upload data is unavailable');
     chunkBytes = toUint8Array(params.chunkBytes);
+    params.chunkBytes = null;
+    upload = activeUploads.get(uploadToken);
+    if (!upload || !upload.fileKey) throw new Error('Upload context is missing');
     encryptedChunk = crypto.encrypt_chunk(
       chunkBytes,
       upload.fileKey,
@@ -464,41 +452,45 @@ function handleEncryptUploadPart(params: WorkerInput<'encryptUploadPart'>, crypt
     encryptedHash = crypto.hash_bytes_blake3(encryptedChunk);
     return {
       encryptedChunk: encryptedChunk.slice(),
-      encryptedHash: encodeBase64(encryptedHash),
+      encryptedHash: toBase64(encryptedHash),
       encryptedSize: encryptedChunk.length,
     };
   } finally {
-    if (chunkBytes) crypto.zeroize(chunkBytes);
-    if (encryptedChunk) crypto.zeroize(encryptedChunk);
-    if (encryptedHash) crypto.zeroize(encryptedHash);
+    params.chunkBytes = null;
+    chunkBytes = clearBytes(crypto, chunkBytes);
+	encryptedChunk = clearBytes(crypto, encryptedChunk);
+    encryptedHash = clearBytes(crypto, encryptedHash);
   }
 }
 
 function handleHashUploadPayload(params: WorkerInput<'hashUploadPayload'>, crypto: CryptoApi) {
-	const bytes = toUint8Array(params.bytes);
+	if (!params.bytes) throw new Error('Hash input is unavailable');
+	let bytes: Uint8Array | null = toUint8Array(params.bytes);
+	params.bytes = null;
 	let hash;
 	try {
 		hash = crypto.hash_bytes_blake3(bytes);
-		return { hash: encodeBase64(hash) };
+		return { hash: toBase64(hash) };
 	} finally {
-		crypto.zeroize(bytes);
-		if (hash) crypto.zeroize(hash);
+		bytes = clearBytes(crypto, bytes);
+		hash = clearBytes(crypto, hash);
 	}
 }
 
 function handleFinalizeUpload(params: WorkerInput<'finalizeUpload'>, crypto: CryptoApi) {
   const uploadToken = String(params.uploadToken || "");
-  const upload = activeUploads.get(uploadToken);
-  if (!upload || !upload.fileKey) {
-    throw new Error("Upload context is missing");
-  }
+  let upload: ActiveUpload | undefined;
   let manifest;
   const decoded: Uint8Array[] = [];
   let encryptedManifest;
   let combined;
   let encryptedHash;
   try {
-    manifest = new TextEncoder().encode(JSON.stringify(params.manifest || {}));
+		upload = activeUploads.get(uploadToken);
+		if (!upload || !upload.fileKey) throw new Error('Upload context is missing');
+		if (!params.manifestBytes) throw new Error('Manifest is unavailable');
+		manifest = toUint8Array(params.manifestBytes);
+		params.manifestBytes = null;
     encryptedManifest = crypto.encrypt_chunk(
       manifest,
       upload.fileKey,
@@ -507,7 +499,7 @@ function handleFinalizeUpload(params: WorkerInput<'finalizeUpload'>, crypto: Cry
     const partHashes = params.partHashes || [];
     let totalLength = 0;
     for (let i = 0; i < partHashes.length; i += 1) {
-      const hashBytes = decodeBase64(partHashes[i]);
+      const hashBytes = fromBase64(partHashes[i]);
       decoded.push(hashBytes);
       totalLength += hashBytes.length;
     }
@@ -519,25 +511,28 @@ function handleFinalizeUpload(params: WorkerInput<'finalizeUpload'>, crypto: Cry
     }
     encryptedHash = crypto.hash_bytes_blake3(combined);
     return {
-      encryptedManifest: encodeBase64(encryptedManifest),
-      encryptedHash: encodeBase64(encryptedHash),
+      encryptedManifest: toBase64(encryptedManifest),
+      encryptedHash: toBase64(encryptedHash),
     };
   } finally {
-    if (manifest) crypto.zeroize(manifest);
-    if (encryptedManifest) crypto.zeroize(encryptedManifest);
-    for (const hash of decoded) crypto.zeroize(hash);
-    if (combined) crypto.zeroize(combined);
-    if (encryptedHash) crypto.zeroize(encryptedHash);
-    crypto.zeroize(upload.fileKey);
-    activeUploads.delete(uploadToken);
+    manifest = clearBytes(crypto, manifest);
+    encryptedManifest = clearBytes(crypto, encryptedManifest);
+    while (decoded.length) clearBytes(crypto, decoded.pop());
+    combined = clearBytes(crypto, combined);
+    encryptedHash = clearBytes(crypto, encryptedHash);
+		if (upload) {
+			upload.fileKey = clearBytes(crypto, upload.fileKey);
+			activeUploads.delete(uploadToken);
+		}
+		params.manifestBytes = null;
   }
 }
 
 function handleClearUploadContext(params: WorkerInput<'clearUploadContext'>, crypto: CryptoApi) {
   const uploadToken = String(params.uploadToken || "");
   const upload = activeUploads.get(uploadToken);
-  if (upload && upload.fileKey) {
-    crypto.zeroize(upload.fileKey);
+  if (upload) {
+    upload.fileKey = clearBytes(crypto, upload.fileKey);
     activeUploads.delete(uploadToken);
   }
   return { cleared: true };
@@ -558,9 +553,9 @@ function handleOpenFileContext(params: WorkerInput<'openFileContext'>, crypto: C
   let metadataBytes;
   let manifestBytes;
   try {
-    encryptedFileKey = decodeBase64(params.encryptedFileKey);
-    encryptedMetadata = decodeBase64(params.encryptedMetadata);
-    encryptedManifest = decodeBase64(params.encryptedManifest);
+    encryptedFileKey = fromBase64(params.encryptedFileKey);
+    encryptedMetadata = fromBase64(params.encryptedMetadata);
+    encryptedManifest = fromBase64(params.encryptedManifest);
     fileKey = crypto.unwrap_file_key(
       encryptedFileKey,
       unlockedMasterKey,
@@ -578,21 +573,24 @@ function handleOpenFileContext(params: WorkerInput<'openFileContext'>, crypto: C
     );
     activeReaders.set(contextID, fileKey.slice());
     return {
-      metadata: new TextDecoder().decode(metadataBytes),
-      manifest: new TextDecoder().decode(manifestBytes),
+      metadataBytes: metadataBytes.slice(),
+      manifestBytes: manifestBytes.slice(),
     };
   } finally {
-    if (fileKey) crypto.zeroize(fileKey);
-    if (metadataBytes) crypto.zeroize(metadataBytes);
-    if (manifestBytes) crypto.zeroize(manifestBytes);
+    encryptedFileKey = clearBytes(crypto, encryptedFileKey);
+    encryptedMetadata = clearBytes(crypto, encryptedMetadata);
+    encryptedManifest = clearBytes(crypto, encryptedManifest);
+    fileKey = clearBytes(crypto, fileKey);
+    metadataBytes = clearBytes(crypto, metadataBytes);
+    manifestBytes = clearBytes(crypto, manifestBytes);
   }
 }
 
 function handleCloseFileContext(params: WorkerInput<'closeFileContext'>, crypto: CryptoApi) {
   const contextID = String(params.contextId || "");
-  const fileKey = activeReaders.get(contextID);
+  let fileKey = activeReaders.get(contextID);
   if (fileKey) {
-    crypto.zeroize(fileKey);
+    fileKey = clearBytes(crypto, fileKey);
     activeReaders.delete(contextID);
   }
   return { cleared: true };
@@ -600,9 +598,6 @@ function handleCloseFileContext(params: WorkerInput<'closeFileContext'>, crypto:
 
 function handleOpenPublicShareContext(params: WorkerInput<'openPublicShareContext'>, crypto: CryptoApi) {
   const contextID = String(params.contextId || "");
-  if (!contextID) {
-    throw new Error("Missing share context");
-  }
   let shareSecret;
   let encryptedFileKeyForShare;
   let encryptedMetadata;
@@ -611,10 +606,13 @@ function handleOpenPublicShareContext(params: WorkerInput<'openPublicShareContex
   let metadataBytes;
   let manifestBytes;
   try {
-    shareSecret = decodeBase64(params.shareSecret);
-    encryptedFileKeyForShare = decodeBase64(params.encryptedFileKeyForShare);
-    encryptedMetadata = decodeBase64(params.encryptedMetadata);
-    encryptedManifest = decodeBase64(params.encryptedManifest);
+    if (!params.shareSecret) throw new Error('Share secret is unavailable');
+    shareSecret = toUint8Array(params.shareSecret);
+    params.shareSecret = null;
+    if (!contextID) throw new Error('Missing share context');
+    encryptedFileKeyForShare = fromBase64(params.encryptedFileKeyForShare);
+    encryptedMetadata = fromBase64(params.encryptedMetadata);
+    encryptedManifest = fromBase64(params.encryptedManifest);
     fileKey = crypto.unwrap_file_key(
       encryptedFileKeyForShare,
       shareSecret,
@@ -632,22 +630,26 @@ function handleOpenPublicShareContext(params: WorkerInput<'openPublicShareContex
     );
     activeShareReaders.set(contextID, fileKey.slice());
     return {
-      metadata: new TextDecoder().decode(metadataBytes),
-      manifest: new TextDecoder().decode(manifestBytes),
+      metadataBytes: metadataBytes.slice(),
+      manifestBytes: manifestBytes.slice(),
     };
   } finally {
-    if (shareSecret) crypto.zeroize(shareSecret);
-    if (fileKey) crypto.zeroize(fileKey);
-    if (metadataBytes) crypto.zeroize(metadataBytes);
-    if (manifestBytes) crypto.zeroize(manifestBytes);
+    params.shareSecret = null;
+    shareSecret = clearBytes(crypto, shareSecret);
+    encryptedFileKeyForShare = clearBytes(crypto, encryptedFileKeyForShare);
+    encryptedMetadata = clearBytes(crypto, encryptedMetadata);
+    encryptedManifest = clearBytes(crypto, encryptedManifest);
+    fileKey = clearBytes(crypto, fileKey);
+    metadataBytes = clearBytes(crypto, metadataBytes);
+    manifestBytes = clearBytes(crypto, manifestBytes);
   }
 }
 
 function handleClosePublicShareContext(params: WorkerInput<'closePublicShareContext'>, crypto: CryptoApi) {
   const contextID = String(params.contextId || "");
-  const fileKey = activeShareReaders.get(contextID);
+  let fileKey = activeShareReaders.get(contextID);
   if (fileKey) {
-    crypto.zeroize(fileKey);
+    fileKey = clearBytes(crypto, fileKey);
     activeShareReaders.delete(contextID);
   }
   return { cleared: true };
@@ -663,11 +665,13 @@ function handleDecryptFileChunk(params: WorkerInput<'decryptFileChunk'>, crypto:
   let actualHash;
   let chunkBytes;
   try {
+		if (!params.encryptedChunk) throw new Error('Encrypted chunk is unavailable');
     encryptedChunk = toUint8Array(params.encryptedChunk);
+		params.encryptedChunk = null;
     const expectedHash = String(params.expectedHash || "");
     if (expectedHash) {
       actualHash = crypto.hash_bytes_blake3(encryptedChunk);
-      if (encodeBase64(actualHash) !== expectedHash) {
+      if (toBase64(actualHash) !== expectedHash) {
         throw new Error("Encrypted chunk hash mismatch");
       }
     }
@@ -678,7 +682,9 @@ function handleDecryptFileChunk(params: WorkerInput<'decryptFileChunk'>, crypto:
     );
     return { chunkBytes: chunkBytes.slice() };
   } finally {
-    if (chunkBytes) crypto.zeroize(chunkBytes);
+    chunkBytes = clearBytes(crypto, chunkBytes);
+	encryptedChunk = clearBytes(crypto, encryptedChunk);
+	actualHash = clearBytes(crypto, actualHash);
   }
 }
 
@@ -692,7 +698,9 @@ function handleDecryptPublicShareChunk(params: WorkerInput<'decryptPublicShareCh
   let actualHash;
   let chunkBytes;
   try {
+		if (!params.encryptedChunk) throw new Error('Encrypted chunk is unavailable');
     encryptedChunk = toUint8Array(params.encryptedChunk);
+		params.encryptedChunk = null;
     const expectedHash = String(params.expectedHash || "");
     if (expectedHash) {
       actualHash = crypto.hash_bytes_blake3(encryptedChunk);
@@ -701,7 +709,7 @@ function handleDecryptPublicShareChunk(params: WorkerInput<'decryptPublicShareCh
         ? Array.from(actualHash).map(function(byte) {
           return byte.toString(16).padStart(2, "0");
         }).join("")
-        : encodeBase64(actualHash);
+        : toBase64(actualHash);
       if (actual !== expectedHash) {
         throw new Error("Encrypted chunk hash mismatch");
       }
@@ -713,146 +721,105 @@ function handleDecryptPublicShareChunk(params: WorkerInput<'decryptPublicShareCh
     );
     return { chunkBytes: chunkBytes.slice() };
   } finally {
-    if (chunkBytes) crypto.zeroize(chunkBytes);
+    chunkBytes = clearBytes(crypto, chunkBytes);
+	encryptedChunk = clearBytes(crypto, encryptedChunk);
+	actualHash = clearBytes(crypto, actualHash);
   }
 }
 
 function handleEncryptFileMetadataInContext(params: WorkerInput<'encryptFileMetadataInContext'>, crypto: CryptoApi) {
   const contextID = String(params.contextId || "");
-  const fileKey = activeReaders.get(contextID);
-  if (!fileKey) {
-    throw new Error("File context is missing");
-  }
+  let fileKey: Uint8Array | null = null;
   let metadata;
   let encrypted;
   try {
-    metadata = new TextEncoder().encode(JSON.stringify(params.metadata || {}));
+		if (!params.metadataBytes) throw new Error('Metadata is unavailable');
+		metadata = toUint8Array(params.metadataBytes);
+		params.metadataBytes = null;
+		fileKey = activeReaders.get(contextID) ?? null;
+		if (!fileKey) throw new Error('File context is missing');
     encrypted = crypto.encrypt_chunk(
       metadata,
       fileKey,
       aadBytes(params.aad),
     );
-    return { encryptedMetadata: encodeBase64(encrypted) };
+    return { encryptedMetadata: toBase64(encrypted) };
   } finally {
-    if (metadata) crypto.zeroize(metadata);
+    metadata = clearBytes(crypto, metadata);
+    encrypted = clearBytes(crypto, encrypted);
+		params.metadataBytes = null;
   }
 }
 
 function handleEncryptFileMetadata(params: WorkerInput<'encryptFileMetadata'>, crypto: CryptoApi) {
-  const master = activeMasterKey(params.masterKey);
+	let master: Uint8Array | null = null;
   let metadata;
   let encrypted;
   try {
-    metadata = new TextEncoder().encode(JSON.stringify(params.metadata || {}));
+		if (!params.metadataBytes) throw new Error('Metadata is unavailable');
+		metadata = toUint8Array(params.metadataBytes);
+		params.metadataBytes = null;
+		master = unlockedMasterKey;
+		if (!master) throw new Error('Vault is locked');
     encrypted = crypto.encrypt_chunk(
       metadata,
-      master.bytes,
+      master,
       aadBytes(params.aad),
     );
-    return { encryptedMetadata: encodeBase64(encrypted) };
+    return { encryptedMetadata: toBase64(encrypted) };
   } finally {
-    if (master.temporary) crypto.zeroize(master.bytes);
-    if (metadata) crypto.zeroize(metadata);
+    metadata = clearBytes(crypto, metadata);
+    encrypted = clearBytes(crypto, encrypted);
+		params.metadataBytes = null;
   }
 }
 
 function handleDecryptFileMetadata(params: WorkerInput<'decryptFileMetadata'>, crypto: CryptoApi) {
-  const master = activeMasterKey(params.masterKey);
+	const master = activeMasterKey();
   let encryptedMetadata;
   let metadata;
   try {
-    encryptedMetadata = decodeBase64(params.encryptedMetadata);
+    encryptedMetadata = fromBase64(params.encryptedMetadata);
     metadata = crypto.decrypt_chunk(
       encryptedMetadata,
-      master.bytes,
+      master,
       aadBytes(params.aad),
     );
-    return { metadata: JSON.parse(new TextDecoder().decode(metadata)) };
+		return { metadataBytes: metadata.slice() };
   } finally {
-    if (master.temporary) crypto.zeroize(master.bytes);
-    if (metadata) crypto.zeroize(metadata);
-  }
-}
-
-function handleEncryptFileKey(params: WorkerInput<'encryptFileKey'>, crypto: CryptoApi) {
-  const master = activeMasterKey(params.masterKey);
-  let fileKey;
-  let encryptedFileKey;
-  try {
-    fileKey = decodeBase64(params.fileKey);
-    encryptedFileKey = crypto.wrap_file_key(
-      fileKey,
-      master.bytes,
-      aadBytes(params.aad),
-    );
-    return { encryptedFileKey: encodeBase64(encryptedFileKey) };
-  } finally {
-    if (master.temporary) crypto.zeroize(master.bytes);
-    if (fileKey) crypto.zeroize(fileKey);
-  }
-}
-
-function handleEncryptChunk(params: WorkerInput<'encryptChunk'>, crypto: CryptoApi) {
-  let fileKey;
-  let chunkBytes;
-  let encryptedChunk;
-  try {
-    fileKey = decodeBase64(params.fileKey);
-    chunkBytes = decodeBase64(params.chunkBytes);
-    encryptedChunk = crypto.encrypt_chunk(
-      chunkBytes,
-      fileKey,
-      aadBytes(params.aad),
-    );
-    return { encryptedChunk: encodeBase64(encryptedChunk) };
-  } finally {
-    if (fileKey) crypto.zeroize(fileKey);
-    if (chunkBytes) crypto.zeroize(chunkBytes);
-  }
-}
-
-function handleDecryptChunk(params: WorkerInput<'decryptChunk'>, crypto: CryptoApi) {
-  let fileKey;
-  let encryptedChunk;
-  let chunkBytes;
-  try {
-    fileKey = decodeBase64(params.fileKey);
-    encryptedChunk = decodeBase64(params.encryptedChunk);
-    chunkBytes = crypto.decrypt_chunk(
-      encryptedChunk,
-      fileKey,
-      aadBytes(params.aad),
-    );
-    return { chunkBytes: encodeBase64(chunkBytes) };
-  } finally {
-    if (fileKey) crypto.zeroize(fileKey);
-    if (chunkBytes) crypto.zeroize(chunkBytes);
+    encryptedMetadata = clearBytes(crypto, encryptedMetadata);
+    metadata = clearBytes(crypto, metadata);
   }
 }
 
 function handleCreateSearchTokens(params: WorkerInput<'createSearchTokens'>, crypto: CryptoApi) {
-  if (!unlockedMasterKey) {
-    throw new Error("Vault is locked");
-  }
   const vaultId = String(params.vaultId || "");
-  const terms = Array.isArray(params.terms) ? params.terms : [];
-  if (!vaultId || !terms.length) {
-    return { tokens: [] };
-  }
+  let terms: string[] = [];
   let searchKey;
   try {
+    if (!unlockedMasterKey) throw new Error('Vault is locked');
+    terms = Array.isArray(params.terms) ? params.terms : [];
+    params.terms = null;
+    if (!vaultId || !terms.length) return { tokens: [] };
     searchKey = crypto.derive_search_key(unlockedMasterKey);
     const tokens = [];
     for (let i = 0; i < terms.length; i += 1) {
-      const payload = new TextEncoder().encode(
-        vaultId + ":" + String(terms[i] || ""),
-      );
-      const digest = crypto.hmac_sha256(searchKey, payload);
-      tokens.push(encodeBase64URL(digest));
+      let payload;
+      let digest;
+      try {
+        payload = new TextEncoder().encode(vaultId + ':' + String(terms[i] || ''));
+        digest = crypto.hmac_sha256(searchKey, payload);
+        tokens.push(toBase64Url(digest));
+      } finally {
+        payload = clearBytes(crypto, payload);
+        digest = clearBytes(crypto, digest);
+      }
     }
     return { tokens: tokens };
   } finally {
-    if (searchKey) crypto.zeroize(searchKey);
+    terms.length = 0;
+    params.terms = null;
+    searchKey = clearBytes(crypto, searchKey);
   }
 }
 
@@ -865,8 +832,8 @@ function handleDecryptSearchFile(params: WorkerInput<'decryptSearchFile'>, crypt
   let fileKey;
   let metadata;
   try {
-    encryptedFileKey = decodeBase64(params.encryptedFileKey);
-    encryptedMetadata = decodeBase64(params.encryptedMetadata);
+    encryptedFileKey = fromBase64(params.encryptedFileKey);
+    encryptedMetadata = fromBase64(params.encryptedMetadata);
     fileKey = crypto.unwrap_file_key(
       encryptedFileKey,
       unlockedMasterKey,
@@ -877,10 +844,12 @@ function handleDecryptSearchFile(params: WorkerInput<'decryptSearchFile'>, crypt
       fileKey,
       aadBytes(params.metadataAad),
     );
-    return { metadata: JSON.parse(new TextDecoder().decode(metadata)) };
+		return { metadataBytes: metadata.slice() };
   } finally {
-    if (fileKey) crypto.zeroize(fileKey);
-    if (metadata) crypto.zeroize(metadata);
+    fileKey = clearBytes(crypto, fileKey);
+    encryptedFileKey = clearBytes(crypto, encryptedFileKey);
+    encryptedMetadata = clearBytes(crypto, encryptedMetadata);
+    metadata = clearBytes(crypto, metadata);
   }
 }
 
@@ -893,8 +862,8 @@ function handleDecryptSearchFolder(params: WorkerInput<'decryptSearchFolder'>, c
   let name;
   let metadata;
   try {
-    encryptedName = decodeBase64(params.encryptedName);
-    encryptedMetadata = decodeBase64(params.encryptedMetadata);
+    encryptedName = fromBase64(params.encryptedName);
+    encryptedMetadata = fromBase64(params.encryptedMetadata);
     name = crypto.decrypt_chunk(
       encryptedName,
       unlockedMasterKey,
@@ -905,13 +874,12 @@ function handleDecryptSearchFolder(params: WorkerInput<'decryptSearchFolder'>, c
       unlockedMasterKey,
       aadBytes(params.metadataAad),
     );
-    return {
-      name: JSON.parse(new TextDecoder().decode(name)),
-      metadata: JSON.parse(new TextDecoder().decode(metadata)),
-    };
+		return { nameBytes: name.slice(), metadataBytes: metadata.slice() };
   } finally {
-    if (name) crypto.zeroize(name);
-    if (metadata) crypto.zeroize(metadata);
+    encryptedName = clearBytes(crypto, encryptedName);
+    encryptedMetadata = clearBytes(crypto, encryptedMetadata);
+    name = clearBytes(crypto, name);
+    metadata = clearBytes(crypto, metadata);
   }
 }
 
@@ -924,8 +892,10 @@ function handleDecryptSearchThumbnail(params: WorkerInput<'decryptSearchThumbnai
   let fileKey;
   let thumbnail;
   try {
-    encryptedFileKey = decodeBase64(params.encryptedFileKey);
+		if (!params.encryptedThumbnail) throw new Error('Encrypted thumbnail is unavailable');
+    encryptedFileKey = fromBase64(params.encryptedFileKey);
     encryptedThumbnail = toUint8Array(params.encryptedThumbnail);
+		params.encryptedThumbnail = null;
     fileKey = crypto.unwrap_file_key(
       encryptedFileKey,
       unlockedMasterKey,
@@ -938,8 +908,10 @@ function handleDecryptSearchThumbnail(params: WorkerInput<'decryptSearchThumbnai
     );
     return { thumbnailBytes: thumbnail.slice() };
   } finally {
-    if (fileKey) crypto.zeroize(fileKey);
-    if (thumbnail) crypto.zeroize(thumbnail);
+    encryptedFileKey = clearBytes(crypto, encryptedFileKey);
+    encryptedThumbnail = clearBytes(crypto, encryptedThumbnail);
+    fileKey = clearBytes(crypto, fileKey);
+    thumbnail = clearBytes(crypto, thumbnail);
   }
 }
 
@@ -949,7 +921,6 @@ const messageHandlers: WorkerHandlers = {
 	unlockVault: handleUnlockVault,
 	lockVault: handleLockVault,
 	preparePasswordReset: handlePreparePasswordReset,
-	generateFileKey: handleGenerateFileKey,
 	prepareShare: handlePrepareShare,
 	openShareKey: handleOpenShareKey,
 	prepareUpload: handlePrepareUpload,
@@ -970,9 +941,6 @@ const messageHandlers: WorkerHandlers = {
 	encryptFolderMetadata: handleEncryptFileMetadata,
 	decryptFileMetadata: handleDecryptFileMetadata,
 	decryptFolderMetadata: handleDecryptFileMetadata,
-	encryptFileKey: handleEncryptFileKey,
-	encryptChunk: handleEncryptChunk,
-	decryptChunk: handleDecryptChunk,
 	createSearchTokens: handleCreateSearchTokens,
 	decryptSearchFile: handleDecryptSearchFile,
 	decryptSearchFolder: handleDecryptSearchFolder,
@@ -996,7 +964,7 @@ workerScope.addEventListener('message', async (event) => {
   try {
     const result = await handleMessage(payload);
     const transfer: Transferable[] = [];
-		for (const value of [result.masterKey, result.encryptedChunk, result.encryptedThumbnail, result.chunkBytes, result.thumbnailBytes]) {
+		for (const value of [result.masterKey, result.shareSecret, result.encryptedChunk, result.encryptedThumbnail, result.chunkBytes, result.thumbnailBytes, result.metadataBytes, result.manifestBytes, result.nameBytes]) {
 			if (value instanceof Uint8Array && value.buffer instanceof ArrayBuffer) transfer.push(value.buffer);
 		}
 		workerScope.postMessage({ id: payload.id, ok: true, result }, transfer);

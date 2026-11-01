@@ -1,14 +1,9 @@
-import { normalizeAAD, toBase64, toWorkerBytes } from './bytes';
+import { decodeJSON, encodeJSON, normalizeAAD, toBase64, toWorkerBytes } from './bytes';
 import { touchSessionUnlock } from './session';
-import type { FileCryptoRecord, VaultAAD, VaultBytes, VaultMetadata, VaultWorkerCalls } from './types';
+import type { FileCryptoRecord, VaultAAD, VaultBytes, VaultMetadata } from './types';
 import { callVaultWorker } from './worker-client';
 
-export function generateFileKey(): Promise<{ fileKey: string }> {
-	touchSessionUnlock();
-	return callVaultWorker('generateFileKey', {});
-}
-
-export function openFileContext(contextId: string, record: FileCryptoRecord): Promise<{ metadata: string; manifest: string }> {
+export function openFileContext(contextId: string, record: FileCryptoRecord): Promise<{ metadataBytes: Uint8Array; manifestBytes: Uint8Array }> {
 	touchSessionUnlock();
 	return callVaultWorker('openFileContext', {
 		contextId,
@@ -37,25 +32,24 @@ export function decryptFileChunk(
 }
 
 export function encryptFileMetadata(
-	metadata: VaultMetadata,
-	masterKey?: VaultBytes | string
+	metadata: VaultMetadata
 ): Promise<{ encryptedMetadata: string }> {
 	touchSessionUnlock();
-	return callVaultWorker('encryptFileMetadata', { metadata, masterKey: toBase64(masterKey), aad: 'arkive:file-metadata:v1' });
+	const metadataBytes = encodeJSON(metadata);
+	return callVaultWorker('encryptFileMetadata', { metadataBytes, aad: 'arkive:file-metadata:v1' }, [metadataBytes]);
 }
 
 export function encryptFileMetadataForFile(
 	metadata: VaultMetadata,
 	vaultId: string,
-	fileId: string,
-	masterKey?: VaultBytes | string
+	fileId: string
 ): Promise<{ encryptedMetadata: string }> {
 	touchSessionUnlock();
+	const metadataBytes = encodeJSON(metadata);
 	return callVaultWorker('encryptFileMetadata', {
-		metadata,
-		masterKey: toBase64(masterKey),
+		metadataBytes,
 		aad: `arkive:file-metadata:v1:${vaultId}:${fileId}`
-	});
+	}, [metadataBytes]);
 }
 
 export function encryptFileMetadataInContext(
@@ -65,108 +59,64 @@ export function encryptFileMetadataInContext(
 	fileId: string
 ): Promise<{ encryptedMetadata: string }> {
 	touchSessionUnlock();
+	const metadataBytes = encodeJSON(metadata);
 	return callVaultWorker('encryptFileMetadataInContext', {
 		contextId,
-		metadata,
+		metadataBytes,
 		aad: `arkive:file-metadata:v1:${vaultId}:${fileId}`
-	});
+	}, [metadataBytes]);
 }
 
-export function decryptFileMetadata(
-	encryptedMetadata: string | VaultBytes,
-	masterKey?: VaultBytes | string
+export async function decryptFileMetadata(
+	encryptedMetadata: string | VaultBytes
 ): Promise<{ metadata: VaultMetadata }> {
 	touchSessionUnlock();
-	return callVaultWorker('decryptFileMetadata', {
+	const result = await callVaultWorker('decryptFileMetadata', {
 		encryptedMetadata: toBase64(encryptedMetadata),
-		masterKey: toBase64(masterKey),
 		aad: 'arkive:file-metadata:v1'
 	});
+	return { metadata: decodeJSON<VaultMetadata>(result.metadataBytes) };
 }
 
 export function encryptFolderName(
-	metadata: VaultMetadata,
-	masterKey?: VaultBytes | string
+	metadata: VaultMetadata
 ): Promise<{ encryptedMetadata: string }> {
 	touchSessionUnlock();
+	const metadataBytes = encodeJSON(metadata);
 	return callVaultWorker('encryptFolderMetadata', {
-		metadata,
-		masterKey: toBase64(masterKey),
+		metadataBytes,
 		aad: 'arkive:folder-name:v1'
-	});
+	}, [metadataBytes]);
 }
 
 export function encryptFolderMetadata(
-	metadata: VaultMetadata,
-	masterKey?: VaultBytes | string
+	metadata: VaultMetadata
 ): Promise<{ encryptedMetadata: string }> {
 	touchSessionUnlock();
+	const metadataBytes = encodeJSON(metadata);
 	return callVaultWorker('encryptFolderMetadata', {
-		metadata,
-		masterKey: toBase64(masterKey),
+		metadataBytes,
 		aad: 'arkive:folder-metadata:v1'
-	});
+	}, [metadataBytes]);
 }
-
-export function decryptFolderName(
-	encryptedMetadata: string | VaultBytes,
-	masterKey?: VaultBytes | string
+export async function decryptFolderName(
+	encryptedMetadata: string | VaultBytes
 ): Promise<{ metadata: VaultMetadata }> {
 	touchSessionUnlock();
-	return callVaultWorker('decryptFolderMetadata', {
+	const result = await callVaultWorker('decryptFolderMetadata', {
 		encryptedMetadata: toBase64(encryptedMetadata),
-		masterKey: toBase64(masterKey),
 		aad: 'arkive:folder-name:v1'
 	});
+	return { metadata: decodeJSON<VaultMetadata>(result.metadataBytes) };
 }
 
-export function decryptFolderMetadata(
-	encryptedMetadata: string | VaultBytes,
-	masterKey?: VaultBytes | string
+export async function decryptFolderMetadata(
+	encryptedMetadata: string | VaultBytes
 ): Promise<{ metadata: VaultMetadata }> {
 	touchSessionUnlock();
-	return callVaultWorker('decryptFolderMetadata', {
+	const result = await callVaultWorker('decryptFolderMetadata', {
 		encryptedMetadata: toBase64(encryptedMetadata),
-		masterKey: toBase64(masterKey),
 		aad: 'arkive:folder-metadata:v1'
 	});
-}
-
-export function encryptFileKey(
-	fileKey: VaultBytes | string,
-	masterKey?: VaultBytes | string,
-	aad?: VaultAAD
-): Promise<{ encryptedFileKey: string }> {
-	touchSessionUnlock();
-	return callVaultWorker('encryptFileKey', {
-		fileKey: toBase64(fileKey),
-		masterKey: toBase64(masterKey),
-		aad: normalizeAAD(aad) || 'arkive:file-key:v1'
-	});
-}
-
-export function encryptChunk(
-	chunkBytes: VaultBytes | string,
-	fileKey: VaultBytes | string,
-	aad?: VaultAAD
-): Promise<{ encryptedChunk: string }> {
-	touchSessionUnlock();
-	return callVaultWorker('encryptChunk', {
-		chunkBytes: toBase64(chunkBytes),
-		fileKey: toBase64(fileKey),
-		aad: normalizeAAD(aad)
-	});
-}
-
-export function decryptChunk(
-	encryptedChunk: VaultBytes | string,
-	fileKey: VaultBytes | string,
-	aad?: VaultAAD
-): Promise<VaultWorkerCalls['decryptChunk']['result']> {
-	touchSessionUnlock();
-	return callVaultWorker('decryptChunk', {
-		encryptedChunk: toBase64(encryptedChunk),
-		fileKey: toBase64(fileKey),
-		aad: normalizeAAD(aad)
-	});
+	return { metadata: decodeJSON<VaultMetadata>(result.metadataBytes) };
 }

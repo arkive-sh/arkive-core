@@ -1,9 +1,11 @@
-import { toWorkerBytes } from './bytes';
+import { decodeJSON, toWorkerBytes } from './bytes';
 import { touchSessionUnlock } from './session';
 import type {
 	EncryptedSearchFile,
 	EncryptedSearchFolder,
+	SearchPreview,
 	VaultBytes,
+	VaultMetadata,
 	VaultWorkerCalls
 } from './types';
 import { callVaultWorker } from './worker-client';
@@ -34,9 +36,9 @@ export async function createSearchTokens(text: string, vaultId: string, maxTerms
 	return result.tokens;
 }
 
-export function decryptSearchFile(file: EncryptedSearchFile): Promise<VaultWorkerCalls['decryptSearchFile']['result']> {
+export async function decryptSearchFile(file: EncryptedSearchFile): Promise<{ metadata: VaultMetadata & { name?: string; mime?: string; preview?: SearchPreview } }> {
 	touchSessionUnlock();
-	return callVaultWorker('decryptSearchFile', {
+	const result = await callVaultWorker('decryptSearchFile', {
 		fileId: file.id,
 		vaultId: file.vaultId,
 		encryptedMetadata: file.encryptedMetadata,
@@ -44,16 +46,32 @@ export function decryptSearchFile(file: EncryptedSearchFile): Promise<VaultWorke
 		fileKeyAad: `arkive:file-key:v1:${file.vaultId}:${file.id}`,
 		metadataAad: `arkive:file-metadata:v1:${file.vaultId}:${file.id}`
 	});
+	return { metadata: decodeJSON<VaultMetadata & { name?: string; mime?: string; preview?: SearchPreview }>(result.metadataBytes) };
 }
 
-export function decryptSearchFolder(folder: EncryptedSearchFolder): Promise<VaultWorkerCalls['decryptSearchFolder']['result']> {
+export async function decryptSearchFolder(folder: EncryptedSearchFolder): Promise<{ name: VaultMetadata & { name?: string }; metadata: VaultMetadata & { name?: string } }> {
 	touchSessionUnlock();
-	return callVaultWorker('decryptSearchFolder', {
+	const result = await callVaultWorker('decryptSearchFolder', {
 		encryptedName: folder.encryptedName,
 		encryptedMetadata: folder.encryptedMetadata,
 		nameAad: 'arkive:folder-name:v1',
 		metadataAad: 'arkive:folder-metadata:v1'
 	});
+	let nameBytes: Uint8Array | null = result.nameBytes;
+	let metadataBytes: Uint8Array | null = result.metadataBytes;
+	try {
+		if (!nameBytes || !metadataBytes) throw new Error('The decrypted folder data is incomplete.');
+		const name = decodeJSON<VaultMetadata & { name?: string }>(nameBytes);
+		nameBytes = null;
+		const metadata = decodeJSON<VaultMetadata & { name?: string }>(metadataBytes);
+		metadataBytes = null;
+		return { name, metadata };
+	} finally {
+		nameBytes?.fill(0);
+		metadataBytes?.fill(0);
+		nameBytes = null;
+		metadataBytes = null;
+	}
 }
 
 export function decryptSearchThumbnail(

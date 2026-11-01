@@ -36,13 +36,13 @@ export function waitUntilReady(): Promise<VaultState> {
 	return Promise.resolve({ unlocked: get(vaultUnlocked) });
 }
 
-export async function unlockVault(exportKey: ArrayBuffer, salt: string, encryptedMasterKey: string): Promise<VaultState> {
+export async function unlockVault(exportKey: Uint8Array<ArrayBuffer>, salt: string, encryptedMasterKey: string): Promise<VaultState> {
 	const result = await callVaultWorker('unlockVault', {
-		exportKey,
+		exportKey: exportKey.buffer,
 		salt,
 		encryptedMasterKey,
 		aad: 'arkive:master-key:v1'
-	}, [exportKey]);
+	}, [exportKey.buffer]);
 	setVaultUnlocked(result.unlocked);
 	if (result.unlocked) scheduleIdleLock();
 	else clearIdleTimer();
@@ -58,6 +58,6 @@ export async function lockVault(): Promise<VaultState> {
 	}
 }
 
-export async function unlockForLogin(exportKey: ArrayBuffer, salt: string, encryptedMasterKey: string): Promise<void> {
+export async function unlockForLogin(exportKey: Uint8Array<ArrayBuffer>, salt: string, encryptedMasterKey: string): Promise<void> {
 	await unlockVault(exportKey, salt, encryptedMasterKey);
 }

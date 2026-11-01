@@ -1,14 +1,13 @@
 <script lang="ts">
 	import axios from 'axios';
-	import * as opaque from '@serenity-kit/opaque';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import * as v from 'valibot';
 	import { api, type APIErrorResponse } from '#lib/api.ts';
+	import { opaqueAuth } from '#lib/opaque-auth.ts';
 	import Button from '#lib/components/Button.svelte';
 	import Card from '#lib/components/Card.svelte';
 	import InputField from '#lib/components/InputField.svelte';
-	import { fromBase64Url } from '#lib/vault/bytes.ts';
 	import { callVaultWorker } from '#lib/vault/worker-client.ts';
 
 	interface RecoveryVault {
@@ -59,10 +58,10 @@
 		if (!vault || submitting) return;
 		const form = event.currentTarget;
 		if (!(form instanceof HTMLFormElement)) return;
-		const values = new FormData(form);
-		const recoveryKey = String(values.get('recovery_key') ?? '').trim();
-		const password = String(values.get('new_password') ?? '');
-		const confirmPassword = String(values.get('confirm_password') ?? '');
+		let values: FormData | null = new FormData(form);
+		let recoveryKey: string | null = String(values.get('recovery_key') ?? '').trim();
+		let password: string | null = String(values.get('new_password') ?? '');
+		let confirmPassword: string | null = String(values.get('confirm_password') ?? '');
 		error = '';
 		const passwordCheck = v.safeParse(passwordSchema, password);
 		if (!passwordCheck.success) {
@@ -75,37 +74,42 @@
 		}
 
 		submitting = true;
+		values = null;
+		let registration: Awaited<ReturnType<typeof opaqueAuth.registerPasswordReset>> | null = null;
+		let exportKey: Uint8Array<ArrayBuffer> | null = null;
+		let recoveryKeyBytes: Uint8Array<ArrayBuffer> | null = null;
 		try {
-			const { clientRegistrationState, registrationRequest } = opaque.client.startRegistration({ password });
-			const { data: start } = await api.post<{ registrationResponse: string }>(
-				'/api/auth/password-reset/opaque/start',
-				{ token, registrationRequest }
-			);
-			const registration = opaque.client.finishRegistration({
-				clientRegistrationState,
-				registrationResponse: start.registrationResponse,
-				password
-			});
-			const exportKey = new Uint8Array(fromBase64Url(registration.exportKey));
+			if (password === null || recoveryKey === null) throw new Error('Recovery details are unavailable.');
+			recoveryKeyBytes = new TextEncoder().encode(recoveryKey);
+			recoveryKey = null;
+			registration = await opaqueAuth.registerPasswordReset(token, password);
+			password = null;
+			confirmPassword = null;
+			exportKey = registration.exportKey;
+			const registrationRecord = registration.registrationRecord;
+			registration = null;
 			let prepared: { vaultSalt: string; encryptedMasterKey: string; recoveryProof: string };
 			try {
 				prepared = await callVaultWorker(
 					'preparePasswordReset',
 					{
 						encryptedMasterKeyRecovery: vault.encryptedMasterKeyRecovery,
-						recoveryKey,
+						recoveryKey: recoveryKeyBytes.buffer,
 						exportKey: exportKey.buffer,
 						userID: vault.userID,
 						resetToken: token
 					},
-					[exportKey.buffer]
+					[exportKey.buffer, recoveryKeyBytes.buffer]
 				);
 			} finally {
-				if (exportKey.buffer.byteLength) exportKey.fill(0);
+				if (exportKey?.byteLength) exportKey.fill(0);
+				exportKey = null;
+				if (recoveryKeyBytes?.byteLength) recoveryKeyBytes.fill(0);
+				recoveryKeyBytes = null;
 			}
 			await api.post('/api/auth/password-reset/complete', {
 				token,
-				opaqueRegistrationRecord: registration.registrationRecord,
+				opaqueRegistrationRecord: registrationRecord,
 				vaultSalt: prepared.vaultSalt,
 				encryptedMasterKey: prepared.encryptedMasterKey,
 				recoveryProof: prepared.recoveryProof
@@ -116,6 +120,16 @@
 				? cause.response?.data?.error?.details?.fields?.general ?? cause.response?.data?.error?.message ?? cause.message
 				: cause instanceof Error ? cause.message : 'Password recovery failed.';
 		} finally {
+			if (exportKey?.byteLength) exportKey.fill(0);
+			exportKey = null;
+			if (recoveryKeyBytes?.byteLength) recoveryKeyBytes.fill(0);
+			recoveryKeyBytes = null;
+			recoveryKey = null;
+			password = null;
+			confirmPassword = null;
+			values = null;
+			registration = null;
+			form.reset();
 			submitting = false;
 		}
 	}
