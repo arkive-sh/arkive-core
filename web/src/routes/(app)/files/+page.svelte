@@ -545,7 +545,7 @@
 		</header>
 		{#if !$vaultUnlocked}
 			<section class="rounded-md border border-(--border) bg-(--surface-raised) px-5 py-8 text-(--muted)" role="status">
-				Unlock the vault to view your files.
+				Unlock the vault from the header to view your files.
 			</section>
 		{:else if entriesQuery.isPending}
 			<section class="rounded-md border border-(--border) bg-(--surface-raised) px-5 py-8 text-(--muted)" role="status">

@@ -12,8 +12,7 @@ export interface InitialSetupRequest {
 	name: string;
 	username: string;
 	email: string;
-	password: string;
-	confirmPassword: string;
+	opaqueRegistrationRecord: string;
 	vaultSalt: string;
 	encryptedMasterKey: string;
 	storage: {

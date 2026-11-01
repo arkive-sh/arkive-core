@@ -7,6 +7,7 @@
 	import { api, type APIErrorResponse } from '#lib/api.ts';
 	import { toast } from '#lib/toast.ts';
 	import { callVaultWorker } from '#lib/vault/worker-client.ts';
+	import { fromBase64Url } from '#lib/vault/bytes.ts';
 	import { SETUP_MASTER_KEY_STORAGE, type InitialRecoveryRequest } from '../types';
 	import { downloadRecoveryPDF } from './recovery-pdf';
 	import type { PageProps } from './$types';
@@ -24,14 +25,25 @@
 
 	onMount(() => {
 		let current = true;
-		const masterKey = sessionStorage.getItem(SETUP_MASTER_KEY_STORAGE);
-		if (!masterKey) {
+		let storedMasterKey = sessionStorage.getItem(SETUP_MASTER_KEY_STORAGE);
+		if (!storedMasterKey) {
 			generating = false;
 			errorMessage = 'Setup master key is unavailable in this tab. Return to the browser tab where setup started.';
 			return;
 		}
 
-		void callVaultWorker('prepareInitialRecovery', { masterKey, userID: data.userID })
+		let masterKey: Uint8Array<ArrayBuffer> | null = null;
+		try {
+			masterKey = new Uint8Array(fromBase64Url(storedMasterKey));
+			storedMasterKey = null;
+		} catch {
+			generating = false;
+			errorMessage = 'Setup master key is invalid. Return to the setup page and try again.';
+			return;
+		}
+
+		const masterKeyBuffer = masterKey.buffer;
+		void callVaultWorker('prepareInitialRecovery', { masterKeyBytes: masterKeyBuffer, userID: data.userID }, [masterKeyBuffer])
 			.then((result) => {
 				if (!current) return;
 				recoveryKey = result.recoveryKey;
@@ -42,6 +54,8 @@
 				if (current) errorMessage = error instanceof Error ? error.message : 'Recovery key generation failed. Reload the page and try again.';
 			})
 			.finally(() => {
+				if (masterKey?.byteLength) masterKey.fill(0);
+				masterKey = null;
 				if (current) generating = false;
 			});
 
@@ -84,6 +98,9 @@
 			};
 			await api.post('/api/setup/recovery-key', request);
 			sessionStorage.removeItem(SETUP_MASTER_KEY_STORAGE);
+			recoveryKey = '';
+			encryptedMasterKeyRecovery = '';
+			recoveryProofPublicKey = '';
 			await goto('/login', { replace: true });
 		} catch (error) {
 			if (axios.isAxiosError(error) && error.response?.status === 401) {

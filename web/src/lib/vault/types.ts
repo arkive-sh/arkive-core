@@ -40,12 +40,6 @@ export interface VaultState {
 	unlocked: boolean;
 }
 
-export interface StoredSessionUnlock {
-	sessionUnwrapKey: string;
-	wrappedMasterKey: string;
-	expiresAt: number;
-}
-
 export interface ShareFileRecord {
 	vaultId: string;
 	fileId: string;
@@ -69,28 +63,20 @@ export interface PublicShareCryptoRecord {
 /** Typed RPC boundary between the Svelte app and the crypto worker. */
 export interface VaultWorkerCalls {
 	createInitialVault: {
-		params: { password: string };
-		result: { vaultSalt: string; encryptedMasterKey: string; masterKey: string };
+		params: { exportKey: ArrayBuffer };
+		result: { vaultSalt: string; encryptedMasterKey: string; masterKey: Uint8Array<ArrayBuffer> };
 	};
 	prepareInitialRecovery: {
-		params: { masterKey: string; userID: string };
+		params: { masterKeyBytes: ArrayBuffer; userID: string };
 		result: { recoveryKey: string; encryptedMasterKeyRecovery: string; recoveryProofPublicKey: string };
 	};
 	unlockVault: {
-		params: { password: string; salt: string; encryptedMasterKey: string; aad: string };
+		params: { exportKey: ArrayBuffer; salt: string; encryptedMasterKey: string; aad: string };
 		result: VaultState;
 	};
 	lockVault: { params: Record<string, never>; result: VaultState };
-	createSessionUnlock: {
-		params: { sessionUnwrapKey: ArrayBuffer; aad: string };
-		result: { wrappedMasterKey: string };
-	};
-	restoreSessionUnlock: {
-		params: { sessionUnwrapKey: string; wrappedMasterKey: string; aad: string };
-		result: VaultState;
-	};
 	preparePasswordReset: {
-		params: { encryptedMasterKeyRecovery: string; recoveryKey: string; newPassword: string; userID: string; resetToken: string };
+		params: { encryptedMasterKeyRecovery: string; recoveryKey: string; exportKey: ArrayBuffer; userID: string; resetToken: string };
 		result: { vaultSalt: string; encryptedMasterKey: string; recoveryProof: string };
 	};
 	generateFileKey: { params: Record<string, never>; result: { fileKey: string } };

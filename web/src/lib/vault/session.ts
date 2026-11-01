@@ -1,154 +1,63 @@
-import { toBase64 } from './bytes';
-import { setVaultUnlocked } from './state';
-import type { StoredSessionUnlock, VaultState } from './types';
+import { get } from 'svelte/store';
+import { setVaultUnlocked, vaultUnlocked } from './state';
+import type { VaultState } from './types';
 import { callVaultWorker } from './worker-client';
 
-const SESSION_UNLOCK_KEY = 'arkive:vault-session:v1';
-const SESSION_UNLOCK_TTL_MS = 60 * 60 * 1000;
+const VAULT_IDLE_TIMEOUT_MS = 60 * 60 * 1000;
 
-let restorePromise: Promise<VaultState> | null = null;
-let sessionExpiryTimer: number | undefined;
+let idleTimer: number | undefined;
 
-function clearSessionExpiryTimer(): void {
-	if (sessionExpiryTimer !== undefined && typeof window !== 'undefined') {
-		window.clearTimeout(sessionExpiryTimer);
-	}
-	sessionExpiryTimer = undefined;
-}
-
-function scheduleSessionExpiry(expiresAt: number): void {
-	clearSessionExpiryTimer();
-	if (typeof window === 'undefined' || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) return;
-	sessionExpiryTimer = window.setTimeout(() => {
-		clearSessionUnlock();
-		setVaultUnlocked(false);
-		void callVaultWorker('lockVault', {}).catch(() => {});
-	}, expiresAt - Date.now());
-}
-
-function loadSessionUnlock(): StoredSessionUnlock | null {
+if (typeof window !== 'undefined') {
 	try {
-		const raw = sessionStorage.getItem(SESSION_UNLOCK_KEY);
-		if (!raw) return null;
-		const parsed = JSON.parse(raw) as Partial<StoredSessionUnlock> | null;
-		if (
-			!parsed ||
-			typeof parsed.sessionUnwrapKey !== 'string' ||
-			typeof parsed.wrappedMasterKey !== 'string' ||
-			typeof parsed.expiresAt !== 'number'
-		) return null;
-		if (parsed.expiresAt <= Date.now()) {
-			clearSessionUnlock();
-			return null;
-		}
-		scheduleSessionExpiry(parsed.expiresAt);
-		return parsed as StoredSessionUnlock;
+		window.sessionStorage.removeItem('arkive:vault-session:v1');
 	} catch {
-		return null;
+		// Ignore unavailable browser storage; the vault no longer depends on it.
 	}
 }
 
-function storeSessionUnlock(sessionUnwrapKey: string, wrappedMasterKey: string): StoredSessionUnlock {
-	const session = {
-		sessionUnwrapKey,
-		wrappedMasterKey,
-		expiresAt: Date.now() + SESSION_UNLOCK_TTL_MS
-	};
-	try {
-		sessionStorage.setItem(SESSION_UNLOCK_KEY, JSON.stringify(session));
-		scheduleSessionExpiry(session.expiresAt);
-	} catch {
-		// The in-memory vault remains unlocked when session storage is unavailable.
-	}
-	return session;
+function clearIdleTimer(): void {
+	if (idleTimer !== undefined && typeof window !== 'undefined') window.clearTimeout(idleTimer);
+	idleTimer = undefined;
 }
 
-export function clearSessionUnlock(): void {
-	clearSessionExpiryTimer();
-	try {
-		sessionStorage.removeItem(SESSION_UNLOCK_KEY);
-	} catch {
-		// Clearing the vault does not depend on session storage being available.
-	}
-}
-
-async function createSessionUnlock(): Promise<Pick<StoredSessionUnlock, 'sessionUnwrapKey' | 'wrappedMasterKey'>> {
-	const sessionUnwrapKey = new Uint8Array(32);
-	window.crypto.getRandomValues(sessionUnwrapKey);
-	const encodedSessionKey = toBase64(sessionUnwrapKey);
-	const transferKey = new Uint8Array(sessionUnwrapKey);
-	try {
-		const result = await callVaultWorker(
-			'createSessionUnlock',
-			{ sessionUnwrapKey: transferKey.buffer, aad: 'arkive:session-master-key:v1' },
-			[transferKey.buffer]
-		);
-		return { sessionUnwrapKey: encodedSessionKey, wrappedMasterKey: result.wrappedMasterKey };
-	} finally {
-		sessionUnwrapKey.fill(0);
-		if (transferKey.byteLength) transferKey.fill(0);
-	}
-}
-
-async function restoreSessionUnlock(): Promise<VaultState> {
-	const stored = loadSessionUnlock();
-	if (!stored) {
-		setVaultUnlocked(false);
-		return { unlocked: false };
-	}
-	try {
-		const result = await callVaultWorker('restoreSessionUnlock', {
-			sessionUnwrapKey: stored.sessionUnwrapKey,
-			wrappedMasterKey: stored.wrappedMasterKey,
-			aad: 'arkive:session-master-key:v1'
-		});
-		setVaultUnlocked(result.unlocked);
-		if (result.unlocked) storeSessionUnlock(stored.sessionUnwrapKey, stored.wrappedMasterKey);
-		return result;
-	} catch (error) {
-		clearSessionUnlock();
-		setVaultUnlocked(false);
-		throw error;
-	}
+function scheduleIdleLock(): void {
+	clearIdleTimer();
+	if (typeof window === 'undefined') return;
+	idleTimer = window.setTimeout(() => {
+		void lockVault().catch(() => {});
+	}, VAULT_IDLE_TIMEOUT_MS);
 }
 
 export function touchSessionUnlock(): void {
-	const stored = loadSessionUnlock();
-	if (stored) storeSessionUnlock(stored.sessionUnwrapKey, stored.wrappedMasterKey);
+	if (get(vaultUnlocked)) scheduleIdleLock();
 }
 
 export function waitUntilReady(): Promise<VaultState> {
-	if (!restorePromise) restorePromise = restoreSessionUnlock().catch(() => ({ unlocked: false }));
-	return restorePromise;
+	return Promise.resolve({ unlocked: get(vaultUnlocked) });
 }
 
-export async function unlockVault(password: string, salt: string, encryptedMasterKey: string): Promise<VaultState> {
+export async function unlockVault(exportKey: ArrayBuffer, salt: string, encryptedMasterKey: string): Promise<VaultState> {
 	const result = await callVaultWorker('unlockVault', {
-		password,
+		exportKey,
 		salt,
 		encryptedMasterKey,
 		aad: 'arkive:master-key:v1'
-	});
+	}, [exportKey]);
 	setVaultUnlocked(result.unlocked);
-	restorePromise = Promise.resolve(result);
+	if (result.unlocked) scheduleIdleLock();
+	else clearIdleTimer();
 	return result;
-}
-
-export async function persistSessionUnlock(): Promise<Pick<StoredSessionUnlock, 'sessionUnwrapKey' | 'wrappedMasterKey'>> {
-	const session = await createSessionUnlock();
-	storeSessionUnlock(session.sessionUnwrapKey, session.wrappedMasterKey);
-	restorePromise = Promise.resolve({ unlocked: true });
-	return session;
 }
 
 export async function lockVault(): Promise<VaultState> {
-	clearSessionUnlock();
-	const result = await callVaultWorker('lockVault', {});
-	setVaultUnlocked(false);
-	return result;
+	clearIdleTimer();
+	try {
+		return await callVaultWorker('lockVault', {});
+	} finally {
+		setVaultUnlocked(false);
+	}
 }
 
-export async function unlockForLogin(password: string, salt: string, encryptedMasterKey: string): Promise<void> {
-	await unlockVault(password, salt, encryptedMasterKey);
-	await persistSessionUnlock();
+export async function unlockForLogin(exportKey: ArrayBuffer, salt: string, encryptedMasterKey: string): Promise<void> {
+	await unlockVault(exportKey, salt, encryptedMasterKey);
 }

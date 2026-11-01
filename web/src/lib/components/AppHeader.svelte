@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
-	import { Bell, CircleUser, Lock, Menu, Search } from '@lucide/svelte';
+	import { Bell, CircleUser, Lock, Menu, Search, Unlock } from '@lucide/svelte';
 	import { logoutAndLock } from '#lib/auth.ts';
 	import Dropdown from '#lib/components/Dropdown.svelte';
 	import { useTransferManager } from '#lib/transfers/manager.ts';
@@ -12,11 +12,13 @@
 		mobileView: boolean;
 		mobileOpen: boolean;
 		desktopCollapsed: boolean;
+		vaultUnlocked: boolean;
 		onToggleSidebar: () => void;
+		onToggleVault: () => void;
 		onOpenSearch: () => void;
 	};
 
-	let { user, mobileView, mobileOpen, desktopCollapsed, onToggleSidebar, onOpenSearch }: Props = $props();
+	let { user, mobileView, mobileOpen, desktopCollapsed, vaultUnlocked, onToggleSidebar, onToggleVault, onOpenSearch }: Props = $props();
 	const transfers = useTransferManager();
 	const queryClient = useQueryClient();
 	const logoutMutation = createMutation(() => ({
@@ -67,8 +69,12 @@
 		</div>
 
 		<div class="ml-auto flex items-center gap-3">
-			<button class="inline-flex size-9 cursor-pointer items-center justify-center rounded bg-transparent p-0 text-(--muted) transition-colors hover:bg-(--surface-raised) hover:text-(--text)" type="button" id="app-lock-trigger" aria-label="Lock vault">
-				<Lock class="size-5 stroke-2" aria-hidden="true" />
+			<button class="inline-flex size-9 cursor-pointer items-center justify-center rounded bg-transparent p-0 text-(--muted) transition-colors hover:bg-(--surface-raised) hover:text-(--text)" type="button" id="app-lock-trigger" aria-label={vaultUnlocked ? 'Lock vault' : 'Unlock vault'} title={vaultUnlocked ? 'Lock vault' : 'Unlock vault'} onclick={onToggleVault}>
+				{#if vaultUnlocked}
+					<Lock class="size-5 stroke-2" aria-hidden="true" />
+				{:else}
+					<Unlock class="size-5 stroke-2" aria-hidden="true" />
+				{/if}
 			</button>
 			<a class="inline-flex size-9 items-center justify-center rounded text-(--muted) transition-colors hover:bg-(--surface-raised) hover:text-(--text)" href="/#recent-activity" aria-label="Jump to recent activity">
 				<Bell class="size-5 stroke-2" aria-hidden="true" />

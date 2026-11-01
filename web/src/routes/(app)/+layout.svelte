@@ -1,10 +1,13 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import AppHeader from '#lib/components/AppHeader.svelte';
 	import AppSidebar from '#lib/components/AppSidebar.svelte';
 	import SearchPalette from '#lib/components/SearchPalette.svelte';
-	import { waitUntilReady } from '#lib/vault/session.ts';
+	import { lockVault, waitUntilReady } from '#lib/vault/session.ts';
+	import { vaultUnlocked } from '#lib/vault/state.ts';
+	import { toast } from '#lib/toast.ts';
 	import type { LayoutProps } from './$types';
 
 	let { data, children }: LayoutProps = $props();
@@ -12,6 +15,7 @@
 	let mobileOpen = $state(false);
 	let desktopCollapsed = $state(false);
 	let searchOpen = $state(false);
+	let vaultReady = $state(false);
 
 	function setMobileOpen(open: boolean) {
 		mobileOpen = open;
@@ -36,8 +40,25 @@
 		searchOpen = false;
 	}
 
+	async function toggleVault(): Promise<void> {
+		if ($vaultUnlocked) {
+			try {
+				await lockVault();
+			} catch {
+				toast.error('Could not lock the vault.');
+			}
+		}
+		await goto('/lock', { replaceState: true });
+	}
+
+	$effect(() => {
+		if (vaultReady && !$vaultUnlocked && page.url.pathname !== '/lock') {
+			void goto('/lock', { replaceState: true });
+		}
+	});
+
 	onMount(() => {
-		void waitUntilReady();
+		void waitUntilReady().then(() => (vaultReady = true));
 		const media = window.matchMedia('(max-width: 960px)');
 		const syncView = () => {
 			mobileView = media.matches;
@@ -69,7 +90,9 @@
 		{mobileView}
 		{mobileOpen}
 		{desktopCollapsed}
+		vaultUnlocked={$vaultUnlocked}
 		onToggleSidebar={toggleSidebar}
+		onToggleVault={toggleVault}
 		onOpenSearch={openSearch}
 	/>
 	<SearchPalette open={searchOpen} vaultId={data.user.id} onOpen={openSearch} onClose={closeSearch} />

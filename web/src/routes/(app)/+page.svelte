@@ -41,7 +41,7 @@
 	$effect(() => {
 		if ($vaultUnlocked) return;
 		recentFiles = dashboard.recentFiles.map((file) => ({ ...file, name: '', hydrated: false }));
-		vaultError = dashboard.recentFiles.length ? 'Unlock your vault to view file names and sizes.' : '';
+		vaultError = dashboard.recentFiles.length ? 'Unlock your vault from the header to view file names and sizes.' : '';
 	});
 
 	async function hydrateRecentFiles(files = dashboard.recentFiles): Promise<void> {
@@ -50,7 +50,7 @@
 		vaultError = '';
 
 		if (!(await waitUntilReady()).unlocked) {
-			vaultError = 'Unlock your vault to view file names and sizes.';
+			vaultError = 'Unlock your vault from the header to view file names and sizes.';
 			return;
 		}
 
