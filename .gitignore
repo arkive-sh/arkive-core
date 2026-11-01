@@ -5,6 +5,7 @@
 .DS_Store
 coverage.out
 node_modules/
+/rust/**/target/
 web/.svelte-kit/
 web/build/
 playwright/.auth/
