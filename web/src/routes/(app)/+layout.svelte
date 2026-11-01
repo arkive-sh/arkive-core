@@ -95,7 +95,7 @@
 		onToggleVault={toggleVault}
 		onOpenSearch={openSearch}
 	/>
-	<SearchPalette open={searchOpen} vaultId={data.user.id} onOpen={openSearch} onClose={closeSearch} />
+	<SearchPalette open={searchOpen} vaultUnlocked={$vaultUnlocked} vaultId={data.user.id} onOpen={openSearch} onClose={closeSearch} />
 	<AppSidebar
 		currentPath={page.url.pathname}
 		{mobileView}

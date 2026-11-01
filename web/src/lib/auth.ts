@@ -23,6 +23,9 @@ export async function loginAndUnlock(email: string, password: string): Promise<v
 }
 
 export async function logoutAndLock(): Promise<void> {
-	await api.post('/api/auth/logout');
-	await lockVault();
+	try {
+		await lockVault();
+	} finally {
+		await api.post('/api/auth/logout');
+	}
 }

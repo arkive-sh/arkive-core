@@ -34,7 +34,7 @@
 			shares?: SearchAPIItem[];
 		};
 	};
-	type Props = { open: boolean; vaultId: string; onOpen: () => void; onClose: () => void };
+	type Props = { open: boolean; vaultUnlocked: boolean; vaultId: string; onOpen: () => void; onClose: () => void };
 
 	const SETTINGS = [
 		{ id: 'settings-0', title: 'Instance Overview', terms: ['instance overview', 'instance', 'admin', 'email', 'storage', 'usage'], url: '/settings#settings-account', meta: 'Settings' },
@@ -42,7 +42,7 @@
 		{ id: 'settings-2', title: 'Security', terms: ['security', 'authentication', 'session', 'hardening'], url: '/settings#settings-security', meta: 'Settings' }
 	];
 
-	let { open, vaultId, onOpen, onClose }: Props = $props();
+	let { open, vaultUnlocked, vaultId, onOpen, onClose }: Props = $props();
 	const queryClient = useQueryClient();
 	let query = $state('');
 	let results = $state<SearchResult[]>([]);
@@ -95,6 +95,29 @@
 	function clearThumbnails() {
 		thumbnailURLs.forEach((url) => URL.revokeObjectURL(url));
 		thumbnailURLs.clear();
+	}
+
+	function clearSearchState() {
+		if (searchTimer !== undefined) window.clearTimeout(searchTimer);
+		searchTimer = undefined;
+		abortController?.abort();
+		abortController = undefined;
+
+		void queryClient.cancelQueries({ queryKey: ['search', vaultId] });
+
+		latestQuery = '';
+		query = '';
+		results = [];
+		loading = false;
+		hasSearched = false;
+		activeIndex = 0;
+
+		clearThumbnails();
+	}
+
+	function closeSearch() {
+		clearSearchState();
+		onClose();
 	}
 
 	async function hydrateThumbnails(items: SearchResult[], query: string, signal: AbortSignal) {
@@ -237,7 +260,7 @@
 		} else if (event.key === 'Enter' && results[activeIndex]) {
 			event.preventDefault();
 			const result = results[activeIndex];
-			onClose();
+			closeSearch();
 			void goto(result.url);
 		}
 	}
@@ -250,6 +273,12 @@
 	}
 
 	$effect(() => {
+		if (!vaultUnlocked) {
+			clearSearchState();
+			queryClient.removeQueries({ queryKey: ['search', vaultId] });
+			if (open) onClose();
+			return;
+		}
 		if (!open) return;
 		query = '';
 		results = [];
@@ -267,11 +296,7 @@
 		});
 		return () => {
 			window.cancelAnimationFrame(frame);
-			if (searchTimer !== undefined) window.clearTimeout(searchTimer);
-			abortController?.abort();
-			void queryClient.cancelQueries({ queryKey: ['search', vaultId] });
-			latestQuery = '';
-			clearThumbnails();
+			clearSearchState();
 		};
 	});
 </script>
@@ -281,7 +306,7 @@
 <Modal
 	{open}
 	label="Search vault"
-	onClose={onClose}
+	onClose={closeSearch}
 	backdropClass="items-start! bg-[rgba(11,15,20,0.8)]! px-6! pt-18! pb-6! backdrop-blur-sm max-[640px]:items-start! max-[720px]:px-2.5! max-[720px]:pt-24! max-[720px]:pb-2.5!"
 	dialogClass="w-[min(952px,100%)]! rounded-xl! bg-[rgba(27,32,36,0.96)]! shadow-[0_28px_60px_rgba(0,0,0,0.42)]! backdrop-blur-xl!"
 	bodyClass="gap-0! p-0!"
@@ -317,7 +342,7 @@
 							id={`search-result-${index}`}
 							href={result.url}
 							class={`group flex items-center justify-between gap-4 rounded-md px-3.5 py-3.5 ${index === activeIndex ? 'bg-(--accent) text-(--accent-ink)' : 'text-(--text) hover:bg-(--accent) hover:text-(--accent-ink)'}`}
-							onclick={onClose}
+							onclick={closeSearch}
 						>
 							<span class="flex min-w-0 items-center gap-3.5">
 								<span class="inline-flex size-8 shrink-0 items-center justify-center overflow-hidden rounded border border-[rgba(62,72,79,0.85)] bg-[rgba(48,53,57,0.42)] text-xs uppercase group-hover:text-(--accent-ink)">
@@ -342,7 +367,7 @@
 				<div class="grid gap-0.5">
 					{#each shareResults as result (result.kind + ':' + result.id)}
 						{@const index = results.indexOf(result)}
-						<a id={`search-result-${index}`} href={result.url} class={`group flex items-center justify-between gap-4 rounded-md px-3.5 py-3.5 ${index === activeIndex ? 'bg-(--accent) text-(--accent-ink)' : 'text-(--text) hover:bg-(--accent) hover:text-(--accent-ink)'}`} onclick={onClose}>
+						<a id={`search-result-${index}`} href={result.url} class={`group flex items-center justify-between gap-4 rounded-md px-3.5 py-3.5 ${index === activeIndex ? 'bg-(--accent) text-(--accent-ink)' : 'text-(--text) hover:bg-(--accent) hover:text-(--accent-ink)'}`} onclick={closeSearch}>
 							<span class="flex min-w-0 items-center gap-3.5"><span class="inline-flex size-8 shrink-0 items-center justify-center rounded border border-[rgba(62,72,79,0.85)] bg-[rgba(48,53,57,0.42)] text-xs uppercase group-hover:text-(--accent-ink)">S</span><span class="grid min-w-0 gap-1"><span class="truncate text-[15px] leading-5">{result.title}</span>{#if result.meta}<span class="truncate text-[13px] leading-4 text-(--muted) group-hover:text-[rgba(0,53,74,0.78)]">{result.meta}</span>{/if}</span></span>
 							{#if result.status}<span class="text-xs font-bold text-(--muted) uppercase group-hover:text-[rgba(0,53,74,0.78)]">{result.status}</span>{/if}
 						</a>
@@ -356,7 +381,7 @@
 				<div class="grid gap-0.5">
 					{#each settingsResults as result (result.id)}
 						{@const index = results.indexOf(result)}
-						<a id={`search-result-${index}`} href={result.url} class={`group flex items-center justify-between gap-4 rounded-md px-3.5 py-3.5 ${index === activeIndex ? 'bg-(--accent) text-(--accent-ink)' : 'text-(--text) hover:bg-(--accent) hover:text-(--accent-ink)'}`} onclick={onClose}>
+						<a id={`search-result-${index}`} href={result.url} class={`group flex items-center justify-between gap-4 rounded-md px-3.5 py-3.5 ${index === activeIndex ? 'bg-(--accent) text-(--accent-ink)' : 'text-(--text) hover:bg-(--accent) hover:text-(--accent-ink)'}`} onclick={closeSearch}>
 							<span class="flex min-w-0 items-center gap-3.5"><span class="inline-flex size-8 shrink-0 items-center justify-center rounded border border-[rgba(62,72,79,0.85)] bg-[rgba(48,53,57,0.42)] text-xs uppercase group-hover:text-(--accent-ink)">C</span><span class="grid min-w-0 gap-1"><span class="truncate text-[15px] leading-5">{result.title}</span>{#if result.meta}<span class="truncate text-[13px] leading-4 text-(--muted) group-hover:text-[rgba(0,53,74,0.78)]">{result.meta}</span>{/if}</span></span>
 							{#if result.status}<span class="text-xs font-bold text-(--muted) uppercase group-hover:text-[rgba(0,53,74,0.78)]">{result.status}</span>{/if}
 						</a>
