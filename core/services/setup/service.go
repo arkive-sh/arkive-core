@@ -11,20 +11,22 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"golang.org/x/crypto/bcrypt"
 
 	"arkive/core/database"
 	"arkive/core/models"
+	"arkive/core/opaque"
 	authrepo "arkive/core/repositories/auth"
 	settingsrepo "arkive/core/repositories/settings"
 	usersrepo "arkive/core/repositories/users"
 	settingssvc "arkive/core/services/settings"
+	"arkive/pkg/opaqueffi"
 	"arkive/pkg/tokens"
 	"arkive/pkg/validation"
 )
 
 var ErrAlreadyInitialized = errors.New("instance already initialized")
 var ErrInvalidRecoverySetup = errors.New("invalid recovery key setup")
+var ErrInvalidRegistrationInput = errors.New("invalid registration input")
 
 var usernamePattern = regexp.MustCompile(`^[A-Za-z0-9]+$`)
 
@@ -33,27 +35,43 @@ type Service struct {
 	authRepo     *authrepo.Repository
 	userRepo     *usersrepo.Repository
 	settingsRepo *settingsrepo.Repository
+	opaqueSetup  string
 }
 
 type InitialAdminInput struct {
-	Name               string
-	Username           string
-	Email              string
-	Password           string
-	ConfirmPassword    string
-	VaultSalt          []byte
-	EncryptedMasterKey []byte
-	Storage            models.StorageSettings
-	LocalStorageGB     string
+	Name                     string
+	Username                 string
+	Email                    string
+	OpaqueRegistrationRecord []byte
+	VaultSalt                []byte
+	EncryptedMasterKey       []byte
+	Storage                  models.StorageSettings
+	LocalStorageGB           string
 }
 
-func NewService(db database.PgPool, authRepo *authrepo.Repository, userRepo *usersrepo.Repository, settingsRepo *settingsrepo.Repository) *Service {
+func NewService(db database.PgPool, authRepo *authrepo.Repository, userRepo *usersrepo.Repository, settingsRepo *settingsrepo.Repository, opaqueSetup string) *Service {
 	return &Service{
 		db:           db,
 		authRepo:     authRepo,
 		userRepo:     userRepo,
 		settingsRepo: settingsRepo,
+		opaqueSetup:  opaqueSetup,
 	}
+}
+
+func (s *Service) StartOpaqueRegistration(ctx context.Context, username string, request []byte) (*opaqueffi.Buffer, error) {
+	username = strings.TrimSpace(username)
+	if username == "" || utf8.RuneCountInString(username) < 3 || utf8.RuneCountInString(username) > 20 || !usernamePattern.MatchString(username) {
+		return nil, ErrInvalidRegistrationInput
+	}
+	initialized, err := s.IsInitialized(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if initialized {
+		return nil, ErrAlreadyInitialized
+	}
+	return opaque.RegistrationResponse(s.opaqueSetup, strings.ToLower(username), request)
 }
 
 func (s *Service) IsInitialized(ctx context.Context) (bool, error) {
@@ -68,11 +86,12 @@ func (s *Service) CreateInitialAdmin(ctx context.Context, input InitialAdminInpu
 	input.Name = strings.TrimSpace(input.Name)
 	input.Username = strings.TrimSpace(input.Username)
 	input.Email = strings.TrimSpace(input.Email)
-	input.Password = strings.TrimSpace(input.Password)
-	input.ConfirmPassword = strings.TrimSpace(input.ConfirmPassword)
 	input.Storage = settingssvc.NormalizeStorageSettings(input.Storage)
 
-	validationErrors := validateAdminInput(input.Name, input.Username, input.Email, input.Password, input.ConfirmPassword)
+	validationErrors := validateAdminInput(input.Name, input.Username, input.Email)
+	if len(input.OpaqueRegistrationRecord) == 0 {
+		validationErrors.Add(validation.GeneralKey, "password registration is missing")
+	}
 	if len(input.VaultSalt) != 16 {
 		validationErrors.Add(validation.GeneralKey, "vault salt is missing or invalid")
 	}
@@ -83,6 +102,12 @@ func (s *Service) CreateInitialAdmin(ctx context.Context, input InitialAdminInpu
 	if validationErrors.HasAny() {
 		return models.User{}, validationErrors, nil
 	}
+	registrationRecord, err := opaque.FinishRegistration(input.OpaqueRegistrationRecord)
+	if err != nil {
+		validationErrors.Add(validation.GeneralKey, "password registration is invalid")
+		return models.User{}, validationErrors, nil
+	}
+	defer registrationRecord.Close()
 
 	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -100,12 +125,7 @@ func (s *Service) CreateInitialAdmin(ctx context.Context, input InitialAdminInpu
 		return models.User{}, nil, ErrAlreadyInitialized
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
-	if err != nil {
-		return models.User{}, nil, err
-	}
-
-	user, err := s.authRepo.CreateVerifiedUser(ctx, tx, input.Name, input.Username, input.Email, string(hash), input.VaultSalt, input.EncryptedMasterKey)
+	user, err := s.authRepo.CreateVerifiedUser(ctx, tx, input.Name, input.Username, input.Email, registrationRecord.Bytes(), input.VaultSalt, input.EncryptedMasterKey)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -194,7 +214,7 @@ func (s *Service) SaveRecoveryWrappedMasterKey(ctx context.Context, token string
 	return tx.Commit(ctx)
 }
 
-func validateAdminInput(name, username, email, password, confirmPassword string) validation.Errors {
+func validateAdminInput(name, username, email string) validation.Errors {
 	validationErrors := validation.New()
 	if name == "" {
 		validationErrors.Add("name", "name is required")
@@ -217,27 +237,5 @@ func validateAdminInput(name, username, email, password, confirmPassword string)
 		validationErrors.Add("email", "email is required")
 	}
 
-	if password == "" {
-		validationErrors.Add("password", "password is required")
-	}
-	if confirmPassword == "" {
-		validationErrors.Add("confirm_password", "confirm password is required")
-	}
-
-	if password != "" {
-		switch validation.PasswordIssueFor(password) {
-		case validation.PasswordTooShort:
-			validationErrors.Add("password", "password must be at least 8 characters")
-		case validation.PasswordMissingLower:
-			validationErrors.Add("password", "password must include a lowercase letter")
-		case validation.PasswordMissingUpper:
-			validationErrors.Add("password", "password must include an uppercase letter")
-		case validation.PasswordMissingSymbol:
-			validationErrors.Add("password", "password must include a symbol")
-		}
-	}
-	if password != "" && confirmPassword != "" && password != confirmPassword {
-		validationErrors.Add("confirm_password", "passwords do not match")
-	}
 	return validationErrors
 }

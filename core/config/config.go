@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"arkive/core/opaque"
 )
 
 type Config struct {
@@ -15,6 +17,7 @@ type Config struct {
 	BaseURL               string
 	CORSAllowedOrigins    []string
 	CookieSecret          string
+	OpaqueServerSetup     string
 	Env                   string
 }
 
@@ -35,6 +38,13 @@ func Load() (Config, error) {
 	cookieSecret := os.Getenv("COOKIE_SECRET")
 	if cookieSecret == "" {
 		return Config{}, errors.New("COOKIE_SECRET is required")
+	}
+	opaqueServerSetup := strings.TrimSpace(os.Getenv("OPAQUE_SERVER_SETUP"))
+	if opaqueServerSetup == "" {
+		return Config{}, errors.New("OPAQUE_SERVER_SETUP is required; generate one with `make opaque-setup`")
+	}
+	if err := opaque.ValidateSetup(opaqueServerSetup); err != nil {
+		return Config{}, errors.New("OPAQUE_SERVER_SETUP is invalid; generate one with `make opaque-setup`")
 	}
 
 	addr := ":8080"
@@ -70,6 +80,7 @@ func Load() (Config, error) {
 		BaseURL:               baseURL,
 		CORSAllowedOrigins:    corsAllowedOrigins,
 		CookieSecret:          cookieSecret,
+		OpaqueServerSetup:     opaqueServerSetup,
 		Env:                   env,
 	}, nil
 }

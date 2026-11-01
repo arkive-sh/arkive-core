@@ -6,7 +6,7 @@ CREATE TABLE users (
   name TEXT NOT NULL,
   username CITEXT NOT NULL,
   email CITEXT NOT NULL,
-  password_hash TEXT,
+  opaque_registration_record BYTEA NOT NULL,
   vault_salt BYTEA,
   encrypted_master_key BYTEA,
   used_bytes BIGINT NOT NULL DEFAULT 0,
@@ -50,7 +50,8 @@ CREATE TRIGGER users_username_immutable
 
 
 CREATE TABLE sessions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- The cookie is a bearer secret; only its SHA-256 digest belongs in the database.
+  token_hash BYTEA PRIMARY KEY CHECK (octet_length(token_hash) = 32),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   expires_at TIMESTAMPTZ NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -58,6 +59,17 @@ CREATE TABLE sessions (
 
 CREATE INDEX sessions_user_id_idx ON sessions (user_id);
 CREATE INDEX sessions_expires_at_idx ON sessions (expires_at);
+
+CREATE TABLE opaque_login_attempts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  -- Application code stores this OPAQUE state encrypted and authenticated.
+  server_state BYTEA NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX opaque_login_attempts_expires_at_idx ON opaque_login_attempts (expires_at);
 
 CREATE TABLE instance_settings (
   key TEXT PRIMARY KEY,

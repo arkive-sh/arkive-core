@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/base64"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -17,11 +18,43 @@ type forgotPasswordRequest struct {
 }
 
 type completePasswordResetRequest struct {
-	Token              string `json:"token"`
-	NewPassword        string `json:"newPassword"`
-	VaultSalt          string `json:"vaultSalt"`
-	EncryptedMasterKey string `json:"encryptedMasterKey"`
-	RecoveryProof      string `json:"recoveryProof"`
+	Token                    string `json:"token"`
+	OpaqueRegistrationRecord string `json:"opaqueRegistrationRecord"`
+	VaultSalt                string `json:"vaultSalt"`
+	EncryptedMasterKey       string `json:"encryptedMasterKey"`
+	RecoveryProof            string `json:"recoveryProof"`
+}
+
+type startPasswordResetRegistrationRequest struct {
+	Token               string `json:"token"`
+	RegistrationRequest string `json:"registrationRequest"`
+}
+
+func APIStartPasswordResetRegistration(svc *auth.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req startPasswordResetRegistrationRequest
+		if err := c.ShouldBindJSON(&req); err != nil || len(req.RegistrationRequest) == 0 || len(req.RegistrationRequest) > 2048 {
+			apierror.InvalidPayload(c)
+			return
+		}
+		registrationRequest, err := base64.RawURLEncoding.DecodeString(req.RegistrationRequest)
+		if err != nil {
+			apierror.InvalidPayload(c)
+			return
+		}
+		response, err := svc.StartPasswordResetRegistration(c.Request.Context(), req.Token, registrationRequest)
+		if err != nil {
+			if errors.Is(err, auth.ErrPasswordResetToken) {
+				apierror.Write(c, http.StatusBadRequest, "password_reset_token_invalid", auth.ErrPasswordResetToken.Error(), nil)
+				return
+			}
+			_ = c.Error(errs.WithStack(err))
+			apierror.Internal(c, "Password reset failed")
+			return
+		}
+		defer response.Close()
+		c.JSON(http.StatusOK, gin.H{"registrationResponse": base64.RawURLEncoding.EncodeToString(response.Bytes())})
+	}
 }
 
 func APIForgotPassword(svc *auth.Service) gin.HandlerFunc {
@@ -84,6 +117,16 @@ func APICompletePasswordReset(svc *auth.Service) gin.HandlerFunc {
 			return
 		}
 
+		registrationRecordValue := strings.TrimSpace(req.OpaqueRegistrationRecord)
+		if len(registrationRecordValue) == 0 || len(registrationRecordValue) > 2048 {
+			apierror.InvalidPayload(c)
+			return
+		}
+		registrationRecord, err := base64.RawURLEncoding.DecodeString(registrationRecordValue)
+		if err != nil || len(registrationRecord) == 0 {
+			apierror.InvalidPayload(c)
+			return
+		}
 		vaultSalt, err := base64.StdEncoding.DecodeString(strings.TrimSpace(req.VaultSalt))
 		if err != nil {
 			apierror.InvalidPayload(c)
@@ -103,7 +146,7 @@ func APICompletePasswordReset(svc *auth.Service) gin.HandlerFunc {
 		validationErrors, err := svc.CompletePasswordRecovery(
 			c.Request.Context(),
 			req.Token,
-			req.NewPassword,
+			registrationRecord,
 			vaultSalt,
 			encryptedMasterKey,
 			recoveryProof,

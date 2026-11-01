@@ -178,6 +178,9 @@ For local dev, keep these values:
 - `DATABASE_URL=postgres://devuser:devpassword123!@localhost:5132/arkive_dev?sslmode=disable`
 - `COOKIE_SECRET`
 - `SESSION_TTL`
+- `OPAQUE_SERVER_SETUP` (generate once with `make opaque-setup` and save the output)
+
+Keep `OPAQUE_SERVER_SETUP` private and stable. Changing it invalidates existing password registrations.
 
 ### Start PostgreSQL
 
@@ -229,6 +232,9 @@ Set these values in `.env`:
 - `BASE_URL=https://your-domain.com`
 - `COOKIE_SECRET` to strong random secret
 - `SESSION_TTL` to desired duration
+- `OPAQUE_SERVER_SETUP` generated once with `make opaque-setup`
+
+Keep the OPAQUE setup private and stable; replacing it makes existing accounts unable to authenticate.
 
 Keep PostgreSQL private. App container uses `db:5432` over Docker network.
 

@@ -165,7 +165,7 @@ func (r *Repository) FindByPasswordResetTokenHash(
 ) (*models.User, error) {
 	var user models.User
 	query := `SELECT
-		id, email, vault_salt, encrypted_master_key_recovery,
+		id, username, email, vault_salt, encrypted_master_key_recovery,
 		recovery_proof_public_key,
 		password_reset_token_expires_at, password_reset_consumed_at
 	FROM
@@ -177,6 +177,7 @@ func (r *Repository) FindByPasswordResetTokenHash(
 		AND password_reset_consumed_at IS NULL`
 	if err := db.QueryRow(ctx, query, tokenHash).Scan(
 		&user.ID,
+		&user.Username,
 		&user.Email,
 		&user.VaultSalt,
 		&user.EncryptedMasterKeyRecovery,
@@ -194,14 +195,14 @@ func (r *Repository) CompletePasswordRecovery(
 	tx pgx.Tx,
 	userID string,
 	resetTokenHash string,
-	newPasswordHash string,
+	newOpaqueRegistrationRecord []byte,
 	newVaultSalt []byte,
 	newEncryptedMasterKey []byte,
 ) error {
 	query := `UPDATE
 		users
 	SET
-		password_hash = $2,
+		opaque_registration_record = $2,
 		vault_salt = $3,
 		encrypted_master_key = $4,
 		password_reset_consumed_at = now(),
@@ -214,7 +215,7 @@ func (r *Repository) CompletePasswordRecovery(
 		AND password_reset_token_expires_at IS NOT NULL
 		AND password_reset_token_expires_at > now()
 		AND password_reset_consumed_at IS NULL`
-	cmd, err := tx.Exec(ctx, query, userID, newPasswordHash, newVaultSalt, newEncryptedMasterKey, resetTokenHash)
+	cmd, err := tx.Exec(ctx, query, userID, newOpaqueRegistrationRecord, newVaultSalt, newEncryptedMasterKey, resetTokenHash)
 	if err != nil {
 		return err
 	}

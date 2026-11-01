@@ -11,8 +11,8 @@ import (
 
 const SessionName = "arkive_session"
 
-func SetSession(c *gin.Context, sessionID string, expiresAt time.Time) {
-	SetCustom(c, SessionName, sessionID, expiresAt)
+func SetSession(c *gin.Context, sessionToken string, expiresAt time.Time) {
+	SetCustom(c, SessionName, sessionToken, expiresAt)
 }
 
 func ClearSession(c *gin.Context) {
