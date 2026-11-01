@@ -10,7 +10,6 @@ import (
 
 const encryptedChunkEnvelopeOverheadBytes int64 = 41
 const thumbnailMaxEncryptedBytes int64 = 150 * 1024
-const thumbnailMimeWebP = "image/webp"
 
 func validateUserID(userID string) (string, error) {
 	userID = strings.TrimSpace(userID)
@@ -50,8 +49,19 @@ func encryptedFileSize(plaintextSize int64, chunkCount int) int64 {
 	return plaintextSize + int64(chunkCount)*encryptedChunkEnvelopeOverheadBytes
 }
 
-func reservedUploadSize(plaintextSize int64, chunkCount int) int64 {
-	return encryptedFileSize(plaintextSize, chunkCount) + thumbnailMaxEncryptedBytes
+func plaintextFileSize(encryptedSize int64, chunkCount int) int64 {
+	if encryptedSize <= 0 || chunkCount <= 0 {
+		return 0
+	}
+	plaintextSize := encryptedSize - int64(chunkCount)*encryptedChunkEnvelopeOverheadBytes
+	if plaintextSize <= 0 {
+		return 0
+	}
+	return plaintextSize
+}
+
+func reservedUploadSize(encryptedSize int64) int64 {
+	return encryptedSize + thumbnailMaxEncryptedBytes
 }
 
 func expectedEncryptedPartSize(plaintextSize, chunkSize, partSize int64, partNumber int) (int64, error) {

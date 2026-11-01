@@ -74,9 +74,6 @@ type uploadCompleteRequest struct {
 	EncryptedHash     string               `json:"encryptedHash"`
 	SearchTokens      []searchTokenRequest `json:"searchTokens"`
 	HasThumbnail      bool                 `json:"hasThumbnail"`
-	ThumbnailMime     string               `json:"thumbnailMime"`
-	ThumbnailWidth    int                  `json:"thumbnailWidth"`
-	ThumbnailHeight   int                  `json:"thumbnailHeight"`
 	ThumbnailSize     int64                `json:"thumbnailSize"`
 }
 
@@ -126,10 +123,7 @@ func decodeSearchTokens(input []searchTokenRequest) ([]models.FileSearchToken, e
 }
 
 type thumbnailPresignRequest struct {
-	EncryptedSize int64  `json:"encryptedSize"`
-	Mime          string `json:"mime"`
-	Width         int    `json:"width"`
-	Height        int    `json:"height"`
+	EncryptedSize int64 `json:"encryptedSize"`
 }
 
 func APIUploadLimits(settingsService *settingssvc.Service) gin.HandlerFunc {
@@ -548,9 +542,6 @@ func uploadCompleteInput(req uploadCompleteRequest,
 		EncryptedHash:     req.EncryptedHash,
 		SearchTokens:      searchTokens,
 		HasThumbnail:      req.HasThumbnail,
-		ThumbnailMime:     req.ThumbnailMime,
-		ThumbnailWidth:    req.ThumbnailWidth,
-		ThumbnailHeight:   req.ThumbnailHeight,
 		ThumbnailSize:     req.ThumbnailSize,
 	}
 }
@@ -617,9 +608,6 @@ func APIThumbnailPresign(svc *uploads.Service) gin.HandlerFunc {
 
 		url, err := svc.PresignThumbnailUpload(c.Request.Context(), userID.(string), uploadSessionID, uploads.ThumbnailUploadInput{
 			EncryptedSize: req.EncryptedSize,
-			Mime:          req.Mime,
-			Width:         req.Width,
-			Height:        req.Height,
 		})
 		if err != nil {
 			switch err {
@@ -741,7 +729,6 @@ func APIFileRecord(svc *filessvc.Service) gin.HandlerFunc {
 			"encryptionVersion": record.EncryptionVersion,
 			"chunkSize":         record.ChunkSize,
 			"totalChunks":       record.TotalChunks,
-			"plaintextSize":     record.PlaintextSize,
 			"encryptedHash":     record.EncryptedHash,
 			"encryptedMetadata": record.EncryptedMetadata,
 			"encryptedFileKey":  record.EncryptedFileKey,

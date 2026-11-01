@@ -31,7 +31,7 @@ func (r *Repository) SearchSharesForUser(ctx context.Context, db database.PgExec
 		sl.updated_at,
 		concat('file-', left(f.id::text, 8)),
 		'application/octet-stream',
-		f.plaintext_size,
+		f.actual_encrypted_size,
 		f.updated_at
 	FROM
 		share_links sl

@@ -15,8 +15,7 @@ type StaleUpload struct {
 	FileID           string
 	UserID           string
 	ProviderUploadID string
-	PlaintextSize    int64
-	ChunkCount       int
+	EncryptedSize    int64
 }
 
 func New() *Repository {
@@ -26,14 +25,15 @@ func New() *Repository {
 func (r *Repository) CreateUploadSession(ctx context.Context, db database.PgExecutor, upload models.UploadSession) (models.UploadSession, error) {
 	var created models.UploadSession
 	query := `INSERT INTO upload_sessions
-		(file_id, provider_upload_id, upload_part_size, upload_part_count, status, expires_at)
+		(file_id, provider_upload_id, encrypted_size, upload_part_size, upload_part_count, status, expires_at)
 	VALUES
-		($1, $2, $3, $4, $5, $6)
+		($1, $2, $3, $4, $5, $6, $7)
 	RETURNING
-		id, file_id, provider_upload_id, upload_part_size, upload_part_count, status, expires_at, created_at, updated_at`
+		id, file_id, provider_upload_id, encrypted_size, upload_part_size, upload_part_count, status, expires_at, created_at, updated_at`
 	if err := db.QueryRow(ctx, query,
 		upload.FileID,
 		upload.ProviderUploadID,
+		upload.EncryptedSize,
 		upload.UploadPartSize,
 		upload.UploadPartCount,
 		upload.Status,
@@ -42,6 +42,7 @@ func (r *Repository) CreateUploadSession(ctx context.Context, db database.PgExec
 		&created.ID,
 		&created.FileID,
 		&created.ProviderUploadID,
+		&created.EncryptedSize,
 		&created.UploadPartSize,
 		&created.UploadPartCount,
 		&created.Status,
@@ -88,6 +89,7 @@ func (r *Repository) UpdateUploadSessionStatus(ctx context.Context, db database.
 		upload_sessions
 	SET
 		status = $2,
+		encrypted_size = CASE WHEN $2 IN ('active', 'failed') THEN encrypted_size ELSE 0 END,
 		updated_at = now()
 	WHERE
 		id = $1`
@@ -98,7 +100,7 @@ func (r *Repository) UpdateUploadSessionStatus(ctx context.Context, db database.
 func (r *Repository) ListExpiredActiveUploads(ctx context.Context, db database.PgExecutor, limit int) ([]StaleUpload, error) {
 	rows, err := db.Query(ctx, `SELECT
 		upload_sessions.id, upload_sessions.file_id, files.user_id,
-		COALESCE(upload_sessions.provider_upload_id, ''), files.plaintext_size, files.chunk_count
+		COALESCE(upload_sessions.provider_upload_id, ''), upload_sessions.encrypted_size
 	FROM upload_sessions
 	JOIN files ON files.id = upload_sessions.file_id
 	WHERE upload_sessions.status = 'active' AND upload_sessions.expires_at <= now()
@@ -113,7 +115,7 @@ func (r *Repository) ListExpiredActiveUploads(ctx context.Context, db database.P
 	for rows.Next() {
 		var upload StaleUpload
 		if err := rows.Scan(&upload.ID, &upload.FileID, &upload.UserID,
-			&upload.ProviderUploadID, &upload.PlaintextSize, &upload.ChunkCount); err != nil {
+			&upload.ProviderUploadID, &upload.EncryptedSize); err != nil {
 			return nil, err
 		}
 		uploads = append(uploads, upload)
@@ -123,7 +125,7 @@ func (r *Repository) ListExpiredActiveUploads(ctx context.Context, db database.P
 
 func (r *Repository) ExpireUploadSession(ctx context.Context, db database.PgExecutor, uploadSessionID string) (bool, error) {
 	tag, err := db.Exec(ctx, `UPDATE upload_sessions
-	SET status = 'expired', updated_at = now()
+	SET status = 'expired', encrypted_size = 0, updated_at = now()
 	WHERE id = $1 AND status = 'active'`, uploadSessionID)
 	return tag.RowsAffected() > 0, err
 }

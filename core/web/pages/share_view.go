@@ -24,7 +24,6 @@ type PublicShareViewProps struct {
 	SharedAt        time.Time
 	FileName        string
 	MimeType        string
-	PlaintextSize   int64
 	PreviewText     string
 	PreviewSettings models.PreviewSettings
 }

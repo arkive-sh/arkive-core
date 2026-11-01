@@ -24,7 +24,6 @@ type EncryptedFileRecord struct {
 	EncryptionVersion int16
 	ChunkSize         int64
 	TotalChunks       int
-	PlaintextSize     int64
 	EncryptedHash     string
 	EncryptedMetadata string
 	EncryptedFileKey  string
@@ -144,7 +143,7 @@ func (s *Service) PresignThumbnailDownload(ctx context.Context, userID, fileID s
 	if err != nil {
 		return "", err
 	}
-	if file.ThumbnailStatus != "complete" || file.ThumbnailSizeBytes <= 0 {
+	if file.ThumbnailSizeBytes <= 0 {
 		return "", ErrNotFound
 	}
 	objectKey, err := storage.BuildThumbnailObjectKey(userID, file.ID)
@@ -248,7 +247,6 @@ func (s *Service) GetEncryptedFileRecord(ctx context.Context, userID, fileID str
 		EncryptionVersion: file.EncryptionVersion,
 		ChunkSize:         file.ChunkSize,
 		TotalChunks:       file.ChunkCount,
-		PlaintextSize:     file.PlaintextSize,
 		EncryptedHash:     base64.StdEncoding.EncodeToString(file.EncryptedHash),
 		EncryptedMetadata: base64.StdEncoding.EncodeToString(file.EncryptedMetadata),
 		EncryptedFileKey:  base64.StdEncoding.EncodeToString(file.EncryptedFileKey),

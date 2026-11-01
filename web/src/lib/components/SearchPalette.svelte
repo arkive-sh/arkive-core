@@ -132,14 +132,25 @@
 				const bytes = await getCachedThumbnail(file.id, version, size);
 				if (!bytes?.length || signal.aborted) continue;
 				const { thumbnailBytes } = await decryptSearchThumbnail(file, bytes);
-				if (!thumbnailBytes.length || signal.aborted) continue;
-				const url = URL.createObjectURL(new Blob([Uint8Array.from(thumbnailBytes)], { type: preview.thumbnail_mime || 'image/webp' }));
-				if (latestQuery !== query) {
-					URL.revokeObjectURL(url);
-					continue;
+				try {
+					if (!thumbnailBytes.length || signal.aborted) continue;
+					const blobBytes = Uint8Array.from(thumbnailBytes);
+					let blob: Blob;
+					try {
+						blob = new Blob([blobBytes.buffer], { type: preview.thumbnail_mime || 'image/webp' });
+					} finally {
+						blobBytes.fill(0);
+					}
+					const url = URL.createObjectURL(blob);
+					if (latestQuery !== query) {
+						URL.revokeObjectURL(url);
+						continue;
+					}
+					thumbnailURLs.add(url);
+					results = results.map((result) => result.id === item.id ? { ...result, thumbnailUrl: url } : result);
+				} finally {
+					thumbnailBytes.fill(0);
 				}
-				thumbnailURLs.add(url);
-				results = results.map((result) => result.id === item.id ? { ...result, thumbnailUrl: url } : result);
 			} catch {
 				// An unavailable cached preview does not block text search results.
 			}

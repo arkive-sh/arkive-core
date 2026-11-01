@@ -2,7 +2,6 @@ export type StreamPurpose = 'preview' | 'download';
 
 export interface StreamRecord {
 	fileId: string;
-	plaintextSize: number;
 }
 
 export interface StreamMetadata {

@@ -103,32 +103,21 @@ CREATE TABLE files (
   encryption_version SMALLINT NOT NULL DEFAULT 1,
   chunk_size BIGINT NOT NULL,
   chunk_count INTEGER NOT NULL,
-  plaintext_size BIGINT NOT NULL,
   actual_encrypted_size BIGINT NOT NULL DEFAULT 0,
   encrypted_hash BYTEA,
   upload_status TEXT NOT NULL DEFAULT 'pending',
   completed_at TIMESTAMPTZ,
   expires_at TIMESTAMPTZ,
   throttle_ms INT NOT NULL DEFAULT 0,
-  thumbnail_status TEXT NOT NULL DEFAULT 'none',
   thumbnail_size_bytes BIGINT NOT NULL DEFAULT 0,
-  thumbnail_mime TEXT NOT NULL DEFAULT '',
-  thumbnail_width INTEGER NOT NULL DEFAULT 0,
-  thumbnail_height INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT files_upload_status_chk
     CHECK (upload_status IN ('pending', 'uploading', 'complete', 'failed', 'aborted')),
   CONSTRAINT files_throttle_nonnegative_chk
     CHECK (throttle_ms >= 0),
-  CONSTRAINT files_thumbnail_status_chk
-    CHECK (thumbnail_status IN ('none', 'complete', 'failed')),
   CONSTRAINT files_thumbnail_bytes_nonnegative_chk
-    CHECK (thumbnail_size_bytes >= 0),
-  CONSTRAINT files_thumbnail_width_nonnegative_chk
-    CHECK (thumbnail_width >= 0),
-  CONSTRAINT files_thumbnail_height_nonnegative_chk
-    CHECK (thumbnail_height >= 0)
+    CHECK (thumbnail_size_bytes >= 0)
 );
 
 CREATE INDEX files_user_id_idx ON files (user_id);
@@ -172,13 +161,16 @@ CREATE TABLE upload_sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   file_id UUID NOT NULL REFERENCES files(id) ON DELETE CASCADE,
   provider_upload_id TEXT,
+  encrypted_size BIGINT NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'active',
   expires_at TIMESTAMPTZ NOT NULL,
   upload_part_count INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT upload_sessions_status_chk
-    CHECK (status IN ('active', 'completed', 'aborted', 'expired', 'failed'))
+    CHECK (status IN ('active', 'completed', 'aborted', 'expired', 'failed')),
+  CONSTRAINT upload_sessions_encrypted_size_nonnegative_chk
+    CHECK (encrypted_size >= 0)
 );
 
 CREATE INDEX upload_sessions_file_id_idx ON upload_sessions (file_id);

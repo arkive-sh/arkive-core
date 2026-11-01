@@ -541,7 +541,7 @@ func (r *Repository) ListSharesForUser(ctx context.Context, db database.PgExecut
 		sl.updated_at,
 		concat('file-', left(f.id::text, 8)),
 		'application/octet-stream',
-		f.plaintext_size,
+		f.actual_encrypted_size,
 		f.updated_at
 	FROM
 		share_links sl
@@ -610,8 +610,7 @@ func (r *Repository) GetPublicShareRecord(ctx context.Context, db database.PgExe
 		f.encrypted_hash,
 		f.encryption_version,
 		f.chunk_size,
-		f.chunk_count,
-		f.plaintext_size
+		f.chunk_count
 	FROM
 		share_links sl
 	JOIN
@@ -638,7 +637,6 @@ func (r *Repository) GetPublicShareRecord(ctx context.Context, db database.PgExe
 		&record.EncryptionVersion,
 		&record.ChunkSize,
 		&record.TotalChunks,
-		&record.PlaintextSize,
 	); err != nil {
 		return models.PublicShareRecord{}, err
 	}
