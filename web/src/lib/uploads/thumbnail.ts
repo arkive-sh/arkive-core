@@ -1,8 +1,11 @@
 import { CORE_API_ORIGIN } from '$app/env/public';
+import { asset } from '$app/paths';
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { api } from '../api';
 import { encryptUploadThumbnail } from '../vault/uploads';
 import { imageMimeType, isHeicImage } from '#lib/utils/image.ts';
 import { decodeHeicImage } from '#lib/utils/heic.ts';
+import type { PdfRangeSource } from '#lib/pdf/range-transport.ts';
 
 const MAX_DIMENSION = 320;
 const WEBP_QUALITY = 0.7;
@@ -17,16 +20,16 @@ export interface GeneratedThumbnail {
 	mime: 'image/webp';
 	thumbnailWidth: number;
 	thumbnailHeight: number;
-	originalWidth: number;
-	originalHeight: number;
+	originalWidth?: number;
+	originalHeight?: number;
 }
 
 export interface UploadedThumbnail {
 	mime: 'image/webp';
 	thumbnailWidth: number;
 	thumbnailHeight: number;
-	originalWidth: number;
-	originalHeight: number;
+	originalWidth?: number;
+	originalHeight?: number;
 	encryptedSize: number;
 }
 
@@ -202,11 +205,99 @@ async function createVideoThumbnail(file: File, signal?: AbortSignal): Promise<G
 	}
 }
 
+async function createPdfThumbnail(file: File, signal?: AbortSignal): Promise<GeneratedThumbnail | null> {
+	throwIfAborted(signal);
+	const [pdfjs, { PdfRangeTransport }] = await Promise.all([
+		import('pdfjs-dist'),
+		import('#lib/pdf/range-transport.ts')
+	]);
+	throwIfAborted(signal);
+	pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+	const source: PdfRangeSource = {
+		async readRange(begin, end, rangeSignal) {
+			rangeSignal?.throwIfAborted();
+			throwIfAborted(signal);
+			const bytes = new Uint8Array(await file.slice(begin, end).arrayBuffer());
+			if (rangeSignal?.aborted || signal?.aborted) {
+				bytes.fill(0);
+				rangeSignal?.throwIfAborted();
+				throwIfAborted(signal);
+			}
+			return bytes;
+		}
+	};
+	let loadingTask: import('pdfjs-dist').PDFDocumentLoadingTask | undefined;
+	let page: import('pdfjs-dist').PDFPageProxy | undefined;
+	let renderTask: import('pdfjs-dist').RenderTask | undefined;
+	let canvas: HTMLCanvasElement | undefined;
+	let renderCompleted = false;
+	const transport = new PdfRangeTransport(file.size, source, () => {
+		void loadingTask?.destroy().catch(() => {});
+	});
+	const abort = () => {
+		transport.abort();
+		if (!renderCompleted) renderTask?.cancel();
+		void loadingTask?.destroy().catch(() => {});
+	};
+	signal?.addEventListener('abort', abort, { once: true });
+	try {
+		loadingTask = pdfjs.getDocument({
+			range: transport,
+			wasmUrl: asset('wasm/pdfjs/openjpeg.wasm').replace('openjpeg.wasm', ''),
+			rangeChunkSize: 64 * 1024,
+			disableAutoFetch: true,
+			disableStream: true,
+			enableXfa: false,
+			maxImageSize: 16 * 1024 * 1024
+		});
+		if (signal?.aborted) abort();
+		const document = await loadingTask.promise;
+		throwIfAborted(signal);
+		page = await document.getPage(1);
+		const naturalViewport = page.getViewport({ scale: 1 });
+		const scale = Math.min(1, MAX_DIMENSION / Math.max(naturalViewport.width, naturalViewport.height));
+		const viewport = page.getViewport({ scale });
+		canvas = window.document.createElement('canvas');
+		canvas.width = Math.max(1, Math.ceil(viewport.width));
+		canvas.height = Math.max(1, Math.ceil(viewport.height));
+		const context = canvas.getContext('2d', { alpha: false });
+		if (!context) return null;
+		renderTask = page.render({
+			canvas,
+			canvasContext: context,
+			viewport,
+			annotationMode: pdfjs.AnnotationMode.DISABLE
+		});
+		await renderTask.promise;
+		renderCompleted = true;
+		throwIfAborted(signal);
+		const blob = await canvasToWebP(canvas);
+		throwIfAborted(signal);
+		return {
+			bytes: new Uint8Array(await blob.arrayBuffer()),
+			mime: 'image/webp',
+			thumbnailWidth: canvas.width,
+			thumbnailHeight: canvas.height
+		};
+	} finally {
+		signal?.removeEventListener('abort', abort);
+		transport.abort();
+		if (!renderCompleted) renderTask?.cancel();
+		await loadingTask?.destroy().catch(() => {});
+		page?.cleanup();
+		if (canvas) {
+			canvas.width = 0;
+			canvas.height = 0;
+		}
+	}
+}
+
 export async function createThumbnail(file: File, signal?: AbortSignal): Promise<GeneratedThumbnail | null> {
 	const mime = file.type.toLowerCase();
 	try {
 		if (imageMimeType(file.name, mime)) return await createImageThumbnail(file, signal);
 		if (mime.startsWith('video/')) return await createVideoThumbnail(file, signal);
+		if (mime === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) return await createPdfThumbnail(file, signal);
 		return null;
 	} catch (error) {
 		if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
@@ -242,7 +333,7 @@ export async function createAndUploadThumbnail(input: UploadThumbnailInput): Pro
 		const response = await fetch(new URL(data.url, CORE_API_ORIGIN), {
 			method: 'PUT',
 			headers: { 'Content-Type': 'application/octet-stream' },
-			body: encryptedThumbnail,
+			body: encryptedThumbnail as BufferSource, // Uint8Array satisfies buffersource which in return satisfies bodyInit type. Prevents intellisense from complaining
 			signal: controller.signal
 		});
 		if (!response.ok) throw new Error(`Thumbnail upload failed (${response.status}).`);

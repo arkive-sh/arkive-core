@@ -259,7 +259,7 @@ export async function uploadFile(
 			mime,
 			extension: extension(file.name),
 			size: file.size,
-			dimensions: uploadedThumbnail
+			dimensions: uploadedThumbnail?.originalWidth && uploadedThumbnail.originalHeight
 				? { width: uploadedThumbnail.originalWidth, height: uploadedThumbnail.originalHeight }
 				: undefined,
 			created_at_client: new Date().toISOString(),

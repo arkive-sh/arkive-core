@@ -262,7 +262,11 @@
 								</button>
 							{:else if entry.kind === 'file' && isPdfFile(entry)}
 								<button class="grid aspect-4/3 w-full cursor-pointer place-items-center overflow-hidden bg-(--surface-highest)" type="button" aria-label={`Preview ${entry.name}`} onclick={() => onPreviewPdf(entry)}>
-									<FileTypeIcon name={entry.name} mime={entry.type} style={`width: ${iconSize}px; height: ${iconSize}px`} />
+									{#if thumbnails.get(entry.id)}
+										<img class="size-full object-cover" src={thumbnails.get(entry.id)} alt={entry.name} loading="lazy" decoding="async" />
+									{:else}
+										<FileTypeIcon name={entry.name} mime={entry.type} style={`width: ${iconSize}px; height: ${iconSize}px`} />
+									{/if}
 								</button>
 							{:else}
 								<div class="grid aspect-4/3 place-items-center overflow-hidden bg-(--surface-highest)">
