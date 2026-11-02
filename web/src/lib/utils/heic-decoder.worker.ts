@@ -77,7 +77,14 @@ workerScope.addEventListener('message', async (event: MessageEvent<DecodeRequest
 		if (!context) throw new Error('HEIC/HEIF preview rendering is unavailable.');
 		context.drawImage(resized, 0, 0);
 		const blob = await canvas.convertToBlob({ type: 'image/webp', quality: event.data.maxDimension ? 0.7 : 0.9 });
-		workerScope.postMessage({ ok: true, blob, width: outputWidth, height: outputHeight });
+		workerScope.postMessage({
+			ok: true,
+			blob,
+			thumbnailWidth: outputWidth,
+			thumbnailHeight: outputHeight,
+			originalWidth: width,
+			originalHeight: height
+		});
 	} catch (error) {
 		workerScope.postMessage({
 			ok: false,

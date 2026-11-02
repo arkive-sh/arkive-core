@@ -5,8 +5,10 @@ const MAX_HEIC_DECODE_BYTES = 80 * 1024 * 1024;
 
 export interface DecodedHeicImage {
 	blob: Blob;
-	width: number;
-	height: number;
+	thumbnailWidth: number;
+	thumbnailHeight: number;
+	originalWidth: number;
+	originalHeight: number;
 }
 
 // Serialize decodes so concurrent uploads cannot each reserve a 256 MiB WASM heap.
@@ -37,12 +39,18 @@ function decodeInWorker(buffer: ArrayBuffer, maxDimension: number | null, signal
 			return;
 		}
 		signal?.addEventListener('abort', onAbort, { once: true });
-		worker.onmessage = (event: MessageEvent<{ ok: boolean; blob?: Blob; width?: number; height?: number; error?: string }>) => {
-			if (!event.data.ok || !event.data.blob || !event.data.width || !event.data.height) {
+		worker.onmessage = (event: MessageEvent<{ ok: boolean; blob?: Blob; thumbnailWidth?: number; thumbnailHeight?: number; originalWidth?: number; originalHeight?: number; error?: string }>) => {
+			if (!event.data.ok || !event.data.blob || !event.data.thumbnailWidth || !event.data.thumbnailHeight) {
 				finish(new Error(event.data.error || 'HEIC/HEIF decoding failed.'));
 				return;
 			}
-			finish(undefined, { blob: event.data.blob, width: event.data.width, height: event.data.height });
+			finish(undefined, {
+				blob: event.data.blob,
+				thumbnailWidth: event.data.thumbnailWidth,
+				thumbnailHeight: event.data.thumbnailHeight,
+				originalWidth: event.data.originalWidth ?? event.data.thumbnailWidth,
+				originalHeight: event.data.originalHeight ?? event.data.thumbnailHeight
+			});
 		};
 		worker.onerror = () => finish(new Error('The HEIC/HEIF decoder failed.'));
 		// Only this selected image crosses into the decoder; vault keys and other files stay outside it.

@@ -18,6 +18,7 @@
 		tileSize,
 		showType,
 		showSize,
+		showDimensions,
 		onToggleSelection,
 		onOpenFolder,
 		onShowContextMenu,
@@ -30,6 +31,7 @@
 		tileSize: number;
 		showType: boolean;
 		showSize: boolean;
+		showDimensions: boolean;
 		onToggleSelection: (entry: FileManagerEntry) => void;
 		onOpenFolder: (id: string) => void;
 		onShowContextMenu: (entry: FileManagerEntry, x: number, y: number) => void;
@@ -61,7 +63,7 @@
 		estimateSize: () => {
 			const contentWidth = Math.max(tileSize, (gridLayout?.clientWidth ?? 0) - gridPadding * 2);
 			const cardWidth = (contentWidth - cardGap * (columnCount - 1)) / columnCount;
-			const detailLines = Number(showType) + Number(showSize);
+			const detailLines = Number(showType) + Number(showSize) + Number(showDimensions);
 			return cardWidth * 0.75 + cardGap * 2 + nameFontSize * 1.25 + detailLines * (detailFontSize * 1.25 + contentGap) + 2;
 		},
 		gap: cardGap,
@@ -90,7 +92,7 @@
 				gap: cardGap,
 				scrollMargin: content.getBoundingClientRect().top + window.scrollY
 			});
-			const layoutKey = `${tileSize}:${columns}:${showType}:${showSize}`;
+			const layoutKey = `${tileSize}:${columns}:${showType}:${showSize}:${showDimensions}`;
 			if (layoutKey !== measuredLayout) {
 				get(rowVirtualizer).measure();
 				measuredLayout = layoutKey;
@@ -279,6 +281,7 @@
 								{/if}
 								{#if showType}<span class="truncate font-mono leading-tight text-(--muted)" style={`font-size: ${detailFontSize}px`} title={entry.type}>{entry.type}</span>{/if}
 								{#if showSize}<span class="leading-tight text-(--muted)" style={`font-size: ${detailFontSize}px`}>{formatBytes(entry.size)}</span>{/if}
+								{#if showDimensions && entry.dimensions}<span class="leading-tight text-(--muted)" style={`font-size: ${detailFontSize}px`}>{entry.dimensions.width} × {entry.dimensions.height}</span>{/if}
 							</div>
 						</article>
 					{/each}

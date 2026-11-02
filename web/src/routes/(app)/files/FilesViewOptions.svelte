@@ -10,10 +10,12 @@
 		tileSize: number;
 		showType: boolean;
 		showSize: boolean;
+		showDimensions: boolean;
 		onViewChange: (view: FilesView) => void;
 		onTileSizeChange: (size: number) => void;
 		onShowTypeChange: (show: boolean) => void;
 		onShowSizeChange: (show: boolean) => void;
+		onShowDimensionsChange: (show: boolean) => void;
 	};
 
 	let {
@@ -21,10 +23,12 @@
 		tileSize,
 		showType,
 		showSize,
+		showDimensions,
 		onViewChange,
 		onTileSizeChange,
 		onShowTypeChange,
-		onShowSizeChange
+		onShowSizeChange,
+		onShowDimensionsChange
 	}: Props = $props();
 	let open = $state(false);
 	let root = $state<HTMLDivElement>();
@@ -170,6 +174,13 @@
 					</label>
 				</fieldset>
 			{/if}
+			<fieldset class="m-0 grid gap-2 border-0 border-t border-(--border) p-0 pt-3">
+				<legend class="mb-2 px-0 text-xs font-medium text-(--text)">Show details</legend>
+				<label class="flex cursor-pointer items-center gap-2 text-xs text-(--muted)">
+					<input class="size-4 cursor-pointer accent-(--accent)" type="checkbox" checked={showDimensions} onchange={(event) => onShowDimensionsChange(event.currentTarget.checked)} />
+					<span>Resolution</span>
+				</label>
+			</fieldset>
 		</section>
 	{/if}
 </div>
