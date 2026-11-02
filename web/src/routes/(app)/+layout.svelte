@@ -48,12 +48,12 @@
 				toast.error('Could not lock the vault.');
 			}
 		}
-		await goto('/lock', { replaceState: true });
+		await goto('/lock', { replace: true });
 	}
 
 	$effect(() => {
 		if (vaultReady && !$vaultUnlocked && page.url.pathname !== '/lock') {
-			void goto('/lock', { replaceState: true });
+			void goto('/lock', { replace: true });
 		}
 	});
 
