@@ -5,6 +5,8 @@
 	import { readDecryptedThumbnail } from '#lib/vault/thumbnail.ts';
 	import type { FileManagerEntry } from './types';
 	import { readDecryptedFile } from '#lib/vault/read-file.ts';
+	import { isHeicImage } from '#lib/utils/image.ts';
+	import { decodeHeicImage } from '#lib/utils/heic.ts';
 
 	type PreviewRequest = { fileId: string; trigger: HTMLElement };
 	type Props = {
@@ -164,39 +166,55 @@
 		resource.status = 'loading-original';
 		updateOriginalButton();
 		try {
-			const blob = await readDecryptedFile(entry.id, entry.type, resource.controller.signal);
+			const decrypted = await readDecryptedFile(entry.id, entry.type, resource.controller.signal);
 			if (resource.controller.signal.aborted) return;
-			const originalUrl = URL.createObjectURL(blob);
-			resource.pendingObjectUrl = originalUrl;
-			image.onload = () => {
-				if (resource.controller.signal.aborted) return;
-				const thumbnailUrl = resource.objectUrl;
-				resource.objectUrl = originalUrl;
-				resource.pendingObjectUrl = undefined;
-				resource.status = 'original';
-				image.style.visibility = 'visible';
-				image.onload = null;
-				image.onerror = null;
-				if (thumbnailUrl) URL.revokeObjectURL(thumbnailUrl);
-				updateOriginalButton();
-			};
-			image.onerror = () => {
-				if (resource.controller.signal.aborted) return;
-				URL.revokeObjectURL(originalUrl);
-				resource.pendingObjectUrl = undefined;
+
+			const fail = (error?: unknown) => {
 				resource.status = 'failed';
-				image.onload = null;
-				image.onerror = null;
 				if (resource.objectUrl) {
 					image.src = resource.objectUrl;
 					image.style.visibility = 'visible';
 				} else {
 					image.style.visibility = 'hidden';
 				}
-				onError(`Could not preview ${entry.name}.`);
+				onError(error instanceof Error ? error.message : `Could not preview ${entry.name}.`);
 				updateOriginalButton();
 			};
-			image.src = originalUrl;
+			const showOriginal = (blob: Blob, usingFallback = false) => {
+				const originalUrl = URL.createObjectURL(blob);
+				resource.pendingObjectUrl = originalUrl;
+				image.onload = () => {
+					if (resource.controller.signal.aborted) return;
+					const thumbnailUrl = resource.objectUrl;
+					resource.objectUrl = originalUrl;
+					resource.pendingObjectUrl = undefined;
+					resource.status = 'original';
+					image.style.visibility = 'visible';
+					image.onload = null;
+					image.onerror = null;
+					if (thumbnailUrl) URL.revokeObjectURL(thumbnailUrl);
+					updateOriginalButton();
+				};
+				image.onerror = () => {
+					if (resource.controller.signal.aborted) return;
+					image.onload = null;
+					image.onerror = null;
+					URL.revokeObjectURL(originalUrl);
+					resource.pendingObjectUrl = undefined;
+					if (!usingFallback && isHeicImage(entry.name, entry.type)) {
+						image.style.visibility = 'hidden';
+						void decodeHeicImage(decrypted, entry.name, entry.type, null, resource.controller.signal)
+							.then(({ blob: decoded }) => {
+								if (!resource.controller.signal.aborted) showOriginal(decoded, true);
+							})
+							.catch(fail);
+						return;
+					}
+					fail();
+				};
+				image.src = originalUrl;
+			};
+			showOriginal(decrypted);
 		} catch (error) {
 			if (resource.controller.signal.aborted) return;
 			resource.status = 'failed';

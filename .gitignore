@@ -8,6 +8,7 @@ node_modules/
 /rust/**/target/
 web/.svelte-kit/
 web/build/
+web/.heic-build/
 playwright/.auth/
 playwright-report/
 test-results/

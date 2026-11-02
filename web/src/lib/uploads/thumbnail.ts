@@ -1,6 +1,8 @@
 import { CORE_API_ORIGIN } from '$app/env/public';
 import { api } from '../api';
 import { encryptUploadThumbnail } from '../vault/uploads';
+import { imageMimeType, isHeicImage } from '#lib/utils/image.ts';
+import { decodeHeicImage } from '#lib/utils/heic.ts';
 
 const MAX_DIMENSION = 320;
 const WEBP_QUALITY = 0.7;
@@ -119,7 +121,7 @@ async function createImageThumbnail(file: File, signal?: AbortSignal): Promise<G
 	let objectURL = '';
 	try {
 		if (typeof createImageBitmap === 'function') {
-			bitmap = await createImageBitmap(file);
+			bitmap = await createImageBitmap(file, { imageOrientation: 'from-image', colorSpaceConversion: 'default' });
 		} else {
 			objectURL = URL.createObjectURL(file);
 			const image = new Image();
@@ -135,6 +137,15 @@ async function createImageThumbnail(file: File, signal?: AbortSignal): Promise<G
 			(context) => context.drawImage(bitmap!, 0, 0, context.canvas.width, context.canvas.height),
 			signal
 		);
+	} catch (error) {
+		if (!isHeicImage(file.name, file.type) || signal?.aborted) throw error;
+		const decoded = await decodeHeicImage(file, file.name, file.type, MAX_DIMENSION, signal);
+		return {
+			bytes: new Uint8Array(await decoded.blob.arrayBuffer()),
+			mime: 'image/webp',
+			width: decoded.width,
+			height: decoded.height
+		};
 	} finally {
 		if (bitmap && 'close' in bitmap) bitmap.close();
 		if (objectURL) URL.revokeObjectURL(objectURL);
@@ -186,7 +197,7 @@ async function createVideoThumbnail(file: File, signal?: AbortSignal): Promise<G
 export async function createThumbnail(file: File, signal?: AbortSignal): Promise<GeneratedThumbnail | null> {
 	const mime = file.type.toLowerCase();
 	try {
-		if (mime.startsWith('image/')) return await createImageThumbnail(file, signal);
+		if (imageMimeType(file.name, mime)) return await createImageThumbnail(file, signal);
 		if (mime.startsWith('video/')) return await createVideoThumbnail(file, signal);
 		return null;
 	} catch (error) {

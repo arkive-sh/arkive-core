@@ -13,6 +13,7 @@
 		FileVideoCamera,
 		Presentation
 	} from '@lucide/svelte';
+	import { isImageFile } from '#lib/utils/image.ts';
 
 	type Props = {
 		name: string;
@@ -52,7 +53,7 @@
 			['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz', '.zst'].includes(extension) ||
 			type.includes('zip') || type.includes('compressed') || type.includes('archive')
 		) return { component: FileArchive, color: 'text-yellow-400' };
-		if (type.startsWith('image/')) return { component: FileImage, color: 'text-cyan-400' };
+		if (isImageFile(fileName, type)) return { component: FileImage, color: 'text-cyan-400' };
 		if (type.startsWith('video/')) return { component: FileVideoCamera, color: 'text-pink-400' };
 		if (type.startsWith('audio/')) return { component: AudioLines, color: 'text-indigo-400' };
 		if (
