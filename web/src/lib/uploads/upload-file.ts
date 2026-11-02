@@ -3,7 +3,7 @@ import { api } from '../api';
 import { createSearchTokens } from '../vault/search';
 import { waitUntilReady } from '../vault/session';
 import { encryptFolderMetadata, encryptFolderName } from '../vault/files';
-import { ENCRYPTION_VERSION } from '../vault/crypto-format';
+import { ENCRYPTED_ENVELOPE_OVERHEAD_BYTES, ENCRYPTION_VERSION } from '../vault/crypto-format';
 import type { SearchTokenEntry } from '../vault/types';
 import { createAndUploadThumbnail, type UploadedThumbnail } from './thumbnail';
 import {
@@ -117,13 +117,15 @@ export async function uploadFile(
 	checkAborted(signal);
 
 	const totalChunks = Math.ceil(file.size / FILE_CHUNK_SIZE);
+	const encryptedSize = file.size + totalChunks * ENCRYPTED_ENVELOPE_OVERHEAD_BYTES;
+	if (!Number.isSafeInteger(encryptedSize)) throw new Error('File is too large to upload.');
 	const chunksPerPart = Math.floor(UPLOAD_PART_SIZE / FILE_CHUNK_SIZE);
 	const uploadPartCount = Math.ceil(totalChunks / chunksPerPart);
 	const uploadToken = crypto.randomUUID();
 	const { data: started } = await api.post<UploadStart>(
 		'/api/uploads/start',
 		{
-			originalSize: file.size,
+			encryptedSize,
 			fileChunkSize: FILE_CHUNK_SIZE,
 			totalChunks,
 			uploadPartSize: UPLOAD_PART_SIZE,

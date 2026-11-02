@@ -8,6 +8,7 @@ import { vault } from "./vault.js";
 
 const STOPPED_UPLOAD = new Error("Upload stopped");
 const THUMBNAIL_TIMEOUT_MS = 15000;
+const ENCRYPTED_CHUNK_OVERHEAD_BYTES = 1 + 12 + 16;
 
 class PresignCache {
 	constructor(options) {
@@ -333,7 +334,7 @@ export class UploadRunner {
 		try {
 			response = await this.runWithController((signal) => startUploadBatch(jobs.map((job) => ({
 				clientId: job.public.jobId,
-				originalSize: job.file.size,
+				encryptedSize: job.file.size + job.public.totalChunks * ENCRYPTED_CHUNK_OVERHEAD_BYTES,
 				fileChunkSize: job.public.fileChunkSize,
 				totalChunks: job.public.totalChunks,
 				uploadPartSize: job.public.uploadPartSize,
