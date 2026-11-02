@@ -62,7 +62,6 @@ func main() {
 		db,
 		storageRepo,
 		fileRepo,
-		usersrepo.New(),
 		storageProvider,
 		filessvc.Config{
 			DownloadExpire:      3 * time.Hour,

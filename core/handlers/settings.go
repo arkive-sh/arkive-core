@@ -8,7 +8,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"arkive/core/models"
-	filessvc "arkive/core/services/files"
 	settingssvc "arkive/core/services/settings"
 	"arkive/core/web"
 	pages "arkive/core/web/pages"
@@ -42,18 +41,13 @@ type previewSettingsForm struct {
 	TextMaxMB  string `form:"text_max_mb"`
 }
 
-func WebSettings(filesService *filessvc.Service, settingsService *settingssvc.Service) gin.HandlerFunc {
+func WebSettings(settingsService *settingssvc.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		user, ok := appcontext.UserFromContext(c)
 		if !ok || user.ID == "" {
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
-		if err := filesService.TouchUserActivity(c.Request.Context(), user.ID); err != nil {
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
-		}
-
 		storageSettings, _ := settingsService.StorageSettings(c.Request.Context())
 		uploadSettings, _ := settingsService.UploadSettings(c.Request.Context())
 		previewSettings, _ := settingsService.PreviewSettings(c.Request.Context())

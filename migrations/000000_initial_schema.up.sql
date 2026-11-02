@@ -12,7 +12,6 @@ CREATE TABLE users (
   used_bytes BIGINT NOT NULL DEFAULT 0,
   reserved_bytes BIGINT NOT NULL DEFAULT 0,
   last_login_at TIMESTAMPTZ,
-  last_active_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   recovery_setup_token_hash BYTEA UNIQUE CHECK (
     recovery_setup_token_hash IS NULL OR octet_length(recovery_setup_token_hash) = 32
   ),
@@ -21,9 +20,7 @@ CREATE TABLE users (
   recovery_proof_public_key BYTEA,
   password_reset_token_hash TEXT UNIQUE,
   password_reset_token_expires_at TIMESTAMPTZ,
-  password_reset_consumed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT users_username_key UNIQUE (username),
   CONSTRAINT users_email_key UNIQUE (email),
   CONSTRAINT users_username_format_chk
@@ -75,8 +72,7 @@ CREATE INDEX opaque_login_attempts_expires_at_idx ON opaque_login_attempts (expi
 
 CREATE TABLE instance_settings (
   key TEXT PRIMARY KEY,
-  value TEXT NOT NULL,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  value TEXT NOT NULL
 );
 
 CREATE TABLE folders (
@@ -108,16 +104,12 @@ CREATE TABLE files (
   actual_encrypted_size BIGINT NOT NULL DEFAULT 0,
   encrypted_hash BYTEA,
   upload_status TEXT NOT NULL DEFAULT 'pending',
-  completed_at TIMESTAMPTZ,
   expires_at TIMESTAMPTZ,
-  throttle_ms INT NOT NULL DEFAULT 0,
   thumbnail_size_bytes BIGINT NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT files_upload_status_chk
     CHECK (upload_status IN ('pending', 'uploading', 'complete', 'failed', 'aborted')),
-  CONSTRAINT files_throttle_nonnegative_chk
-    CHECK (throttle_ms >= 0),
   CONSTRAINT files_thumbnail_bytes_nonnegative_chk
     CHECK (thumbnail_size_bytes >= 0)
 );
@@ -138,7 +130,6 @@ CREATE TABLE file_search_tokens (
   token_hash BYTEA NOT NULL,
   field TEXT NOT NULL,
   weight INT NOT NULL DEFAULT 1,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (user_id, vault_id, token_hash, file_id, field)
 );
 
@@ -152,7 +143,6 @@ CREATE TABLE folder_search_tokens (
   token_hash BYTEA NOT NULL,
   field TEXT NOT NULL,
   weight INT NOT NULL DEFAULT 1,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (user_id, vault_id, token_hash, folder_id, field)
 );
 
@@ -167,8 +157,6 @@ CREATE TABLE upload_sessions (
   status TEXT NOT NULL DEFAULT 'active',
   expires_at TIMESTAMPTZ NOT NULL,
   upload_part_count INTEGER NOT NULL DEFAULT 0,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT upload_sessions_status_chk
     CHECK (status IN ('active', 'completed', 'aborted', 'expired', 'failed')),
   CONSTRAINT upload_sessions_encrypted_size_nonnegative_chk
@@ -176,56 +164,23 @@ CREATE TABLE upload_sessions (
 );
 
 CREATE INDEX upload_sessions_file_id_idx ON upload_sessions (file_id);
-CREATE INDEX upload_sessions_status_idx ON upload_sessions (status);
 CREATE INDEX upload_sessions_expires_at_idx ON upload_sessions (expires_at);
 
 CREATE TABLE upload_parts (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   upload_session_id UUID NOT NULL REFERENCES upload_sessions(id) ON DELETE CASCADE,
   part_number INTEGER NOT NULL,
   etag TEXT,
   encrypted_hash BYTEA NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  CONSTRAINT upload_parts_upload_session_id_part_number_key
-    UNIQUE (upload_session_id, part_number)
+  PRIMARY KEY (upload_session_id, part_number)
 );
-
-CREATE INDEX upload_parts_upload_session_id_idx ON upload_parts (upload_session_id);
-
-CREATE TABLE upload_usage (
-  id BIGSERIAL PRIMARY KEY,
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  size_bytes BIGINT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  CONSTRAINT upload_usage_size_nonnegative_chk
-    CHECK (size_bytes >= 0)
-);
-
-CREATE INDEX upload_usage_user_created_idx ON upload_usage (user_id, created_at DESC);
-
-CREATE TABLE restore_usage (
-  id BIGSERIAL PRIMARY KEY,
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  size_bytes BIGINT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  CONSTRAINT restore_usage_size_nonnegative_chk
-    CHECK (size_bytes >= 0)
-);
-
-CREATE INDEX restore_usage_user_created_idx ON restore_usage (user_id, created_at DESC);
 
 CREATE TABLE share_links (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   owner_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   token TEXT NOT NULL UNIQUE,
-  slug TEXT UNIQUE,
   status TEXT NOT NULL DEFAULT 'active',
-  title_encrypted BYTEA,
-  description_encrypted BYTEA,
   encrypted_share_key BYTEA NOT NULL,
-  crypto_version SMALLINT NOT NULL DEFAULT 1,
   password_hash TEXT,
-  password_mode TEXT NOT NULL DEFAULT 'access_gate',
   access_count INTEGER NOT NULL DEFAULT 0,
   max_access_count INTEGER,
   consumed_at TIMESTAMPTZ,
@@ -233,18 +188,11 @@ CREATE TABLE share_links (
   revoked_at TIMESTAMPTZ,
   allow_preview BOOLEAN NOT NULL DEFAULT true,
   allow_download BOOLEAN NOT NULL DEFAULT true,
-  comments_enabled BOOLEAN NOT NULL DEFAULT false,
-  reactions_enabled BOOLEAN NOT NULL DEFAULT false,
   burn_after_read BOOLEAN NOT NULL DEFAULT false,
-  show_exif BOOLEAN NOT NULL DEFAULT false,
-  show_location BOOLEAN NOT NULL DEFAULT false,
-  strip_exif_download BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT share_links_status_chk
-    CHECK (status IN ('active', 'expired', 'revoked', 'burned', 'disabled')),
-  CONSTRAINT share_links_password_mode_chk
-    CHECK (password_mode IN ('access_gate', 'decrypt_gate'))
+    CHECK (status IN ('active', 'expired', 'revoked', 'burned', 'disabled'))
 );
 
 CREATE INDEX share_links_owner_user_id_idx ON share_links (owner_user_id);

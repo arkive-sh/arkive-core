@@ -48,12 +48,6 @@ func WebFiles(filesService *filessvc.Service, folderService *folderssvc.Service)
 			c.Redirect(http.StatusSeeOther, "/login")
 			return
 		}
-		if err := filesService.TouchUserActivity(c.Request.Context(), user.ID); err != nil {
-			_ = c.Error(errs.WithStack(err))
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
-		}
-
 		page := pagination.ParsePageParam(c.DefaultQuery("page", "1"))
 		pageSize := pagination.ParsePageSizeParam(c.DefaultQuery("pageSize", "25"))
 		viewMode := resolveFilesViewMode(c)
@@ -99,12 +93,6 @@ func WebFolder(filesService *filessvc.Service, folderService *folderssvc.Service
 			c.Redirect(http.StatusSeeOther, "/login")
 			return
 		}
-		if err := filesService.TouchUserActivity(c.Request.Context(), user.ID); err != nil {
-			_ = c.Error(errs.WithStack(err))
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
-		}
-
 		folderID := strings.TrimSpace(c.Param("id"))
 		if folderID == "" {
 			c.AbortWithStatus(http.StatusNotFound)
@@ -161,12 +149,6 @@ func WebFileView(filesService *filessvc.Service, settingsService *settingssvc.Se
 			c.Redirect(http.StatusSeeOther, "/login")
 			return
 		}
-		if err := filesService.TouchUserActivity(c.Request.Context(), user.ID); err != nil {
-			_ = c.Error(errs.WithStack(err))
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
-		}
-
 		fileID := strings.TrimSpace(c.Param("id"))
 		if fileID == "" {
 			c.AbortWithStatus(http.StatusNotFound)

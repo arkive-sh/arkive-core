@@ -25,15 +25,11 @@ type UploadSession struct {
 	UploadPartCount  int
 	Status           string
 	ExpiresAt        time.Time
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
 }
 
 type UploadPart struct {
-	ID              string
 	UploadSessionID string
 	PartNumber      int
 	ETag            string
 	EncryptedHash   []byte
-	CreatedAt       time.Time
 }

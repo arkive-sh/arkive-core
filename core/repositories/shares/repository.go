@@ -14,7 +14,6 @@ type CreateShareLinkInput struct {
 	OwnerUserID       string
 	Token             string
 	EncryptedShareKey []byte
-	CryptoVersion     int16
 	PasswordHash      *string
 	ExpiresAt         *time.Time
 	BurnAfterRead     bool
@@ -41,113 +40,59 @@ func New() *Repository {
 	return &Repository{}
 }
 
-func (r *Repository) CreateShareLink(ctx context.Context, db database.PgExecutor, input CreateShareLinkInput) (models.ShareLink, error) {
-	var created models.ShareLink
+func (r *Repository) CreateShareLink(ctx context.Context, db database.PgExecutor, input CreateShareLinkInput) (string, error) {
 	query := `INSERT INTO share_links
-		(owner_user_id, token, encrypted_share_key, crypto_version, password_hash, expires_at, burn_after_read, max_access_count, status)
+		(owner_user_id, token, encrypted_share_key, password_hash, expires_at, burn_after_read, max_access_count, status)
 	VALUES
-		($1, $2, $3, $4, $5, $6, $7, $8, $9)
-	RETURNING
-		id, owner_user_id, token, slug, status, title_encrypted, description_encrypted,
-		encrypted_share_key, crypto_version, password_hash, password_mode, expires_at,
-		revoked_at, allow_preview, allow_download, comments_enabled, reactions_enabled,
-		burn_after_read, access_count, max_access_count, consumed_at, show_exif, show_location,
-		strip_exif_download, created_at, updated_at`
+		($1, $2, $3, $4, $5, $6, $7, $8)
+	RETURNING id`
+	var id string
 	if err := db.QueryRow(ctx, query,
 		input.OwnerUserID,
 		input.Token,
 		input.EncryptedShareKey,
-		input.CryptoVersion,
 		input.PasswordHash,
 		input.ExpiresAt,
 		input.BurnAfterRead,
 		input.MaxAccessCount,
 		input.Status,
-	).Scan(
-		&created.ID,
-		&created.OwnerUserID,
-		&created.Token,
-		&created.Slug,
-		&created.Status,
-		&created.TitleEncrypted,
-		&created.DescriptionEncrypted,
-		&created.EncryptedShareKey,
-		&created.CryptoVersion,
-		&created.PasswordHash,
-		&created.PasswordMode,
-		&created.ExpiresAt,
-		&created.RevokedAt,
-		&created.AllowPreview,
-		&created.AllowDownload,
-		&created.CommentsEnabled,
-		&created.ReactionsEnabled,
-		&created.BurnAfterRead,
-		&created.AccessCount,
-		&created.MaxAccessCount,
-		&created.ConsumedAt,
-		&created.ShowEXIF,
-		&created.ShowLocation,
-		&created.StripEXIFDownload,
-		&created.CreatedAt,
-		&created.UpdatedAt,
-	); err != nil {
-		return models.ShareLink{}, err
+	).Scan(&id); err != nil {
+		return "", err
 	}
-	return created, nil
+	return id, nil
 }
 
-func (r *Repository) CreateShareItem(ctx context.Context, db database.PgExecutor, input CreateShareItemInput) (models.ShareItem, error) {
-	var created models.ShareItem
+func (r *Repository) CreateShareItem(ctx context.Context, db database.PgExecutor, input CreateShareItemInput) (string, error) {
 	query := `INSERT INTO share_items
 		(share_link_id, item_type, file_id, display_order)
 	VALUES
 		($1, $2, $3, $4)
-	RETURNING
-		id, share_link_id, item_type, file_id, display_order, created_at`
+	RETURNING id`
+	var id string
 	if err := db.QueryRow(ctx, query,
 		input.ShareLinkID,
 		input.ItemType,
 		input.FileID,
 		input.DisplayOrder,
-	).Scan(
-		&created.ID,
-		&created.ShareLinkID,
-		&created.ItemType,
-		&created.FileID,
-		&created.DisplayOrder,
-		&created.CreatedAt,
-	); err != nil {
-		return models.ShareItem{}, err
+	).Scan(&id); err != nil {
+		return "", err
 	}
-	return created, nil
+	return id, nil
 }
 
-func (r *Repository) CreateShareSnapshotFile(ctx context.Context, db database.PgExecutor, input CreateShareSnapshotFileInput) (models.ShareSnapshotFile, error) {
-	var created models.ShareSnapshotFile
+func (r *Repository) CreateShareSnapshotFile(ctx context.Context, db database.PgExecutor, input CreateShareSnapshotFileInput) error {
 	query := `INSERT INTO share_snapshot_files
 		(share_item_id, file_id, encrypted_relative_path, encrypted_file_key_for_share, display_order)
 	VALUES
-		($1, $2, $3, $4, $5)
-	RETURNING
-		id, share_item_id, file_id, encrypted_relative_path, encrypted_file_key_for_share, display_order, created_at`
-	if err := db.QueryRow(ctx, query,
+		($1, $2, $3, $4, $5)`
+	_, err := db.Exec(ctx, query,
 		input.ShareItemID,
 		input.FileID,
 		input.EncryptedRelativePath,
 		input.EncryptedFileKeyForShare,
 		input.DisplayOrder,
-	).Scan(
-		&created.ID,
-		&created.ShareItemID,
-		&created.FileID,
-		&created.EncryptedRelativePath,
-		&created.EncryptedFileKeyForShare,
-		&created.DisplayOrder,
-		&created.CreatedAt,
-	); err != nil {
-		return models.ShareSnapshotFile{}, err
-	}
-	return created, nil
+	)
+	return err
 }
 
 func (r *Repository) GetShareByToken(ctx context.Context, db database.PgExecutor, token string) (models.Share, error) {

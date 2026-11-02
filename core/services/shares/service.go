@@ -140,11 +140,10 @@ func (s *Service) CreateShare(ctx context.Context, input CreateInput) (models.Sh
 	if err != nil {
 		return models.Share{}, nil, err
 	}
-	shareLink, err := s.shareRepo.CreateShareLink(ctx, tx, sharerepo.CreateShareLinkInput{
+	shareLinkID, err := s.shareRepo.CreateShareLink(ctx, tx, sharerepo.CreateShareLinkInput{
 		OwnerUserID:       input.OwnerUserID,
 		Token:             token,
 		EncryptedShareKey: encryptedShareKey,
-		CryptoVersion:     1,
 		PasswordHash:      passwordHash,
 		ExpiresAt:         input.ExpiresAt,
 		BurnAfterRead:     input.BurnAfterRead,
@@ -155,8 +154,8 @@ func (s *Service) CreateShare(ctx context.Context, input CreateInput) (models.Sh
 		_ = tx.Rollback(ctx)
 		return models.Share{}, nil, err
 	}
-	shareItem, err := s.shareRepo.CreateShareItem(ctx, tx, sharerepo.CreateShareItemInput{
-		ShareLinkID:  shareLink.ID,
+	shareItemID, err := s.shareRepo.CreateShareItem(ctx, tx, sharerepo.CreateShareItemInput{
+		ShareLinkID:  shareLinkID,
 		ItemType:     "file",
 		FileID:       input.FileID,
 		DisplayOrder: 0,
@@ -165,8 +164,8 @@ func (s *Service) CreateShare(ctx context.Context, input CreateInput) (models.Sh
 		_ = tx.Rollback(ctx)
 		return models.Share{}, nil, err
 	}
-	if _, err := s.shareRepo.CreateShareSnapshotFile(ctx, tx, sharerepo.CreateShareSnapshotFileInput{
-		ShareItemID:              shareItem.ID,
+	if err := s.shareRepo.CreateShareSnapshotFile(ctx, tx, sharerepo.CreateShareSnapshotFileInput{
+		ShareItemID:              shareItemID,
 		FileID:                   input.FileID,
 		EncryptedFileKeyForShare: encryptedFileKeyForShare,
 		DisplayOrder:             0,
@@ -177,7 +176,7 @@ func (s *Service) CreateShare(ctx context.Context, input CreateInput) (models.Sh
 	if err := tx.Commit(ctx); err != nil {
 		return models.Share{}, nil, err
 	}
-	created, err := s.shareRepo.GetShareForUser(ctx, s.db, shareLink.ID, input.OwnerUserID)
+	created, err := s.shareRepo.GetShareForUser(ctx, s.db, shareLinkID, input.OwnerUserID)
 	if err != nil {
 		return models.Share{}, nil, err
 	}
