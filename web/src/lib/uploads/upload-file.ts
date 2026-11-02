@@ -259,6 +259,9 @@ export async function uploadFile(
 			mime,
 			extension: extension(file.name),
 			size: file.size,
+			dimensions: uploadedThumbnail
+				? { width: uploadedThumbnail.originalWidth, height: uploadedThumbnail.originalHeight }
+				: undefined,
 			created_at_client: new Date().toISOString(),
 			modified_at_client: file.lastModified ? new Date(file.lastModified).toISOString() : null,
 			preview: uploadedThumbnail
@@ -266,8 +269,8 @@ export async function uploadFile(
 						thumbnail_file_id: null,
 						has_thumbnail: true,
 						thumbnail_mime: uploadedThumbnail.mime,
-						thumbnail_width: uploadedThumbnail.width,
-						thumbnail_height: uploadedThumbnail.height,
+						thumbnail_width: uploadedThumbnail.thumbnailWidth,
+						thumbnail_height: uploadedThumbnail.thumbnailHeight,
 						thumbnail_size: uploadedThumbnail.encryptedSize,
 						thumbnail_version: 1
 					}

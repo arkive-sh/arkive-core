@@ -74,6 +74,7 @@
 	let tileSize = $state(150);
 	let showType = $state(false);
 	let showSize = $state(true);
+	let showDimensions = $state(false);
 	let viewOptionsReady = $state(false);
 	const selectedIds = new SvelteSet<string>();
 	const transfers = useTransferManager();
@@ -166,6 +167,12 @@
 					const preview = decrypted.metadata.preview;
 					const thumbnailVersion = Number(preview?.thumbnail_version || 0);
 					const thumbnailSize = Number(preview?.thumbnail_size || 0);
+					const dimensions = decrypted.metadata.dimensions;
+					const mediaDimensions = dimensions &&
+						Number.isSafeInteger(dimensions.width) && dimensions.width > 0 &&
+						Number.isSafeInteger(dimensions.height) && dimensions.height > 0
+						? { width: dimensions.width, height: dimensions.height }
+						: undefined;
 					const storedMime = typeof decrypted.metadata.mime === 'string' ? decrypted.metadata.mime : '';
 					const mime = imageMimeType(decrypted.metadata.name || '', storedMime) || storedMime || 'application/octet-stream';
 					return {
@@ -178,15 +185,16 @@
 								version: thumbnailVersion,
 								size: thumbnailSize,
 								mime: preview.thumbnail_mime || 'image/webp',
-								width: Number(preview.thumbnail_width || 0),
-								height: Number(preview.thumbnail_height || 0),
+								thumbnailWidth: Number(preview.thumbnail_width || 0),
+								thumbnailHeight: Number(preview.thumbnail_height || 0),
 								vaultId,
 								encryptedMetadata: file.EncryptedMetadata,
 								encryptedFileKey: file.EncryptedFileKey
 							}
 							: undefined,
 						size: typeof decrypted.metadata.size === 'number' ? decrypted.metadata.size : null,
-						updatedAt: file.UpdatedAt
+						updatedAt: file.UpdatedAt,
+						dimensions: mediaDimensions
 					};
 				} catch {
 					return { id: file.ID, kind: 'file', name: 'Encrypted file', type: 'application/octet-stream', size: null, updatedAt: file.UpdatedAt };
@@ -478,6 +486,7 @@
 			}
 			showType = localStorage.getItem('arkive.files.show-type') === 'true';
 			showSize = localStorage.getItem('arkive.files.show-size') !== 'false';
+			showDimensions = localStorage.getItem('arkive.files.show-dimensions') === 'true';
 		} catch {
 			// Keep the default view options when local storage is unavailable.
 		}
@@ -491,6 +500,7 @@
 			localStorage.setItem('arkive.files.tile-size', String(tileSize));
 			localStorage.setItem('arkive.files.show-type', String(showType));
 			localStorage.setItem('arkive.files.show-size', String(showSize));
+			localStorage.setItem('arkive.files.show-dimensions', String(showDimensions));
 		} catch {
 			// Preferences still work for the current page when local storage is unavailable.
 		}
@@ -537,10 +547,12 @@
 						{tileSize}
 						{showType}
 						{showSize}
+						{showDimensions}
 						onViewChange={changeView}
 						onTileSizeChange={(size) => tileSize = size}
 						onShowTypeChange={(show) => showType = show}
 						onShowSizeChange={(show) => showSize = show}
+						onShowDimensionsChange={(show) => showDimensions = show}
 					/>
 				</div>
 			</div>
@@ -569,6 +581,7 @@
 						{tileSize}
 						{showType}
 						{showSize}
+						{showDimensions}
 						onToggleSelection={toggleSelection}
 						onOpenFolder={openFolder}
 						onShowContextMenu={showContextMenu}
@@ -580,6 +593,7 @@
 						{rows}
 						{focusFileId}
 						{selectedIds}
+						{showDimensions}
 						selectedCount={selectedEntries.length}
 						loadedCount={loadedEntries.length}
 						onToggleSelection={toggleSelection}

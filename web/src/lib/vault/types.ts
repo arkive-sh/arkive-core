@@ -2,6 +2,11 @@ export type VaultBytes = Uint8Array | ArrayBuffer;
 export type VaultAAD = string | Uint8Array;
 export type VaultMetadata = Record<string, unknown>;
 
+export interface MediaDimensions {
+	width: number;
+	height: number;
+}
+
 export interface SearchPreview {
 	has_thumbnail?: boolean;
 	thumbnail_version?: number;

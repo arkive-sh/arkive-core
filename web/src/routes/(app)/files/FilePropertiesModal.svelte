@@ -17,6 +17,12 @@
 				<dt class="text-(--muted)">Type</dt>
 				<dd class="m-0 min-w-0 wrap-break-word">{entry.type}</dd>
 			</div>
+			{#if entry.dimensions}
+				<div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-3">
+					<dt class="text-(--muted)">Resolution</dt>
+					<dd class="m-0">{entry.dimensions.width} × {entry.dimensions.height}</dd>
+				</div>
+			{/if}
 			<div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-3">
 				<dt class="text-(--muted)">Size</dt>
 				<dd class="m-0">{formatBytes(entry.size)}</dd>

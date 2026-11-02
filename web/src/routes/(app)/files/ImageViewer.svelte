@@ -254,8 +254,8 @@
 				}
 				const thumbnail = pending.trigger.querySelector('img') ?? pending.trigger;
 				const dataSource = availableEntries.map((entry) => {
-					const thumbnailWidth = entry.thumbnail?.width ?? 0;
-					const thumbnailHeight = entry.thumbnail?.height ?? 0;
+					const thumbnailWidth = entry.thumbnail?.thumbnailWidth ?? 0;
+					const thumbnailHeight = entry.thumbnail?.thumbnailHeight ?? 0;
 					const hasThumbnailSize = thumbnailWidth > 0 && thumbnailHeight > 0;
 					const width = hasThumbnailSize ? thumbnailWidth : 4;
 					const height = hasThumbnailSize ? thumbnailHeight : 3;

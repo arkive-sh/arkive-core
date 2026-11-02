@@ -1,9 +1,11 @@
+import type { MediaDimensions } from '#lib/vault/types';
+
 export interface ThumbnailSource {
 	version: number;
 	size: number;
 	mime: string;
-	width: number;
-	height: number;
+	thumbnailWidth: number;
+	thumbnailHeight: number;
 	vaultId: string;
 	encryptedMetadata: string;
 	encryptedFileKey: string;
@@ -16,6 +18,7 @@ export interface FileManagerEntry {
 	type: string;
 	size: number | null;
 	updatedAt: string;
+	dimensions?: MediaDimensions;
 	thumbnail?: ThumbnailSource;
 }
 

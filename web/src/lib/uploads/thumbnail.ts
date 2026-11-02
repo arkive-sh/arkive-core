@@ -15,14 +15,18 @@ const UPLOAD_TIMEOUT_MS = 15_000;
 export interface GeneratedThumbnail {
 	bytes: Uint8Array;
 	mime: 'image/webp';
-	width: number;
-	height: number;
+	thumbnailWidth: number;
+	thumbnailHeight: number;
+	originalWidth: number;
+	originalHeight: number;
 }
 
 export interface UploadedThumbnail {
 	mime: 'image/webp';
-	width: number;
-	height: number;
+	thumbnailWidth: number;
+	thumbnailHeight: number;
+	originalWidth: number;
+	originalHeight: number;
 	encryptedSize: number;
 }
 
@@ -111,8 +115,10 @@ async function renderCanvasThumbnail(
 	return {
 		bytes: new Uint8Array(await blob.arrayBuffer()),
 		mime: 'image/webp',
-		width: size.width,
-		height: size.height
+		thumbnailWidth: size.width,
+		thumbnailHeight: size.height,
+		originalWidth: width,
+		originalHeight: height
 	};
 }
 
@@ -143,8 +149,10 @@ async function createImageThumbnail(file: File, signal?: AbortSignal): Promise<G
 		return {
 			bytes: new Uint8Array(await decoded.blob.arrayBuffer()),
 			mime: 'image/webp',
-			width: decoded.width,
-			height: decoded.height
+			thumbnailWidth: decoded.thumbnailWidth,
+			thumbnailHeight: decoded.thumbnailHeight,
+			originalWidth: decoded.originalWidth,
+			originalHeight: decoded.originalHeight
 		};
 	} finally {
 		if (bitmap && 'close' in bitmap) bitmap.close();
@@ -240,8 +248,10 @@ export async function createAndUploadThumbnail(input: UploadThumbnailInput): Pro
 		if (!response.ok) throw new Error(`Thumbnail upload failed (${response.status}).`);
 		return {
 			mime: thumbnail.mime,
-			width: thumbnail.width,
-			height: thumbnail.height,
+			thumbnailWidth: thumbnail.thumbnailWidth,
+			thumbnailHeight: thumbnail.thumbnailHeight,
+			originalWidth: thumbnail.originalWidth,
+			originalHeight: thumbnail.originalHeight,
 			encryptedSize: encrypted.encryptedSize
 		};
 	} catch (error) {

@@ -3,6 +3,7 @@ import { touchSessionUnlock } from './session';
 import type {
 	EncryptedSearchFile,
 	EncryptedSearchFolder,
+	MediaDimensions,
 	SearchPreview,
 	VaultBytes,
 	VaultMetadata,
@@ -36,7 +37,7 @@ export async function createSearchTokens(text: string, vaultId: string, maxTerms
 	return result.tokens;
 }
 
-export async function decryptSearchFile(file: EncryptedSearchFile): Promise<{ metadata: VaultMetadata & { name?: string; mime?: string; preview?: SearchPreview } }> {
+export async function decryptSearchFile(file: EncryptedSearchFile): Promise<{ metadata: VaultMetadata & { name?: string; mime?: string; preview?: SearchPreview; dimensions?: MediaDimensions } }> {
 	touchSessionUnlock();
 	const result = await callVaultWorker('decryptSearchFile', {
 		fileId: file.id,
@@ -46,7 +47,7 @@ export async function decryptSearchFile(file: EncryptedSearchFile): Promise<{ me
 		fileKeyAad: `arkive:file-key:v1:${file.vaultId}:${file.id}`,
 		metadataAad: `arkive:file-metadata:v1:${file.vaultId}:${file.id}`
 	});
-	return { metadata: decodeJSON<VaultMetadata & { name?: string; mime?: string; preview?: SearchPreview }>(result.metadataBytes) };
+	return { metadata: decodeJSON<VaultMetadata & { name?: string; mime?: string; preview?: SearchPreview; dimensions?: MediaDimensions }>(result.metadataBytes) };
 }
 
 export async function decryptSearchFolder(folder: EncryptedSearchFolder): Promise<{ name: VaultMetadata & { name?: string }; metadata: VaultMetadata & { name?: string } }> {
