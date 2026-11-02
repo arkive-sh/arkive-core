@@ -74,10 +74,6 @@ func (s *Service) StartMultipartUploadSession(ctx context.Context, userID string
 	if err != nil {
 		return models.UploadStartResponse{}, nil, err
 	}
-	if err := s.TouchUserActivity(ctx, userID); err != nil {
-		return models.UploadStartResponse{}, nil, err
-	}
-
 	inFlight, err := s.fileRepo.CountInFlightForUser(ctx, s.db, userID)
 	if err != nil {
 		return models.UploadStartResponse{}, nil, err
@@ -437,7 +433,7 @@ func (s *Service) RecordMultipartUploadPart(ctx context.Context, userID, uploadS
 	if err != nil {
 		return ErrInvalidInput
 	}
-	_, err = s.uploadRepo.UpsertUploadPart(ctx, s.db, models.UploadPart{
+	err = s.uploadRepo.UpsertUploadPart(ctx, s.db, models.UploadPart{
 		UploadSessionID: uploadSessionID,
 		PartNumber:      input.PartNumber,
 		ETag:            strings.TrimSpace(input.ETag),

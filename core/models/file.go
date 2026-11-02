@@ -16,7 +16,6 @@ type File struct {
 	EncryptedHash       []byte
 	UploadStatus        string
 	ThumbnailSizeBytes  int64
-	CompletedAt         *time.Time
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
 	ExpiresAt           *time.Time

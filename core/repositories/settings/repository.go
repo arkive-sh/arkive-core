@@ -106,10 +106,10 @@ func (r *Repository) SaveUploadSettings(ctx context.Context, db database.PgExecu
 	}
 	for key, value := range values {
 		if _, err := db.Exec(ctx, `
-			INSERT INTO instance_settings (key, value, updated_at)
-			VALUES ($1, $2, now())
+			INSERT INTO instance_settings (key, value)
+			VALUES ($1, $2)
 			ON CONFLICT (key)
-			DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+			DO UPDATE SET value = EXCLUDED.value
 		`, key, value); err != nil {
 			return err
 		}
@@ -167,10 +167,10 @@ func (r *Repository) SavePreviewSettings(ctx context.Context, db database.PgExec
 	}
 	for key, value := range values {
 		if _, err := db.Exec(ctx, `
-			INSERT INTO instance_settings (key, value, updated_at)
-			VALUES ($1, $2, now())
+			INSERT INTO instance_settings (key, value)
+			VALUES ($1, $2)
 			ON CONFLICT (key)
-			DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+			DO UPDATE SET value = EXCLUDED.value
 		`, key, value); err != nil {
 			return err
 		}
@@ -193,10 +193,10 @@ func (r *Repository) SaveStorageSettings(ctx context.Context, db database.PgExec
 	}
 	for key, value := range values {
 		if _, err := db.Exec(ctx, `
-			INSERT INTO instance_settings (key, value, updated_at)
-			VALUES ($1, $2, now())
+			INSERT INTO instance_settings (key, value)
+			VALUES ($1, $2)
 			ON CONFLICT (key)
-			DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+			DO UPDATE SET value = EXCLUDED.value
 		`, key, value); err != nil {
 			return err
 		}

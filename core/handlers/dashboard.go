@@ -23,12 +23,6 @@ func WebDashboard(filesService *filessvc.Service, folderService *folderssvc.Serv
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
-		if err := filesService.TouchUserActivity(c.Request.Context(), user.ID); err != nil {
-			_ = c.Error(errs.WithStack(err))
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
-		}
-
 		list, err := filesService.ListCompletedUploads(c.Request.Context(), user.ID, 1, 4)
 		if err != nil {
 			_ = c.Error(errs.WithStack(err))

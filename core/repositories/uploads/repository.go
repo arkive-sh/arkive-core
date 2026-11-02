@@ -29,7 +29,7 @@ func (r *Repository) CreateUploadSession(ctx context.Context, db database.PgExec
 	VALUES
 		($1, $2, $3, $4, $5, $6, $7)
 	RETURNING
-		id, file_id, provider_upload_id, encrypted_size, upload_part_size, upload_part_count, status, expires_at, created_at, updated_at`
+		id, file_id, provider_upload_id, encrypted_size, upload_part_size, upload_part_count, status, expires_at`
 	if err := db.QueryRow(ctx, query,
 		upload.FileID,
 		upload.ProviderUploadID,
@@ -47,8 +47,6 @@ func (r *Repository) CreateUploadSession(ctx context.Context, db database.PgExec
 		&created.UploadPartCount,
 		&created.Status,
 		&created.ExpiresAt,
-		&created.CreatedAt,
-		&created.UpdatedAt,
 	); err != nil {
 		return models.UploadSession{}, err
 	}
@@ -61,7 +59,7 @@ func (r *Repository) GetUploadSessionForUser(ctx context.Context, db database.Pg
 		upload_sessions.id, upload_sessions.file_id, upload_sessions.provider_upload_id,
 		upload_sessions.upload_part_size,
 		upload_sessions.upload_part_count,
-		upload_sessions.status, upload_sessions.expires_at, upload_sessions.created_at, upload_sessions.updated_at
+		upload_sessions.status, upload_sessions.expires_at
 	FROM
 		upload_sessions
 	INNER JOIN
@@ -76,8 +74,6 @@ func (r *Repository) GetUploadSessionForUser(ctx context.Context, db database.Pg
 		&upload.UploadPartCount,
 		&upload.Status,
 		&upload.ExpiresAt,
-		&upload.CreatedAt,
-		&upload.UpdatedAt,
 	); err != nil {
 		return models.UploadSession{}, err
 	}
@@ -89,8 +85,7 @@ func (r *Repository) UpdateUploadSessionStatus(ctx context.Context, db database.
 		upload_sessions
 	SET
 		status = $2,
-		encrypted_size = CASE WHEN $2 IN ('active', 'failed') THEN encrypted_size ELSE 0 END,
-		updated_at = now()
+		encrypted_size = CASE WHEN $2 IN ('active', 'failed') THEN encrypted_size ELSE 0 END
 	WHERE
 		id = $1`
 	_, err := db.Exec(ctx, query, uploadSessionID, status)
@@ -125,7 +120,7 @@ func (r *Repository) ListExpiredActiveUploads(ctx context.Context, db database.P
 
 func (r *Repository) ExpireUploadSession(ctx context.Context, db database.PgExecutor, uploadSessionID string) (bool, error) {
 	tag, err := db.Exec(ctx, `UPDATE upload_sessions
-	SET status = 'expired', encrypted_size = 0, updated_at = now()
+	SET status = 'expired', encrypted_size = 0
 	WHERE id = $1 AND status = 'active'`, uploadSessionID)
 	return tag.RowsAffected() > 0, err
 }
@@ -135,16 +130,14 @@ func (r *Repository) TouchUploadSession(ctx context.Context, db database.PgExecu
 		upload_sessions
 	SET
 		status = $2,
-		expires_at = $3,
-		updated_at = now()
+		expires_at = $3
 	WHERE
 		id = $1`
 	_, err := db.Exec(ctx, query, uploadSessionID, status, expiresAt)
 	return err
 }
 
-func (r *Repository) UpsertUploadPart(ctx context.Context, db database.PgExecutor, part models.UploadPart) (models.UploadPart, error) {
-	var stored models.UploadPart
+func (r *Repository) UpsertUploadPart(ctx context.Context, db database.PgExecutor, part models.UploadPart) error {
 	query := `INSERT INTO upload_parts
 		(upload_session_id, part_number, etag, encrypted_hash)
 	VALUES
@@ -152,30 +145,19 @@ func (r *Repository) UpsertUploadPart(ctx context.Context, db database.PgExecuto
 	ON CONFLICT (upload_session_id, part_number)
 	DO UPDATE SET
 		etag = EXCLUDED.etag,
-		encrypted_hash = EXCLUDED.encrypted_hash
-	RETURNING
-		id, upload_session_id, part_number, COALESCE(etag, ''), encrypted_hash, created_at`
-	if err := db.QueryRow(ctx, query,
+		encrypted_hash = EXCLUDED.encrypted_hash`
+	_, err := db.Exec(ctx, query,
 		part.UploadSessionID,
 		part.PartNumber,
 		part.ETag,
 		part.EncryptedHash,
-	).Scan(
-		&stored.ID,
-		&stored.UploadSessionID,
-		&stored.PartNumber,
-		&stored.ETag,
-		&stored.EncryptedHash,
-		&stored.CreatedAt,
-	); err != nil {
-		return models.UploadPart{}, err
-	}
-	return stored, nil
+	)
+	return err
 }
 
 func (r *Repository) ListUploadParts(ctx context.Context, db database.PgExecutor, uploadSessionID string) ([]models.UploadPart, error) {
 	rows, err := db.Query(ctx, `SELECT
-		id, upload_session_id, part_number, COALESCE(etag, ''), encrypted_hash, created_at
+		upload_session_id, part_number, COALESCE(etag, ''), encrypted_hash
 	FROM
 		upload_parts
 	WHERE
@@ -191,12 +173,10 @@ func (r *Repository) ListUploadParts(ctx context.Context, db database.PgExecutor
 	for rows.Next() {
 		var part models.UploadPart
 		if err := rows.Scan(
-			&part.ID,
 			&part.UploadSessionID,
 			&part.PartNumber,
 			&part.ETag,
 			&part.EncryptedHash,
-			&part.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

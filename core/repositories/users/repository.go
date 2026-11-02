@@ -39,24 +39,10 @@ func (r *Repository) UpdateLoginActivity(ctx context.Context, db database.PgExec
 	query := `UPDATE
 		users
 	SET
-		last_login_at = $2,
-		last_active_at = $2,
-		updated_at = now()
+		last_login_at = $2
 	WHERE
 		id = $1`
 	_, err := db.Exec(ctx, query, userID, loginAt)
-	return err
-}
-
-func (r *Repository) TouchUserActivity(ctx context.Context, db database.PgExecutor, userID string, activeAt time.Time) error {
-	query := `UPDATE
-		users
-	SET
-		last_active_at = $2,
-		updated_at = now()
-	WHERE
-		id = $1`
-	_, err := db.Exec(ctx, query, userID, activeAt)
 	return err
 }
 
@@ -65,8 +51,7 @@ func (r *Repository) SetRecoverySetupTokenHash(ctx context.Context, db database.
 		users
 	SET
 		recovery_setup_token_hash = $2,
-		recovery_setup_token_expires_at = $3,
-		updated_at = now()
+		recovery_setup_token_expires_at = $3
 	WHERE
 		id = $1`
 	_, err := db.Exec(ctx, query, userID, tokenHash, expiresAt)
@@ -93,8 +78,7 @@ func (r *Repository) ClearRecoverySetupTokenHash(ctx context.Context, db databas
 		users
 	SET
 		recovery_setup_token_hash = NULL,
-		recovery_setup_token_expires_at = NULL,
-		updated_at = now()
+		recovery_setup_token_expires_at = NULL
 	WHERE
 		recovery_setup_token_hash = $1`
 	_, err := db.Exec(ctx, query, tokenHash)
@@ -114,8 +98,7 @@ func (r *Repository) SetRecoveryWrappedMasterKey(
 		encrypted_master_key_recovery = $2,
 		recovery_proof_public_key = $3,
 		recovery_setup_token_hash = NULL,
-		recovery_setup_token_expires_at = NULL,
-		updated_at = now()
+		recovery_setup_token_expires_at = NULL
 	WHERE
 		id = $1`
 	_, err := tx.Exec(ctx, query, userID, encryptedMasterKeyRecovery, recoveryProofPublicKey)
@@ -149,9 +132,7 @@ func (r *Repository) SetPasswordResetToken(
 		users
 	SET
 		password_reset_token_hash = $2,
-		password_reset_token_expires_at = $3,
-		password_reset_consumed_at = NULL,
-		updated_at = now()
+		password_reset_token_expires_at = $3
 	WHERE
 		email = $1`
 	_, err := db.Exec(ctx, query, email, tokenHash, expiresAt)
@@ -167,14 +148,13 @@ func (r *Repository) FindByPasswordResetTokenHash(
 	query := `SELECT
 		id, username, email, vault_salt, encrypted_master_key_recovery,
 		recovery_proof_public_key,
-		password_reset_token_expires_at, password_reset_consumed_at
+		password_reset_token_expires_at
 	FROM
 		users
 	WHERE
 		password_reset_token_hash = $1
 		AND password_reset_token_expires_at IS NOT NULL
-		AND password_reset_token_expires_at > now()
-		AND password_reset_consumed_at IS NULL`
+		AND password_reset_token_expires_at > now()`
 	if err := db.QueryRow(ctx, query, tokenHash).Scan(
 		&user.ID,
 		&user.Username,
@@ -183,7 +163,6 @@ func (r *Repository) FindByPasswordResetTokenHash(
 		&user.EncryptedMasterKeyRecovery,
 		&user.RecoveryProofPublicKey,
 		&user.PasswordResetTokenExpiresAt,
-		&user.PasswordResetConsumedAt,
 	); err != nil {
 		return nil, err
 	}
@@ -205,16 +184,13 @@ func (r *Repository) CompletePasswordRecovery(
 		opaque_registration_record = $2,
 		vault_salt = $3,
 		encrypted_master_key = $4,
-		password_reset_consumed_at = now(),
 		password_reset_token_hash = NULL,
-		password_reset_token_expires_at = NULL,
-		updated_at = now()
+		password_reset_token_expires_at = NULL
 	WHERE
 		id = $1
 		AND password_reset_token_hash = $5
 		AND password_reset_token_expires_at IS NOT NULL
-		AND password_reset_token_expires_at > now()
-		AND password_reset_consumed_at IS NULL`
+		AND password_reset_token_expires_at > now()`
 	cmd, err := tx.Exec(ctx, query, userID, newOpaqueRegistrationRecord, newVaultSalt, newEncryptedMasterKey, resetTokenHash)
 	if err != nil {
 		return err

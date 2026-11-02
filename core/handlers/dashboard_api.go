@@ -38,12 +38,6 @@ func APIDashboard(filesService *filessvc.Service, settingsService *settingssvc.S
 			apierror.Unauthorized(c)
 			return
 		}
-		if err := filesService.TouchUserActivity(c.Request.Context(), user.ID); err != nil {
-			_ = c.Error(errs.WithStack(err))
-			apierror.Internal(c, "Dashboard data failed")
-			return
-		}
-
 		list, err := filesService.ListCompletedUploads(c.Request.Context(), user.ID, 1, 4)
 		if err != nil {
 			_ = c.Error(errs.WithStack(err))

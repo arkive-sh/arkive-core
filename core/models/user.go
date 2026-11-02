@@ -19,7 +19,5 @@ type User struct {
 	RecoverySetupTokenExpiresAt *time.Time
 	PasswordResetTokenHash      *string
 	PasswordResetTokenExpiresAt *time.Time
-	PasswordResetConsumedAt     *time.Time
-	UpdatedAt                   time.Time
 	CreatedAt                   time.Time
 }
