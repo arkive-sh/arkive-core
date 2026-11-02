@@ -26,4 +26,8 @@ export function fileManagerEntryKey(entry: Pick<FileManagerEntry, 'id' | 'kind'>
 	return `${entry.kind}:${entry.id}`;
 }
 
+export function isPdfFile(entry: Pick<FileManagerEntry, 'name' | 'type'>): boolean {
+	return entry.type.toLowerCase() === 'application/pdf' || entry.name.toLowerCase().endsWith('.pdf');
+}
+
 export type FilesView = 'list' | 'grid';

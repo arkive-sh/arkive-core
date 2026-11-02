@@ -7,7 +7,7 @@
 	import { formatBytes, formatDate } from '#lib/utils/format.ts';
 	import FileTypeIcon from '#lib/components/FileTypeIcon.svelte';
 	import { isImageFile } from '#lib/utils/image.ts';
-	import { fileManagerEntryKey, type FileManagerEntry } from './types';
+	import { fileManagerEntryKey, isPdfFile, type FileManagerEntry } from './types';
 
 	const GRID_COLUMNS = '3rem minmax(220px, 2fr) minmax(160px, 1.2fr) minmax(90px, 0.75fr) minmax(150px, 1fr)';
 	const GRID_COLUMNS_WITH_DIMENSIONS = `${GRID_COLUMNS} minmax(120px, 0.8fr)`;
@@ -24,7 +24,8 @@
 		onOpenFolder,
 		onShowContextMenu,
 		onPreviewImage,
-		onPreviewVideo
+		onPreviewVideo,
+		onPreviewPdf
 	}: {
 		rows: FileManagerEntry[];
 		focusFileId: string | null;
@@ -38,6 +39,7 @@
 		onShowContextMenu: (entry: FileManagerEntry, x: number, y: number) => void;
 		onPreviewImage: (entry: FileManagerEntry, trigger: HTMLElement) => void;
 		onPreviewVideo: (entry: FileManagerEntry) => void;
+		onPreviewPdf: (entry: FileManagerEntry) => void;
 	} = $props();
 	const activeGridColumns = $derived(showDimensions ? GRID_COLUMNS_WITH_DIMENSIONS : GRID_COLUMNS);
 	let selectAllCheckbox = $state<HTMLInputElement>();
@@ -179,6 +181,11 @@
 									</button>
 								{:else if cell.column.id === 'name' && row.original.type.startsWith('video/')}
 									<button class="inline-flex min-w-0 max-w-full cursor-pointer items-center gap-2 text-left font-medium hover:text-(--accent)" type="button" onclick={() => onPreviewVideo(row.original)}>
+										<FileTypeIcon name={row.original.name} mime={row.original.type} className="size-4 shrink-0" />
+										<span class="min-w-0 truncate" title={row.original.name}><FlexRender {cell} /></span>
+									</button>
+								{:else if cell.column.id === 'name' && isPdfFile(row.original)}
+									<button class="inline-flex min-w-0 max-w-full cursor-pointer items-center gap-2 text-left font-medium hover:text-(--accent)" type="button" aria-label={`Preview ${row.original.name}`} onclick={() => onPreviewPdf(row.original)}>
 										<FileTypeIcon name={row.original.name} mime={row.original.type} className="size-4 shrink-0" />
 										<span class="min-w-0 truncate" title={row.original.name}><FlexRender {cell} /></span>
 									</button>

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { Download, FolderOpen, Info, Trash2 } from '@lucide/svelte';
-	import type { FileManagerEntry } from './types';
+	import { Download, FileText, FolderOpen, Info, Trash2 } from '@lucide/svelte';
+	import { isPdfFile, type FileManagerEntry } from './types';
 
 	type Props = {
 		entry: FileManagerEntry | null;
@@ -10,11 +10,12 @@
 		onClose: () => void;
 		onOpenFolder: (id: string) => void;
 		onDownload: (entry: FileManagerEntry) => void;
+		onPreviewPdf: (entry: FileManagerEntry) => void;
 		onProperties: (entry: FileManagerEntry) => void;
 		onDelete: (entry: FileManagerEntry) => void;
 	};
 
-	let { entry, x, y, onClose, onOpenFolder, onDownload, onProperties, onDelete }: Props = $props();
+	let { entry, x, y, onClose, onOpenFolder, onDownload, onPreviewPdf, onProperties, onDelete }: Props = $props();
 	let menu = $state<HTMLDivElement>();
 	let position = $state({ left: 8, top: 8 });
 
@@ -78,6 +79,13 @@
 		onDownload(selected);
 	}
 
+	function previewPdf(): void {
+		if (!entry || entry.kind !== 'file' || !isPdfFile(entry)) return;
+		const selected = entry;
+		onClose();
+		onPreviewPdf(selected);
+	}
+
 	function confirmDelete(): void {
 		if (!entry) return;
 		const selected = entry;
@@ -103,6 +111,12 @@
 			</button>
 		{/if}
 		{#if entry.kind === 'file'}
+			{#if isPdfFile(entry)}
+				<button class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)" type="button" role="menuitem" onclick={previewPdf}>
+					<FileText class="size-4 text-(--muted)" aria-hidden="true" />
+					<span>Preview</span>
+				</button>
+			{/if}
 			<button class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)" type="button" role="menuitem" onclick={downloadFile}>
 				<Download class="size-4 text-(--muted)" aria-hidden="true" />
 				<span>Download</span>

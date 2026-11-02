@@ -69,6 +69,8 @@
 	let imagePreviewRequest = $state<{ fileId: string; trigger: HTMLElement } | null>(null);
 	let videoPreviewEntry = $state<FileManagerEntry | null>(null);
 	let VideoViewer = $state<typeof import('./VideoViewer.svelte').default>();
+	let pdfPreviewEntry = $state<FileManagerEntry | null>(null);
+	let PdfViewer = $state<typeof import('./PdfViewer.svelte').default>();
 	let contextMenuEntry = $state<FileManagerEntry | null>(null);
 	let contextMenuPosition = $state({ x: 0, y: 0 });
 	let tileSize = $state(150);
@@ -355,6 +357,11 @@
 		if (!VideoViewer) void import('./VideoViewer.svelte').then(({ default: component }) => VideoViewer = component);
 	}
 
+	function previewPdf(entry: FileManagerEntry): void {
+		pdfPreviewEntry = entry;
+		if (!PdfViewer) void import('./PdfViewer.svelte').then(({ default: component }) => PdfViewer = component);
+	}
+
 	function enqueueDownload(entry: FileManagerEntry, fileName: string, getTarget: () => Promise<FileSystemFileHandle>): void {
 		transfers.enqueueDownload(fileName, entry.size ?? 0, async (signal, onProgress, concurrency) => {
 			const { downloadEncryptedFile } = await import('#lib/downloads/download-file.ts');
@@ -587,6 +594,7 @@
 						onShowContextMenu={showContextMenu}
 						onPreviewImage={previewImage}
 						onPreviewVideo={previewVideo}
+						onPreviewPdf={previewPdf}
 					/>
 				{:else}
 					<FilesListView
@@ -602,6 +610,7 @@
 						onShowContextMenu={showContextMenu}
 						onPreviewImage={previewImage}
 						onPreviewVideo={previewVideo}
+						onPreviewPdf={previewPdf}
 					/>
 				{/if}
 
@@ -635,6 +644,10 @@
 	<VideoViewer entry={videoPreviewEntry} onClose={() => videoPreviewEntry = null} />
 {/if}
 
+{#if PdfViewer && pdfPreviewEntry}
+	<PdfViewer entry={pdfPreviewEntry} onClose={() => pdfPreviewEntry = null} />
+{/if}
+
 <FileEntryContextMenu
 	entry={contextMenuEntry}
 	x={contextMenuPosition.x}
@@ -642,6 +655,7 @@
 	onClose={() => contextMenuEntry = null}
 	onOpenFolder={openFolder}
 	onDownload={downloadEntry}
+	onPreviewPdf={previewPdf}
 	onProperties={(entry) => propertiesEntry = entry}
 	onDelete={requestDelete}
 />
