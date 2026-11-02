@@ -8,7 +8,7 @@
 	import FileTypeIcon from '#lib/components/FileTypeIcon.svelte';
 	import { isImageFile } from '#lib/utils/image.ts';
 	import { readDecryptedThumbnail } from '#lib/vault/thumbnail.ts';
-	import { fileManagerEntryKey, type FileManagerEntry } from './types';
+	import { fileManagerEntryKey, isPdfFile, type FileManagerEntry } from './types';
 
 	const THUMBNAIL_CONCURRENCY = 4;
 	let {
@@ -23,7 +23,8 @@
 		onOpenFolder,
 		onShowContextMenu,
 		onPreviewImage,
-		onPreviewVideo
+		onPreviewVideo,
+		onPreviewPdf
 	}: {
 		rows: FileManagerEntry[];
 		focusFileId: string | null;
@@ -37,6 +38,7 @@
 		onShowContextMenu: (entry: FileManagerEntry, x: number, y: number) => void;
 		onPreviewImage: (entry: FileManagerEntry, trigger: HTMLElement) => void;
 		onPreviewVideo: (entry: FileManagerEntry) => void;
+		onPreviewPdf: (entry: FileManagerEntry) => void;
 	} = $props();
 	let gridLayout = $state<HTMLDivElement>();
 	let gridContent = $state<HTMLDivElement>();
@@ -258,6 +260,10 @@
 										<FileTypeIcon name={entry.name} mime={entry.type} style={`width: ${iconSize}px; height: ${iconSize}px`} />
 									{/if}
 								</button>
+							{:else if entry.kind === 'file' && isPdfFile(entry)}
+								<button class="grid aspect-4/3 w-full cursor-pointer place-items-center overflow-hidden bg-(--surface-highest)" type="button" aria-label={`Preview ${entry.name}`} onclick={() => onPreviewPdf(entry)}>
+									<FileTypeIcon name={entry.name} mime={entry.type} style={`width: ${iconSize}px; height: ${iconSize}px`} />
+								</button>
 							{:else}
 								<div class="grid aspect-4/3 place-items-center overflow-hidden bg-(--surface-highest)">
 									{#if entry.kind === 'folder'}
@@ -276,6 +282,8 @@
 									<button class="min-w-0 cursor-zoom-in truncate text-left font-medium leading-tight hover:text-(--accent)" style={`font-size: ${nameFontSize}px`} type="button" onclick={(event) => onPreviewImage(entry, event.currentTarget)}>{entry.name}</button>
 								{:else if entry.type.startsWith('video/')}
 									<button class="min-w-0 cursor-pointer truncate text-left font-medium leading-tight hover:text-(--accent)" style={`font-size: ${nameFontSize}px`} type="button" onclick={() => onPreviewVideo(entry)}>{entry.name}</button>
+				{:else if isPdfFile(entry)}
+					<button class="min-w-0 cursor-pointer truncate text-left font-medium leading-tight hover:text-(--accent)" style={`font-size: ${nameFontSize}px`} type="button" onclick={() => onPreviewPdf(entry)}>{entry.name}</button>
 								{:else}
 									<span class="truncate font-medium leading-tight" style={`font-size: ${nameFontSize}px`} title={entry.name}>{entry.name}</span>
 								{/if}
