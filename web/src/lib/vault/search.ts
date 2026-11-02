@@ -1,5 +1,4 @@
 import { decodeJSON, toWorkerBytes } from './bytes';
-import { touchSessionUnlock } from './session';
 import type {
 	EncryptedSearchFile,
 	EncryptedSearchFolder,
@@ -30,7 +29,6 @@ function trigramsForText(value: unknown): string[] {
 }
 
 export async function createSearchTokens(text: string, vaultId: string, maxTerms = 32): Promise<string[]> {
-	touchSessionUnlock();
 	const terms = trigramsForText(text).slice(0, maxTerms);
 	if (!terms.length) return [];
 	const result = await callVaultWorker('createSearchTokens', { vaultId, terms });
@@ -38,7 +36,6 @@ export async function createSearchTokens(text: string, vaultId: string, maxTerms
 }
 
 export async function decryptSearchFile(file: EncryptedSearchFile): Promise<{ metadata: VaultMetadata & { name?: string; mime?: string; preview?: SearchPreview; dimensions?: MediaDimensions } }> {
-	touchSessionUnlock();
 	const result = await callVaultWorker('decryptSearchFile', {
 		fileId: file.id,
 		vaultId: file.vaultId,
@@ -51,7 +48,6 @@ export async function decryptSearchFile(file: EncryptedSearchFile): Promise<{ me
 }
 
 export async function decryptSearchFolder(folder: EncryptedSearchFolder): Promise<{ name: VaultMetadata & { name?: string }; metadata: VaultMetadata & { name?: string } }> {
-	touchSessionUnlock();
 	const result = await callVaultWorker('decryptSearchFolder', {
 		encryptedName: folder.encryptedName,
 		encryptedMetadata: folder.encryptedMetadata,
@@ -79,7 +75,6 @@ export function decryptSearchThumbnail(
 	file: EncryptedSearchFile,
 	encryptedThumbnail: VaultBytes
 ): Promise<{ thumbnailBytes: Uint8Array }> {
-	touchSessionUnlock();
 	const payload = toWorkerBytes(encryptedThumbnail);
 	return callVaultWorker(
 		'decryptSearchThumbnail',

@@ -1,5 +1,4 @@
 import { encodeJSON, normalizeAAD, toWorkerBytes } from './bytes';
-import { touchSessionUnlock } from './session';
 import type { VaultAAD, VaultBytes, VaultMetadata, VaultWorkerCalls } from './types';
 import { callVaultWorker } from './worker-client';
 
@@ -9,7 +8,6 @@ export function prepareUpload(
 	fileId: string,
 	totalParts: number
 ): Promise<VaultWorkerCalls['prepareUpload']['result']> {
-	touchSessionUnlock();
 	return callVaultWorker('prepareUpload', {
 		uploadToken,
 		totalParts,
@@ -23,7 +21,6 @@ export function encryptUploadMetadata(
 	vaultId: string,
 	fileId: string
 ): Promise<VaultWorkerCalls['encryptUploadMetadata']['result']> {
-	touchSessionUnlock();
 	const metadataBytes = encodeJSON(metadata);
 	return callVaultWorker('encryptUploadMetadata', {
 		uploadToken,
@@ -37,7 +34,6 @@ export function encryptUploadThumbnail(
 	thumbnailBytes: VaultBytes,
 	aad: VaultAAD
 ): Promise<VaultWorkerCalls['encryptUploadThumbnail']['result']> {
-	touchSessionUnlock();
 	const payload = toWorkerBytes(thumbnailBytes);
 	return callVaultWorker('encryptUploadThumbnail', { uploadToken, thumbnailBytes: payload, aad: normalizeAAD(aad) }, [payload]);
 }
@@ -47,7 +43,6 @@ export function encryptUploadPart(
 	chunkBytes: VaultBytes,
 	aad?: VaultAAD
 ): Promise<VaultWorkerCalls['encryptUploadPart']['result']> {
-	touchSessionUnlock();
 	const payload = toWorkerBytes(chunkBytes);
 	return callVaultWorker('encryptUploadPart', { uploadToken, chunkBytes: payload, aad: normalizeAAD(aad) }, [payload]);
 }
@@ -64,7 +59,6 @@ export function finalizeUpload(
 	manifest: VaultMetadata,
 	partHashes: string[]
 ): Promise<VaultWorkerCalls['finalizeUpload']['result']> {
-	touchSessionUnlock();
 	const manifestBytes = encodeJSON(manifest);
 	return callVaultWorker('finalizeUpload', {
 		uploadToken,
