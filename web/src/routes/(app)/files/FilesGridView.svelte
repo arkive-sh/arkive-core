@@ -4,11 +4,9 @@
 	import { Folder } from '@lucide/svelte';
 	import { createWindowVirtualizer } from '@tanstack/svelte-virtual';
 	import { get } from 'svelte/store';
-	import { api } from '#lib/api.ts';
-	import { getCachedThumbnail, cacheThumbnail } from '#lib/thumbnail-cache.ts';
 	import { formatBytes } from '#lib/utils/format.ts';
 	import FileTypeIcon from '#lib/components/FileTypeIcon.svelte';
-	import { decryptSearchThumbnail } from '#lib/vault/search.ts';
+	import { readDecryptedThumbnail } from '#lib/vault/thumbnail.ts';
 	import { fileManagerEntryKey, type FileManagerEntry } from './types';
 
 	const THUMBNAIL_CONCURRENCY = 4;
@@ -139,46 +137,15 @@
 	async function loadThumbnail(entry: FileManagerEntry): Promise<void> {
 		if (!entry.thumbnail) return;
 		try {
-			const preview = entry.thumbnail;
-			let encryptedBytes = await getCachedThumbnail(entry.id, preview.version, preview.size);
-			if (controller.signal.aborted || !visibleIds.has(entry.id)) return;
-
-			if (!encryptedBytes) {
-				const { data } = await api.get<{ url: string }>(`/api/files/${encodeURIComponent(entry.id)}/thumbnail/presign`, {
-					signal: controller.signal
-				});
-				const response = await fetch(data.url, { credentials: 'omit', signal: controller.signal });
-				if (!response.ok) throw new Error(`Thumbnail request failed (${response.status}).`);
-				if (controller.signal.aborted || !visibleIds.has(entry.id)) return;
-				encryptedBytes = new Uint8Array(await response.arrayBuffer());
-				void cacheThumbnail(entry.id, preview.version, preview.size, encryptedBytes).catch(() => {});
-			}
-
-			const { thumbnailBytes } = await decryptSearchThumbnail({
-				id: entry.id,
-				folderId: null,
-				vaultId: preview.vaultId,
-				encryptedMetadata: preview.encryptedMetadata,
-				encryptedFileKey: preview.encryptedFileKey,
-				score: 0,
-				url: `/files/${entry.id}/view`
-			}, encryptedBytes);
-			try {
-				if (controller.signal.aborted || !visibleIds.has(entry.id) || !thumbnailBytes.length) return;
-				const blobBytes = Uint8Array.from(thumbnailBytes);
-				let blob: Blob;
-				try {
-					blob = new Blob([blobBytes.buffer as ArrayBuffer], { type: preview.mime });
-				} finally {
-					blobBytes.fill(0);
-				}
-				const url = URL.createObjectURL(blob);
-				objectUrls.set(entry.id, url);
-				thumbnails.set(entry.id, url);
-			} finally {
-				// The preview buffer is plaintext, so clear it on every exit path.
-				thumbnailBytes.fill(0);
-			}
+			const blob = await readDecryptedThumbnail(
+				{ id: entry.id, ...entry.thumbnail },
+				controller.signal,
+				() => visibleIds.has(entry.id)
+			);
+			if (controller.signal.aborted || !visibleIds.has(entry.id) || !blob) return;
+			const url = URL.createObjectURL(blob);
+			objectUrls.set(entry.id, url);
+			thumbnails.set(entry.id, url);
 		} catch (error) {
 			if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
 				console.warn('Thumbnail preview failed:', error instanceof Error ? error.message : 'Unknown error');
