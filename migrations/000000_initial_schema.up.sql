@@ -13,7 +13,9 @@ CREATE TABLE users (
   reserved_bytes BIGINT NOT NULL DEFAULT 0,
   last_login_at TIMESTAMPTZ,
   last_active_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  recovery_setup_token TEXT UNIQUE,
+  recovery_setup_token_hash BYTEA UNIQUE CHECK (
+    recovery_setup_token_hash IS NULL OR octet_length(recovery_setup_token_hash) = 32
+  ),
   recovery_setup_token_expires_at TIMESTAMPTZ,
   encrypted_master_key_recovery BYTEA,
   recovery_proof_public_key BYTEA,

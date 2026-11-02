@@ -60,44 +60,44 @@ func (r *Repository) TouchUserActivity(ctx context.Context, db database.PgExecut
 	return err
 }
 
-func (r *Repository) SetRecoverySetupToken(ctx context.Context, db database.PgExecutor, userID, token string, expiresAt time.Time) error {
+func (r *Repository) SetRecoverySetupTokenHash(ctx context.Context, db database.PgExecutor, userID string, tokenHash []byte, expiresAt time.Time) error {
 	query := `UPDATE
 		users
 	SET
-		recovery_setup_token = $2,
+		recovery_setup_token_hash = $2,
 		recovery_setup_token_expires_at = $3,
 		updated_at = now()
 	WHERE
 		id = $1`
-	_, err := db.Exec(ctx, query, userID, token, expiresAt)
+	_, err := db.Exec(ctx, query, userID, tokenHash, expiresAt)
 	return err
 }
 
-func (r *Repository) HasValidRecoverySetupToken(ctx context.Context, db database.PgExecutor, token string, now time.Time) (bool, error) {
+func (r *Repository) HasValidRecoverySetupTokenHash(ctx context.Context, db database.PgExecutor, tokenHash []byte, now time.Time) (bool, error) {
 	query := `SELECT EXISTS (
 		SELECT 1
 		FROM users
-		WHERE recovery_setup_token = $1
+		WHERE recovery_setup_token_hash = $1
 			AND recovery_setup_token_expires_at IS NOT NULL
 			AND recovery_setup_token_expires_at > $2
 	)`
 	var ok bool
-	if err := db.QueryRow(ctx, query, token, now).Scan(&ok); err != nil {
+	if err := db.QueryRow(ctx, query, tokenHash, now).Scan(&ok); err != nil {
 		return false, err
 	}
 	return ok, nil
 }
 
-func (r *Repository) ClearRecoverySetupToken(ctx context.Context, db database.PgExecutor, token string) error {
+func (r *Repository) ClearRecoverySetupTokenHash(ctx context.Context, db database.PgExecutor, tokenHash []byte) error {
 	query := `UPDATE
 		users
 	SET
-		recovery_setup_token = NULL,
+		recovery_setup_token_hash = NULL,
 		recovery_setup_token_expires_at = NULL,
 		updated_at = now()
 	WHERE
-		recovery_setup_token = $1`
-	_, err := db.Exec(ctx, query, token)
+		recovery_setup_token_hash = $1`
+	_, err := db.Exec(ctx, query, tokenHash)
 	return err
 }
 
@@ -113,7 +113,7 @@ func (r *Repository) SetRecoveryWrappedMasterKey(
 	SET
 		encrypted_master_key_recovery = $2,
 		recovery_proof_public_key = $3,
-		recovery_setup_token = NULL,
+		recovery_setup_token_hash = NULL,
 		recovery_setup_token_expires_at = NULL,
 		updated_at = now()
 	WHERE
@@ -122,17 +122,17 @@ func (r *Repository) SetRecoveryWrappedMasterKey(
 	return err
 }
 
-func (r *Repository) GetByRecoverySetupToken(ctx context.Context, db database.PgExecutor, token string, now time.Time) (models.User, error) {
+func (r *Repository) GetByRecoverySetupTokenHash(ctx context.Context, db database.PgExecutor, tokenHash []byte, now time.Time) (models.User, error) {
 	var user models.User
 	query := `SELECT
 		id, encrypted_master_key
 	FROM
 		users
 	WHERE
-		recovery_setup_token = $1
+		recovery_setup_token_hash = $1
 		AND recovery_setup_token_expires_at IS NOT NULL
 		AND recovery_setup_token_expires_at > $2`
-	if err := db.QueryRow(ctx, query, token, now).Scan(&user.ID, &user.EncryptedMasterKey); err != nil {
+	if err := db.QueryRow(ctx, query, tokenHash, now).Scan(&user.ID, &user.EncryptedMasterKey); err != nil {
 		return models.User{}, err
 	}
 	return user, nil

@@ -1,0 +1,5 @@
+export const ENCRYPTION_VERSION = 1;
+export const AES_GCM_KEY_BYTES = 32;
+export const AES_GCM_IV_BYTES = 12;
+export const AES_GCM_TAG_BYTES = 16;
+export const ENCRYPTED_ENVELOPE_OVERHEAD_BYTES = 1 + AES_GCM_IV_BYTES + AES_GCM_TAG_BYTES;

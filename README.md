@@ -116,17 +116,16 @@ Like most searchable-encryption systems, token equality patterns may be observab
 
 ## Cryptography
 
-Client-side cryptography is implemented using the Arkive Crypto WebAssembly library.
+The SvelteKit web app uses the browser's Web Crypto API for vault operations.
 
-Algorithms currently used include:
+The current web format (version 1) uses:
 
-- XChaCha20-Poly1305
-- Argon2id
+- AES-256-GCM
+- SHA-256 for encrypted data hashes
 - HKDF-SHA256
-- BLAKE3
-- SHA-256
+- HMAC-SHA256 for search tokens
 
-Arkive Crypto is available separately and contains implementation details, encryption formats, key derivation logic, and cryptographic documentation.
+The Rust Arkive Crypto library remains in use by the legacy Go-rendered pages and native sync client. Those clients must use the same format before sharing files with the SvelteKit app.
 
 See:
 

@@ -90,6 +90,9 @@ func (s *Service) StartMultipartUploadSession(ctx context.Context, userID string
 	if inFlight >= int64(settings.MaxQueueItems) {
 		validationErrors.Add("queue", ErrQueueLimitReached.Error())
 	}
+	if input.EncryptionVersion != 1 {
+		validationErrors.Add("encryptionVersion", "unsupported encryption version")
+	}
 	if input.OriginalSize <= 0 {
 		validationErrors.Add("size", ErrFileSizeRequired.Error())
 	}

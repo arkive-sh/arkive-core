@@ -3,6 +3,7 @@ import { api } from '../api';
 import { createSearchTokens } from '../vault/search';
 import { waitUntilReady } from '../vault/session';
 import { encryptFolderMetadata, encryptFolderName } from '../vault/files';
+import { ENCRYPTION_VERSION } from '../vault/crypto-format';
 import type { SearchTokenEntry } from '../vault/types';
 import { createAndUploadThumbnail, type UploadedThumbnail } from './thumbnail';
 import {
@@ -127,7 +128,7 @@ export async function uploadFile(
 			totalChunks,
 			uploadPartSize: UPLOAD_PART_SIZE,
 			uploadPartCount,
-			encryptionVersion: 1,
+			encryptionVersion: ENCRYPTION_VERSION,
 			folderId,
 			singlePart: totalChunks === 1
 		},
@@ -282,7 +283,7 @@ export async function uploadFile(
 			{
 				schema: 'arkive.file.manifest',
 				version: 1,
-				hash_alg: 'blake3',
+				hash_alg: 'sha256',
 				hash_encoding: 'base64',
 				file_id: started.fileId,
 				name: file.name,
