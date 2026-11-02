@@ -14,7 +14,7 @@
 	let submitting = $state(false);
 
 	onMount(() => {
-		if ($vaultUnlocked) void goto('/', { replaceState: true });
+		if ($vaultUnlocked) void goto('/', { replace: true });
 	});
 
 	async function submit(event: SubmitEvent): Promise<void> {
@@ -25,7 +25,7 @@
 		try {
 			await loginAndUnlock(data.user.email, password);
 			password = '';
-			await goto('/', { replaceState: true });
+			await goto('/', { replace: true });
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : 'Could not unlock the vault.';
 		} finally {

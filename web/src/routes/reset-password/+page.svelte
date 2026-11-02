@@ -114,7 +114,7 @@
 				encryptedMasterKey: prepared.encryptedMasterKey,
 				recoveryProof: prepared.recoveryProof
 			});
-			await goto('/login?password-reset-complete=1', { replaceState: true });
+			await goto('/login?password-reset-complete=1', { replace: true });
 		} catch (cause) {
 			error = axios.isAxiosError<APIErrorResponse>(cause)
 				? cause.response?.data?.error?.details?.fields?.general ?? cause.response?.data?.error?.message ?? cause.message
