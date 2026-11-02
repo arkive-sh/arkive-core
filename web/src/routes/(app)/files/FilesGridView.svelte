@@ -6,6 +6,7 @@
 	import { get } from 'svelte/store';
 	import { formatBytes } from '#lib/utils/format.ts';
 	import FileTypeIcon from '#lib/components/FileTypeIcon.svelte';
+	import { isImageFile } from '#lib/utils/image.ts';
 	import { readDecryptedThumbnail } from '#lib/vault/thumbnail.ts';
 	import { fileManagerEntryKey, type FileManagerEntry } from './types';
 
@@ -239,7 +240,7 @@
 								aria-label={`Select ${entry.name}`}
 								onchange={() => onToggleSelection(entry)}
 							/>
-							{#if entry.kind === 'file' && entry.type.startsWith('image/')}
+							{#if entry.kind === 'file' && isImageFile(entry.name, entry.type)}
 								<button class="grid aspect-4/3 w-full cursor-zoom-in place-items-center overflow-hidden bg-(--surface-highest)" type="button" aria-label={`Preview ${entry.name}`} onclick={(event) => onPreviewImage(entry, event.currentTarget)}>
 									{#if thumbnails.get(entry.id)}
 										<img class="size-full object-cover" src={thumbnails.get(entry.id)} alt={entry.name} loading="lazy" decoding="async" />
@@ -269,7 +270,7 @@
 							<div class="grid min-w-0" style={`gap: ${contentGap}px; padding: ${cardGap}px`}>
 								{#if entry.kind === 'folder'}
 									<button class="min-w-0 cursor-pointer truncate text-left font-medium leading-tight hover:text-(--accent)" style={`font-size: ${nameFontSize}px`} type="button" onclick={() => onOpenFolder(entry.id)}>{entry.name}</button>
-								{:else if entry.type.startsWith('image/')}
+								{:else if isImageFile(entry.name, entry.type)}
 									<button class="min-w-0 cursor-zoom-in truncate text-left font-medium leading-tight hover:text-(--accent)" style={`font-size: ${nameFontSize}px`} type="button" onclick={(event) => onPreviewImage(entry, event.currentTarget)}>{entry.name}</button>
 								{:else if entry.type.startsWith('video/')}
 									<button class="min-w-0 cursor-pointer truncate text-left font-medium leading-tight hover:text-(--accent)" style={`font-size: ${nameFontSize}px`} type="button" onclick={() => onPreviewVideo(entry)}>{entry.name}</button>

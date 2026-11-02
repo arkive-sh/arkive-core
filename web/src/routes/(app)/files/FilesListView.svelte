@@ -6,6 +6,7 @@
 	import { get } from 'svelte/store';
 	import { formatBytes, formatDate } from '#lib/utils/format.ts';
 	import FileTypeIcon from '#lib/components/FileTypeIcon.svelte';
+	import { isImageFile } from '#lib/utils/image.ts';
 	import { fileManagerEntryKey, type FileManagerEntry } from './types';
 
 	const GRID_COLUMNS = '3rem minmax(220px, 2fr) minmax(160px, 1.2fr) minmax(90px, 0.75fr) minmax(150px, 1fr)';
@@ -159,7 +160,7 @@
 										<Folder class="size-4 shrink-0 text-(--accent)" aria-hidden="true" />
 										<span class="min-w-0 truncate" title={row.original.name}><FlexRender {cell} /></span>
 									</button>
-								{:else if cell.column.id === 'name' && row.original.type.startsWith('image/')}
+								{:else if cell.column.id === 'name' && isImageFile(row.original.name, row.original.type)}
 									<button class="inline-flex min-w-0 max-w-full cursor-zoom-in items-center gap-2 text-left font-medium" type="button" onclick={(event) => onPreviewImage(row.original, event.currentTarget)}>
 										<FileTypeIcon name={row.original.name} mime={row.original.type} className="size-4 shrink-0" />
 										<span class="min-w-0 truncate" title={row.original.name}><FlexRender {cell} /></span>

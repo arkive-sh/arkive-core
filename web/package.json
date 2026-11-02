@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "vite dev --host 0.0.0.0",
     "build": "vite build",
+    "build:heic": "bash scripts/build-heic-wasm.sh",
     "preview": "node build/index.js",
     "prepare": "svelte-kit sync"
   },

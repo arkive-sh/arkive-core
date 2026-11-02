@@ -6,6 +6,7 @@ import { encryptFolderMetadata, encryptFolderName } from '../vault/files';
 import { ENCRYPTED_ENVELOPE_OVERHEAD_BYTES, ENCRYPTION_VERSION } from '../vault/crypto-format';
 import type { SearchTokenEntry } from '../vault/types';
 import { createAndUploadThumbnail, type UploadedThumbnail } from './thumbnail';
+import { imageMimeType } from '#lib/utils/image.ts';
 import {
 	clearUploadContext,
 	encryptUploadMetadata,
@@ -139,7 +140,7 @@ export async function uploadFile(
 	let complete = false;
 
 	try {
-		const mime = file.type || 'application/octet-stream';
+		const mime = imageMimeType(file.name, file.type) || file.type || 'application/octet-stream';
 		const prepared = await prepareUpload(
 			uploadToken,
 			started.vaultId,

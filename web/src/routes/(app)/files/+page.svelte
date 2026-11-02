@@ -15,6 +15,7 @@
 	import FilesListView from './FilesListView.svelte';
 	import FilesViewOptions from './FilesViewOptions.svelte';
 	import ImageViewer from './ImageViewer.svelte';
+	import { imageMimeType, isImageFile } from '#lib/utils/image.ts';
 	import { fileManagerEntryKey, type FileManagerEntry, type FilesView } from './types';
 	import { useTransferManager } from '#lib/transfers/manager.ts';
 	import { decryptSearchFile, decryptSearchFolder } from '#lib/vault/search.ts';
@@ -120,7 +121,7 @@
 	const selectedEntries = $derived(loadedEntries.filter((entry) => selectedIds.has(fileManagerEntryKey(entry))));
 	const selectedFiles = $derived(selectedEntries.filter((entry) => entry.kind === 'file'));
 	// shortcut: PhotoSwipe navigates loaded rows; add paged image lookup if full-folder navigation is needed.
-	const imageEntries = $derived(rows.filter((entry) => entry.kind === 'file' && entry.type.startsWith('image/')));
+	const imageEntries = $derived(rows.filter((entry) => entry.kind === 'file' && isImageFile(entry.name, entry.type)));
 	const allRowsSelected = $derived(loadedEntries.length > 0 && selectedEntries.length === loadedEntries.length);
 	const currentLocation = $derived(breadcrumbs.map((crumb) => crumb.name).join(' / '));
 	const breadcrumbItems = $derived(breadcrumbs.map((crumb, index) => ({
@@ -165,7 +166,8 @@
 					const preview = decrypted.metadata.preview;
 					const thumbnailVersion = Number(preview?.thumbnail_version || 0);
 					const thumbnailSize = Number(preview?.thumbnail_size || 0);
-					const mime = typeof decrypted.metadata.mime === 'string' ? decrypted.metadata.mime : 'application/octet-stream';
+					const storedMime = typeof decrypted.metadata.mime === 'string' ? decrypted.metadata.mime : '';
+					const mime = imageMimeType(decrypted.metadata.name || '', storedMime) || storedMime || 'application/octet-stream';
 					return {
 						id: file.ID,
 						kind: 'file',
