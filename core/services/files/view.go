@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 
