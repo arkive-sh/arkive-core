@@ -38,7 +38,7 @@ const (
 )
 
 type MultipartUploadStartInput struct {
-	OriginalSize      int64
+	EncryptedSize     int64
 	FileChunkSize     int64
 	TotalChunks       int
 	UploadPartSize    int64
@@ -89,8 +89,8 @@ func (s *Service) StartMultipartUploadSession(ctx context.Context, userID string
 	if input.EncryptionVersion != 1 {
 		validationErrors.Add("encryptionVersion", "unsupported encryption version")
 	}
-	if input.OriginalSize <= 0 {
-		validationErrors.Add("size", ErrFileSizeRequired.Error())
+	if input.EncryptedSize <= 0 {
+		validationErrors.Add("encryptedSize", ErrFileSizeRequired.Error())
 	}
 	if input.FileChunkSize <= 0 {
 		validationErrors.Add("fileChunkSize", "file chunk size is required")
@@ -120,9 +120,18 @@ func (s *Service) StartMultipartUploadSession(ctx context.Context, userID string
 		return models.UploadStartResponse{}, validationErrors, nil
 	}
 
-	expectedChunks := int((input.OriginalSize + input.FileChunkSize - 1) / input.FileChunkSize)
-	if expectedChunks != input.TotalChunks {
-		validationErrors.Add("totalChunks", "total chunks does not match original size")
+	if int64(input.TotalChunks) > input.EncryptedSize/encryptedChunkEnvelopeOverheadBytes {
+		validationErrors.Add("encryptedSize", "encrypted size is smaller than its chunk overhead")
+		return models.UploadStartResponse{}, validationErrors, nil
+	}
+	plaintextSize := plaintextFileSize(input.EncryptedSize, input.TotalChunks)
+	if plaintextSize <= 0 {
+		validationErrors.Add("encryptedSize", "encrypted size is invalid")
+		return models.UploadStartResponse{}, validationErrors, nil
+	}
+	expectedChunks := int64(1) + (plaintextSize-1)/input.FileChunkSize
+	if expectedChunks != int64(input.TotalChunks) {
+		validationErrors.Add("totalChunks", "total chunks do not match encrypted size")
 		return models.UploadStartResponse{}, validationErrors, nil
 	}
 	chunksPerUploadPart := int(input.UploadPartSize / input.FileChunkSize)
@@ -132,14 +141,14 @@ func (s *Service) StartMultipartUploadSession(ctx context.Context, userID string
 	}
 	expectedUploadParts := (input.TotalChunks + chunksPerUploadPart - 1) / chunksPerUploadPart
 	if expectedUploadParts != input.UploadPartCount {
-		validationErrors.Add("uploadPartCount", "upload part count does not match original size")
+		validationErrors.Add("uploadPartCount", "upload part count does not match encrypted size")
 		return models.UploadStartResponse{}, validationErrors, nil
 	}
 	if input.UploadPartSize%input.FileChunkSize != 0 {
 		validationErrors.Add("uploadPartSize", "upload part size must align to file chunk size")
 		return models.UploadStartResponse{}, validationErrors, nil
 	}
-	encryptedSize := encryptedFileSize(input.OriginalSize, input.TotalChunks)
+	encryptedSize := input.EncryptedSize
 	reservedSize := reservedUploadSize(encryptedSize)
 	uploadExpiry := s.uploadExpiry(ctx)
 	storageSettings, err := s.settingsRepo.GetStorageSettings(ctx, s.db)

@@ -17,7 +17,7 @@ import (
 )
 
 type uploadStartRequest struct {
-	OriginalSize      int64   `json:"originalSize"`
+	EncryptedSize     int64   `json:"encryptedSize"`
 	FileChunkSize     int64   `json:"fileChunkSize"`
 	TotalChunks       int     `json:"totalChunks"`
 	UploadPartSize    int64   `json:"uploadPartSize"`
@@ -194,7 +194,7 @@ func APITransferLimits(settingsService *settingssvc.Service) gin.HandlerFunc {
 
 func uploadStartInput(req uploadStartRequest) uploads.MultipartUploadStartInput {
 	return uploads.MultipartUploadStartInput{
-		OriginalSize:      req.OriginalSize,
+		EncryptedSize:     req.EncryptedSize,
 		FileChunkSize:     req.FileChunkSize,
 		TotalChunks:       req.TotalChunks,
 		UploadPartSize:    req.UploadPartSize,

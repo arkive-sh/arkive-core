@@ -42,13 +42,6 @@ func expiresAtPtr(t time.Time) *time.Time {
 	return &t
 }
 
-func encryptedFileSize(plaintextSize int64, chunkCount int) int64 {
-	if plaintextSize <= 0 || chunkCount <= 0 {
-		return 0
-	}
-	return plaintextSize + int64(chunkCount)*encryptedChunkEnvelopeOverheadBytes
-}
-
 func plaintextFileSize(encryptedSize int64, chunkCount int) int64 {
 	if encryptedSize <= 0 || chunkCount <= 0 {
 		return 0
