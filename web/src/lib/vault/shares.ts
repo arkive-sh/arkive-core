@@ -1,5 +1,4 @@
 import { normalizeAAD, toWorkerBytes } from './bytes';
-import { touchSessionUnlock } from './session';
 import type { PublicShareCryptoRecord, ShareFileRecord, VaultAAD, VaultBytes, VaultWorkerCalls } from './types';
 import { callVaultWorker } from './worker-client';
 
@@ -7,7 +6,6 @@ export function prepareShare(
 	record: ShareFileRecord,
 	token: string
 ): Promise<VaultWorkerCalls['prepareShare']['result']> {
-	touchSessionUnlock();
 	return callVaultWorker('prepareShare', {
 		vaultId: record.vaultId,
 		fileId: record.fileId,
@@ -20,7 +18,6 @@ export function prepareShare(
 }
 
 export function openShareKey(encryptedShareKey: string, token: string): Promise<{ shareSecret: Uint8Array<ArrayBuffer> }> {
-	touchSessionUnlock();
 	return callVaultWorker('openShareKey', {
 		encryptedShareKey,
 		shareKeyAad: `arkive:share-key:v1:${token}`
