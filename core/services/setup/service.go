@@ -3,6 +3,7 @@ package setup
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"errors"
 	"regexp"
 	"strings"
@@ -152,12 +153,12 @@ func (s *Service) CreateInitialAdmin(ctx context.Context, input InitialAdminInpu
 }
 
 func (s *Service) IssueRecoverySetupToken(ctx context.Context, userID string, ttl time.Duration) (string, error) {
-	token, _, err := tokens.Generate()
+	token, tokenHash, err := tokens.Generate()
 	if err != nil {
 		return "", err
 	}
 	expiresAt := time.Now().Add(ttl)
-	if err := s.userRepo.SetRecoverySetupToken(ctx, s.db, userID, token, expiresAt); err != nil {
+	if err := s.userRepo.SetRecoverySetupTokenHash(ctx, s.db, userID, tokenHash, expiresAt); err != nil {
 		return "", err
 	}
 	return token, nil
@@ -168,7 +169,7 @@ func (s *Service) HasValidRecoverySetupToken(ctx context.Context, token string) 
 	if token == "" {
 		return false, nil
 	}
-	return s.userRepo.HasValidRecoverySetupToken(ctx, s.db, token, time.Now())
+	return s.userRepo.HasValidRecoverySetupTokenHash(ctx, s.db, recoverySetupTokenHash(token), time.Now())
 }
 
 func (s *Service) ClearRecoverySetupToken(ctx context.Context, token string) error {
@@ -176,7 +177,7 @@ func (s *Service) ClearRecoverySetupToken(ctx context.Context, token string) err
 	if token == "" {
 		return nil
 	}
-	return s.userRepo.ClearRecoverySetupToken(ctx, s.db, token)
+	return s.userRepo.ClearRecoverySetupTokenHash(ctx, s.db, recoverySetupTokenHash(token))
 }
 
 func (s *Service) GetRecoverySetupUser(ctx context.Context, token string) (models.User, error) {
@@ -184,7 +185,7 @@ func (s *Service) GetRecoverySetupUser(ctx context.Context, token string) (model
 	if token == "" {
 		return models.User{}, pgx.ErrNoRows
 	}
-	return s.userRepo.GetByRecoverySetupToken(ctx, s.db, token, time.Now())
+	return s.userRepo.GetByRecoverySetupTokenHash(ctx, s.db, recoverySetupTokenHash(token), time.Now())
 }
 
 func (s *Service) SaveRecoveryWrappedMasterKey(ctx context.Context, token string, encryptedMasterKeyRecovery, recoveryProofPublicKey []byte) error {
@@ -204,7 +205,7 @@ func (s *Service) SaveRecoveryWrappedMasterKey(ctx context.Context, token string
 		_ = tx.Rollback(ctx)
 	}()
 
-	user, err := s.userRepo.GetByRecoverySetupToken(ctx, tx, token, time.Now())
+	user, err := s.userRepo.GetByRecoverySetupTokenHash(ctx, tx, recoverySetupTokenHash(token), time.Now())
 	if err != nil {
 		return err
 	}
@@ -212,6 +213,11 @@ func (s *Service) SaveRecoveryWrappedMasterKey(ctx context.Context, token string
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+func recoverySetupTokenHash(token string) []byte {
+	hash := sha256.Sum256([]byte(strings.TrimSpace(token)))
+	return hash[:]
 }
 
 func validateAdminInput(name, username, email string) validation.Errors {

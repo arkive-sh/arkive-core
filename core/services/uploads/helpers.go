@@ -8,7 +8,7 @@ import (
 	"arkive/pkg/validation"
 )
 
-const encryptedChunkEnvelopeOverheadBytes int64 = 41
+const encryptedChunkEnvelopeOverheadBytes int64 = 29
 const thumbnailMaxEncryptedBytes int64 = 150 * 1024
 
 func validateUserID(userID string) (string, error) {

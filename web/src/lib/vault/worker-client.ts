@@ -11,8 +11,9 @@ const pending = new Map<number, PendingRequest>();
 function getWorker(): Worker {
 	if (worker) return worker;
 	if (typeof Worker === 'undefined') throw new Error('Vault crypto is only available in the browser.');
-	worker = new Worker(new URL('./crypto.worker.ts', import.meta.url), { type: 'module' });
-	worker.addEventListener('message', (event: MessageEvent<WorkerResponse>) => {
+	const currentWorker = new Worker(new URL('./crypto.worker.ts', import.meta.url), { type: 'module' });
+	worker = currentWorker;
+	currentWorker.addEventListener('message', (event: MessageEvent<WorkerResponse>) => {
 		const response = event.data;
 		const request = pending.get(response.id);
 		if (!request) return;
@@ -20,10 +21,12 @@ function getWorker(): Worker {
 		if (response.ok) request.resolve(response.result || {});
 		else request.reject(new Error(response.error || 'Vault worker failed'));
 	});
-	worker.addEventListener('error', (event: ErrorEvent) => {
+	currentWorker.addEventListener('error', (event: ErrorEvent) => {
+		// A failed worker may still hold the vault key; stop it before creating a replacement.
+		currentWorker.terminate();
 		for (const request of pending.values()) request.reject(new Error('Vault worker failed'));
 		pending.clear();
-		worker = null;
+		if (worker === currentWorker) worker = null;
 		setVaultUnlocked(false);
 		event.preventDefault();
 	});

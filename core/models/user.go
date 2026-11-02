@@ -15,7 +15,7 @@ type User struct {
 	UsedBytes                   int64
 	ReservedBytes               int64
 	LastLoginAt                 *time.Time
-	RecoverySetupToken          *string
+	RecoverySetupTokenHash      *[]byte
 	RecoverySetupTokenExpiresAt *time.Time
 	PasswordResetTokenHash      *string
 	PasswordResetTokenExpiresAt *time.Time

@@ -3,6 +3,7 @@ import { decodeJSON } from './bytes.ts';
 import { closeFileContext, decryptFileChunk, openFileContext } from './files.ts';
 import { waitUntilReady } from './session.ts';
 import type { FileCryptoRecord, VaultMetadata } from './types.ts';
+import { ENCRYPTED_ENVELOPE_OVERHEAD_BYTES, ENCRYPTION_VERSION } from './crypto-format.ts';
 
 interface EncryptedFileRecord extends FileCryptoRecord {
 	encryptionVersion: number;
@@ -19,6 +20,7 @@ interface ManifestChunk {
 }
 
 interface FileManifest {
+	hash_alg: 'sha256';
 	chunks: ManifestChunk[];
 }
 
@@ -81,7 +83,7 @@ export class DecryptedFileReader {
 		const { data: record } = await api.get<EncryptedFileRecord>(`/api/files/${encodeURIComponent(this.fileId)}/record`, {
 			signal: this.signal
 		});
-		if (!record.sourceUrl || !Number.isSafeInteger(record.chunkSize) || record.chunkSize <= 0 || !Number.isSafeInteger(record.totalChunks) || record.totalChunks < 0) {
+		if (record.encryptionVersion !== ENCRYPTION_VERSION || !record.sourceUrl || !Number.isSafeInteger(record.chunkSize) || record.chunkSize <= 0 || !Number.isSafeInteger(record.totalChunks) || record.totalChunks < 0) {
 			throw new Error('The file record is invalid.');
 		}
 
@@ -99,22 +101,29 @@ export class DecryptedFileReader {
 			manifest = decodeJSON<FileManifest>(manifestBytes);
 			manifestBytes = null;
 			const plaintextSize = metadata.size;
-			if (typeof plaintextSize !== 'number' || !Number.isSafeInteger(plaintextSize) || plaintextSize < 0 || !Array.isArray(manifest.chunks) || manifest.chunks.length !== record.totalChunks) {
+			// Reject malformed authenticated manifests before they can request oversized ciphertext ranges.
+			if (
+				manifest.hash_alg !== 'sha256' || typeof plaintextSize !== 'number' || !Number.isSafeInteger(plaintextSize) || plaintextSize < 0 ||
+				record.totalChunks !== Math.ceil(plaintextSize / record.chunkSize) || !Array.isArray(manifest.chunks) || manifest.chunks.length !== record.totalChunks
+			) {
 				throw new Error('The file manifest is invalid.');
 			}
 
 			let plainOffset = 0;
 			let cipherOffset = 0;
 			for (const [index, chunk] of manifest.chunks.entries()) {
+				if (!chunk || typeof chunk !== 'object') throw new Error('The file manifest is invalid.');
 				const expectedPlainSize = Math.min(record.chunkSize, plaintextSize - plainOffset);
 				if (
 					!Number.isSafeInteger(chunk.plain_size) || chunk.plain_size !== expectedPlainSize ||
-					!Number.isSafeInteger(chunk.cipher_size) || chunk.cipher_size <= 0 ||
-					typeof chunk.hash !== 'string' || !chunk.hash
+					!Number.isSafeInteger(chunk.cipher_size) || chunk.cipher_size !== chunk.plain_size + ENCRYPTED_ENVELOPE_OVERHEAD_BYTES ||
+					typeof chunk.hash !== 'string' || !/^[A-Za-z0-9+/]{43}=$/.test(chunk.hash)
 				) throw new Error('The file manifest is invalid.');
+				const nextCipherOffset = cipherOffset + chunk.cipher_size;
+				if (!Number.isSafeInteger(nextCipherOffset)) throw new Error('The file manifest is invalid.');
 				this.cipherStarts[index] = cipherOffset;
 				plainOffset += chunk.plain_size;
-				cipherOffset += chunk.cipher_size;
+				cipherOffset = nextCipherOffset;
 			}
 			if (plainOffset !== plaintextSize) throw new Error('The file manifest is invalid.');
 

@@ -156,21 +156,29 @@
 
 			const { thumbnailBytes } = await decryptSearchThumbnail({
 				id: entry.id,
+				folderId: null,
 				vaultId: preview.vaultId,
 				encryptedMetadata: preview.encryptedMetadata,
 				encryptedFileKey: preview.encryptedFileKey,
 				score: 0,
 				url: `/files/${entry.id}/view`
 			}, encryptedBytes);
-			if (controller.signal.aborted || !visibleIds.has(entry.id) || !thumbnailBytes.length) {
+			try {
+				if (controller.signal.aborted || !visibleIds.has(entry.id) || !thumbnailBytes.length) return;
+				const blobBytes = Uint8Array.from(thumbnailBytes);
+				let blob: Blob;
+				try {
+					blob = new Blob([blobBytes.buffer as ArrayBuffer], { type: preview.mime });
+				} finally {
+					blobBytes.fill(0);
+				}
+				const url = URL.createObjectURL(blob);
+				objectUrls.set(entry.id, url);
+				thumbnails.set(entry.id, url);
+			} finally {
+				// The preview buffer is plaintext, so clear it on every exit path.
 				thumbnailBytes.fill(0);
-				return;
 			}
-
-			const url = URL.createObjectURL(new Blob([Uint8Array.from(thumbnailBytes)], { type: preview.mime }));
-			objectUrls.set(entry.id, url);
-			thumbnails.set(entry.id, url);
-			thumbnailBytes.fill(0);
 		} catch (error) {
 			if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
 				console.warn('Thumbnail preview failed:', error instanceof Error ? error.message : 'Unknown error');
