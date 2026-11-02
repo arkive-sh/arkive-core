@@ -2,6 +2,7 @@
 	import { onDestroy } from 'svelte';
 	import 'photoswipe/style.css';
 	import type { Content } from 'photoswipe/lightbox';
+	import { readDecryptedThumbnail } from '#lib/vault/thumbnail.ts';
 	import type { FileManagerEntry } from './types';
 	import { readDecryptedFile } from '#lib/vault/read-file.ts';
 
@@ -12,7 +13,12 @@
 		onClose: () => void;
 		onError: (message: string) => void;
 	};
-	type ContentResource = { controller: AbortController; objectUrl?: string };
+	type ContentResource = {
+		controller: AbortController;
+		objectUrl?: string;
+		pendingObjectUrl?: string;
+		status: 'loading-thumbnail' | 'ready' | 'loading-original' | 'original' | 'failed';
+	};
 
 	let { entries, request, onClose, onError }: Props = $props();
 	let lightbox: import('photoswipe/lightbox').default | undefined;
@@ -20,7 +26,23 @@
 	let lastRequest: PreviewRequest | null = null;
 	let openGeneration = 0;
 	let destroyed = false;
+	let originalButton: HTMLButtonElement | undefined;
 	const contentResources = new Map<Content, ContentResource>();
+
+	function updateOriginalButton(): void {
+		const content = lightbox?.pswp?.currSlide?.content;
+		const resource = content && contentResources.get(content);
+		if (!originalButton) return;
+		originalButton.hidden = resource?.status === 'original';
+		originalButton.disabled =
+			!resource || resource.status === 'loading-thumbnail' || resource.status === 'loading-original';
+		originalButton.textContent =
+			resource?.status === 'loading-original'
+				? 'Loading…'
+				: resource?.status === 'failed'
+					? 'Retry original'
+					: 'View original';
+	}
 
 	function ensureLightbox(): Promise<import('photoswipe/lightbox').default> {
 		if (lightbox) return Promise.resolve(lightbox);
@@ -32,6 +54,25 @@
 				preload: [0, 1],
 				showHideAnimationType: 'zoom'
 			});
+			instance.on('uiRegister', () => {
+				instance.pswp?.ui?.registerElement({
+					name: 'viewOriginal',
+					className: 'arkive-view-original',
+					html: 'View original',
+					ariaLabel: 'View original image',
+					isButton: true,
+					order: 15,
+					onInit: (element) => {
+						originalButton = element as HTMLButtonElement;
+						updateOriginalButton();
+					},
+					onClick: (_event, _element, pswp) => {
+						const content = pswp.currSlide?.content;
+						if (content) void loadOriginal(content);
+					}
+				});
+			});
+			instance.on('change', updateOriginalButton);
 			instance.on('contentLoadImage', (event) => {
 				event.preventDefault();
 				const { content } = event;
@@ -61,27 +102,106 @@
 	}
 
 	async function loadImage(content: Content, entry: FileManagerEntry, image: HTMLImageElement): Promise<void> {
-		const resource: ContentResource = { controller: new AbortController() };
+		const resource: ContentResource = {
+			controller: new AbortController(),
+			status: entry.thumbnail ? 'loading-thumbnail' : 'ready'
+		};
 		contentResources.set(content, resource);
+		image.style.visibility = 'hidden';
+		updateOriginalButton();
 		try {
-			const blob = await readDecryptedFile(entry.id, entry.type, resource.controller.signal);
+			const blob = entry.thumbnail
+				? await readDecryptedThumbnail({ id: entry.id, ...entry.thumbnail }, resource.controller.signal)
+				: null;
 			if (resource.controller.signal.aborted) return;
+			if (!blob) {
+				resource.status = 'ready';
+				content.onLoaded();
+				updateOriginalButton();
+				return;
+			}
 
 			resource.objectUrl = URL.createObjectURL(blob);
 			image.onload = () => {
 				if (resource.controller.signal.aborted) return;
+				resource.status = 'ready';
+				image.style.visibility = 'visible';
 				content.onLoaded();
+				updateOriginalButton();
 			};
 			image.onerror = () => {
 				if (resource.controller.signal.aborted) return;
-				onError(`Could not preview ${entry.name}.`);
-				content.onError();
+				resource.status = 'ready';
+				image.style.visibility = 'hidden';
+				if (resource.objectUrl) URL.revokeObjectURL(resource.objectUrl);
+				resource.objectUrl = undefined;
+				content.onLoaded();
+				updateOriginalButton();
 			};
 			image.src = resource.objectUrl;
+			updateOriginalButton();
+		} catch {
+			if (resource.controller.signal.aborted) return;
+			resource.status = 'ready';
+			content.onLoaded();
+			updateOriginalButton();
+		}
+	}
+
+	async function loadOriginal(content: Content): Promise<void> {
+		const entry = entries.find((candidate) => candidate.id === content.data.id);
+		const resource = contentResources.get(content);
+		const image = content.element;
+		if (
+			!entry ||
+			!resource ||
+			!(image instanceof HTMLImageElement) ||
+			resource.status === 'loading-thumbnail' ||
+			resource.status === 'loading-original' ||
+			resource.status === 'original'
+		) return;
+
+		resource.status = 'loading-original';
+		updateOriginalButton();
+		try {
+			const blob = await readDecryptedFile(entry.id, entry.type, resource.controller.signal);
+			if (resource.controller.signal.aborted) return;
+			const originalUrl = URL.createObjectURL(blob);
+			resource.pendingObjectUrl = originalUrl;
+			image.onload = () => {
+				if (resource.controller.signal.aborted) return;
+				const thumbnailUrl = resource.objectUrl;
+				resource.objectUrl = originalUrl;
+				resource.pendingObjectUrl = undefined;
+				resource.status = 'original';
+				image.style.visibility = 'visible';
+				image.onload = null;
+				image.onerror = null;
+				if (thumbnailUrl) URL.revokeObjectURL(thumbnailUrl);
+				updateOriginalButton();
+			};
+			image.onerror = () => {
+				if (resource.controller.signal.aborted) return;
+				URL.revokeObjectURL(originalUrl);
+				resource.pendingObjectUrl = undefined;
+				resource.status = 'failed';
+				image.onload = null;
+				image.onerror = null;
+				if (resource.objectUrl) {
+					image.src = resource.objectUrl;
+					image.style.visibility = 'visible';
+				} else {
+					image.style.visibility = 'hidden';
+				}
+				onError(`Could not preview ${entry.name}.`);
+				updateOriginalButton();
+			};
+			image.src = originalUrl;
 		} catch (error) {
 			if (resource.controller.signal.aborted) return;
+			resource.status = 'failed';
 			onError(error instanceof Error ? error.message : `Could not preview ${entry.name}.`);
-			content.onError();
+			updateOriginalButton();
 		}
 	}
 
@@ -90,7 +210,9 @@
 		if (!resource) return;
 		resource.controller.abort();
 		if (resource.objectUrl) URL.revokeObjectURL(resource.objectUrl);
+		if (resource.pendingObjectUrl) URL.revokeObjectURL(resource.pendingObjectUrl);
 		contentResources.delete(content);
+		updateOriginalButton();
 	}
 
 	$effect(() => {
@@ -148,3 +270,18 @@
 		for (const content of contentResources.keys()) releaseContent(content);
 	});
 </script>
+
+<style>
+	:global(.pswp__button.arkive-view-original) {
+		width: auto;
+		padding-inline: 12px;
+		color: white;
+		font-size: 13px;
+		font-weight: 600;
+		white-space: nowrap;
+	}
+
+	:global(.pswp__button.arkive-view-original[hidden]) {
+		display: none;
+	}
+</style>
