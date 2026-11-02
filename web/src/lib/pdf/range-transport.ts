@@ -1,25 +1,28 @@
 import { PDFDataRangeTransport } from 'pdfjs-dist';
-import type { DecryptedFileReader } from '#lib/vault/read-file.ts';
+
+export interface PdfRangeSource {
+	readRange(begin: number, end: number, signal?: AbortSignal): Promise<Uint8Array>;
+}
 
 export class PdfRangeTransport extends PDFDataRangeTransport {
 	private readonly requests = new Set<AbortController>();
-	private readonly reader: DecryptedFileReader;
+	private readonly source: PdfRangeSource;
 	private readonly onReadError: (error: unknown, begin: number, end: number) => void;
 
 	constructor(
 		length: number,
-		reader: DecryptedFileReader,
+		source: PdfRangeSource,
 		onReadError: (error: unknown, begin: number, end: number) => void
 	) {
 		super(length, new Uint8Array(0));
-		this.reader = reader;
+		this.source = source;
 		this.onReadError = onReadError;
 	}
 
 	requestDataRange(begin: number, end: number): void {
 		const request = new AbortController();
 		this.requests.add(request);
-		void this.reader.readRange(begin, end, request.signal).then((bytes) => {
+		void this.source.readRange(begin, end, request.signal).then((bytes) => {
 			if (request.signal.aborted) {
 				bytes.fill(0);
 				return;

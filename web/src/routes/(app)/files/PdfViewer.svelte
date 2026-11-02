@@ -10,7 +10,7 @@
 	import type { PDFFindController } from 'pdfjs-dist/types/web/pdf_find_controller';
 	import type { PDFLinkService } from 'pdfjs-dist/types/web/pdf_link_service';
 	import type { PDFViewer as PDFViewerInstance } from 'pdfjs-dist/types/web/pdf_viewer';
-	import type { PdfRangeTransport } from './PdfRangeTransport';
+	import type { PdfRangeTransport } from '#lib/pdf/range-transport.ts';
 	import type { FileManagerEntry } from './types';
 
 	let { entry, onClose }: { entry: FileManagerEntry; onClose: () => void } = $props();
@@ -126,7 +126,7 @@
 				} finally {
 					Reflect.deleteProperty(globalThis, 'pdfjsLib');
 				}
-				const transportModule = await import('./PdfRangeTransport.ts');
+				const transportModule = await import('#lib/pdf/range-transport.ts');
 				pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 				eventBus = new viewerModule.EventBus();
 				linkService = new viewerModule.PDFLinkService({ eventBus });
@@ -171,7 +171,7 @@
 				});
 				loadingTask = pdfjs.getDocument({
 					range: transport,
-					wasmUrl: asset('wasm/pdfjs/'),
+					wasmUrl: asset('wasm/pdfjs/openjpeg.wasm').replace('openjpeg.wasm', ''),
 					rangeChunkSize: 64 * 1024,
 					disableAutoFetch: true,
 					disableStream: true,
