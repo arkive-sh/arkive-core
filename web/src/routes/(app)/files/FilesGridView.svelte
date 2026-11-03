@@ -10,7 +10,7 @@
 	import { isImageFile } from '#lib/utils/image.ts';
 	import { isMediaMimeType } from '#lib/utils/media.ts';
 	import { readDecryptedThumbnail } from '#lib/vault/thumbnail.ts';
-	import { fileManagerEntryKey, isPdfFile, NEW_FOLDER_DRAFT_ID, type FileManagerEntry } from './types';
+	import { fileManagerEntryKey, isPdfFile, isTextFile, NEW_FOLDER_DRAFT_ID, type FileManagerEntry } from './types';
 
 	const THUMBNAIL_CONCURRENCY = 4;
 	let {
@@ -30,7 +30,8 @@
 		onShowContextMenu,
 		onPreviewImage,
 		onPreviewMedia,
-		onPreviewPdf
+		onPreviewPdf,
+		onPreviewText
 	}: {
 		rows: FileManagerEntry[];
 		focusFileId: string | null;
@@ -49,6 +50,7 @@
 		onPreviewImage: (entry: FileManagerEntry, trigger: HTMLElement) => void;
 		onPreviewMedia: (entry: FileManagerEntry) => void;
 		onPreviewPdf: (entry: FileManagerEntry) => void;
+		onPreviewText: (entry: FileManagerEntry) => void;
 	} = $props();
 	let gridLayout = $state<HTMLDivElement>();
 	let gridContent = $state<HTMLDivElement>();
@@ -153,6 +155,7 @@
 		if (entry.kind === 'folder') return `Open folder ${entry.name}`;
 		if (isImageFile(entry.name, entry.type) || isPdfFile(entry)) return `Preview ${entry.name}`;
 		if (isMediaMimeType(entry.type)) return `Play ${entry.name}`;
+		if (isTextFile(entry)) return `Open ${entry.name}`;
 	}
 
 	function openEntry(entry: FileManagerEntry, trigger: HTMLElement): void {
@@ -160,6 +163,7 @@
 		else if (isImageFile(entry.name, entry.type)) onPreviewImage(entry, trigger);
 		else if (isMediaMimeType(entry.type)) onPreviewMedia(entry);
 		else if (isPdfFile(entry)) onPreviewPdf(entry);
+		else if (isTextFile(entry)) onPreviewText(entry);
 	}
 
 	async function loadThumbnail(entry: FileManagerEntry): Promise<void> {

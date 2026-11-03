@@ -3,6 +3,7 @@
 	import FileEntryContextMenu from './FileEntryContextMenu.svelte';
 	import FilePropertiesModal from './FilePropertiesModal.svelte';
 	import ImageViewer from './ImageViewer.svelte';
+	import TextFileEditor from './TextFileEditor.svelte';
 	import type { FileManagerEntry } from './types';
 
 	let {
@@ -12,6 +13,10 @@
 		mediaPreviewEntry,
 		PdfViewer,
 		pdfPreviewEntry,
+		textEditorOpen,
+		textEditorEntry,
+		vaultId,
+		parentFolderId,
 		contextMenuOpen,
 		contextMenuEntry,
 		contextMenuPosition,
@@ -24,15 +29,18 @@
 		onError,
 		onCloseMedia,
 		onClosePdf,
+		onCloseText,
 		onCloseContextMenu,
 		onOpenFolder,
 		onDownload,
 		onPreviewImage,
 		onPreviewMedia,
 		onPreviewPdf,
+		onPreviewText,
 		onProperties,
 		onDeleteEntry,
 		onCreateFolder,
+		onCreateTextFile,
 		onUploadFiles,
 		onUploadFolder,
 		onCloseProperties,
@@ -46,6 +54,10 @@
 		mediaPreviewEntry: FileManagerEntry | null;
 		PdfViewer?: typeof import('./PdfViewer.svelte').default;
 		pdfPreviewEntry: FileManagerEntry | null;
+		textEditorOpen: boolean;
+		textEditorEntry: FileManagerEntry | null;
+		vaultId: string;
+		parentFolderId: string | null;
 		contextMenuOpen: boolean;
 		contextMenuEntry: FileManagerEntry | null;
 		contextMenuPosition: { x: number; y: number };
@@ -58,15 +70,18 @@
 		onError: (message: string) => void;
 		onCloseMedia: () => void;
 		onClosePdf: () => void;
+		onCloseText: () => void;
 		onCloseContextMenu: () => void;
 		onOpenFolder: (id: string) => void;
 		onDownload: (entry: FileManagerEntry) => void;
 		onPreviewImage: (entry: FileManagerEntry) => void;
 		onPreviewMedia: (entry: FileManagerEntry) => void;
 		onPreviewPdf: (entry: FileManagerEntry) => void;
+		onPreviewText: (entry: FileManagerEntry) => void;
 		onProperties: (entry: FileManagerEntry) => void;
 		onDeleteEntry: (entry: FileManagerEntry) => void;
 		onCreateFolder: (entry: FileManagerEntry | null) => void;
+		onCreateTextFile: () => void;
 		onUploadFiles: () => void;
 		onUploadFolder: () => void;
 		onCloseProperties: () => void;
@@ -80,6 +95,10 @@
 
 {#if MediaViewer}
 	<MediaViewer entry={mediaPreviewEntry} onClose={onCloseMedia} />
+{/if}
+
+{#if textEditorOpen}
+	<TextFileEditor entry={textEditorEntry} {vaultId} {parentFolderId} onClose={onCloseText} />
 {/if}
 
 {#if PdfViewer && pdfPreviewEntry}
@@ -97,9 +116,11 @@
 	{onPreviewImage}
 	{onPreviewMedia}
 	{onPreviewPdf}
+	{onPreviewText}
 	{onProperties}
 	onDelete={onDeleteEntry}
 	{onCreateFolder}
+	{onCreateTextFile}
 	{onUploadFiles}
 	{onUploadFolder}
 />

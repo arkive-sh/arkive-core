@@ -42,6 +42,8 @@
 	let MediaViewer = $state<typeof import('./files/MediaViewer.svelte').default>();
 	let pdfPreviewEntry = $state<FileManagerEntry | null>(null);
 	let PdfViewer = $state<typeof import('./files/PdfViewer.svelte').default>();
+	let textEditorOpen = $state(false);
+	let textEditorEntry = $state<FileManagerEntry | null>(null);
 	let contextMenuEntry = $state<FileManagerEntry | null>(null);
 	let contextMenuOpen = $state(false);
 	let contextMenuPosition = $state({ x: 0, y: 0 });
@@ -246,6 +248,16 @@
 		if (!PdfViewer) void import('./files/PdfViewer.svelte').then(({ default: component }) => PdfViewer = component);
 	}
 
+	function previewText(entry: FileManagerEntry): void {
+		textEditorEntry = entry;
+		textEditorOpen = true;
+	}
+
+	function createTextFile(): void {
+		textEditorEntry = null;
+		textEditorOpen = true;
+	}
+
 	function enqueueDownload(entry: FileManagerEntry, fileName: string, getTarget: () => Promise<FileSystemFileHandle>): void {
 		transfers.enqueueDownload(fileName, entry.size ?? 0, async (signal, onProgress, concurrency) => {
 			const { downloadEncryptedFile } = await import('#lib/downloads/download-file.ts');
@@ -440,6 +452,7 @@
 	onPreviewImage={previewImage}
 	onPreviewMedia={previewMedia}
 	onPreviewPdf={previewPdf}
+	onPreviewText={previewText}
 	onCreateFolder={saveNewFolder}
 	onCancelNewFolder={cancelNewFolder}
 	onViewChange={changeView}
@@ -458,6 +471,10 @@
 	{mediaPreviewEntry}
 	{PdfViewer}
 	{pdfPreviewEntry}
+	{textEditorOpen}
+	{textEditorEntry}
+	vaultId={data.user.id}
+	parentFolderId={folderId}
 	{contextMenuOpen}
 	{contextMenuEntry}
 	{contextMenuPosition}
@@ -470,15 +487,18 @@
 	onError={(message) => toast.error(message)}
 	onCloseMedia={() => mediaPreviewEntry = null}
 	onClosePdf={() => pdfPreviewEntry = null}
+	onCloseText={() => textEditorOpen = false}
 	onCloseContextMenu={() => { contextMenuEntry = null; contextMenuOpen = false; }}
 	onOpenFolder={openFolder}
 	onDownload={downloadEntry}
 	onPreviewImage={previewImage}
 	onPreviewMedia={previewMedia}
 	onPreviewPdf={previewPdf}
+	onPreviewText={previewText}
 	onProperties={(entry) => propertiesEntry = entry}
 	onDeleteEntry={requestDelete}
 	onCreateFolder={createFolderFromContext}
+		onCreateTextFile={createTextFile}
 	onUploadFiles={chooseUploadFiles}
 	onUploadFolder={chooseUploadFolder}
 	onCloseProperties={() => propertiesEntry = null}

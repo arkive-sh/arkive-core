@@ -9,7 +9,7 @@
 	import InlineNewFolder from './InlineNewFolder.svelte';
 	import { isImageFile } from '#lib/utils/image.ts';
 	import { isMediaMimeType } from '#lib/utils/media.ts';
-	import { fileManagerEntryKey, isPdfFile, NEW_FOLDER_DRAFT_ID, type FileManagerEntry } from './types';
+	import { fileManagerEntryKey, isPdfFile, isTextFile, NEW_FOLDER_DRAFT_ID, type FileManagerEntry } from './types';
 
 	const GRID_COLUMNS = '3rem minmax(220px, 2fr) minmax(160px, 1.2fr) minmax(90px, 0.75fr) minmax(150px, 1fr)';
 	const GRID_COLUMNS_WITH_DIMENSIONS = `${GRID_COLUMNS} minmax(120px, 0.8fr)`;
@@ -31,7 +31,8 @@
 		onShowContextMenu,
 		onPreviewImage,
 		onPreviewMedia,
-		onPreviewPdf
+		onPreviewPdf,
+		onPreviewText
 	}: {
 		rows: FileManagerEntry[];
 		focusFileId: string | null;
@@ -50,6 +51,7 @@
 		onPreviewImage: (entry: FileManagerEntry, trigger: HTMLElement) => void;
 		onPreviewMedia: (entry: FileManagerEntry) => void;
 		onPreviewPdf: (entry: FileManagerEntry) => void;
+		onPreviewText: (entry: FileManagerEntry) => void;
 	} = $props();
 	const activeGridColumns = $derived(showDimensions ? GRID_COLUMNS_WITH_DIMENSIONS : GRID_COLUMNS);
 	let selectAllCheckbox = $state<HTMLInputElement>();
@@ -129,6 +131,7 @@
 		if (entry.kind === 'folder') return `Open folder ${entry.name}`;
 		if (isImageFile(entry.name, entry.type) || isPdfFile(entry)) return `Preview ${entry.name}`;
 		if (isMediaMimeType(entry.type)) return `Play ${entry.name}`;
+		if (isTextFile(entry)) return `Open ${entry.name}`;
 	}
 
 	function openEntry(entry: FileManagerEntry, trigger: HTMLElement): void {
@@ -136,6 +139,7 @@
 		else if (isImageFile(entry.name, entry.type)) onPreviewImage(entry, trigger);
 		else if (isMediaMimeType(entry.type)) onPreviewMedia(entry);
 		else if (isPdfFile(entry)) onPreviewPdf(entry);
+		else if (isTextFile(entry)) onPreviewText(entry);
 	}
 </script>
 

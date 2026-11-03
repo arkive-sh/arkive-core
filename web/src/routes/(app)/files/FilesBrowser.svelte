@@ -48,6 +48,7 @@
 		onPreviewImage,
 		onPreviewMedia,
 		onPreviewPdf,
+		onPreviewText,
 		onCreateFolder,
 		onCancelNewFolder,
 		onViewChange,
@@ -91,6 +92,7 @@
 		onPreviewImage: (entry: FileManagerEntry, trigger: HTMLElement) => void;
 		onPreviewMedia: (entry: FileManagerEntry) => void;
 		onPreviewPdf: (entry: FileManagerEntry) => void;
+		onPreviewText: (entry: FileManagerEntry) => void;
 		onCreateFolder: () => void | Promise<void>;
 		onCancelNewFolder: () => void;
 		onViewChange: (view: FilesView) => void;
@@ -192,6 +194,7 @@
 						onPreviewImage={onPreviewImage}
 						onPreviewMedia={onPreviewMedia}
 						onPreviewPdf={onPreviewPdf}
+						onPreviewText={onPreviewText}
 					/>
 				{:else}
 					<FilesListView
@@ -212,6 +215,7 @@
 						onPreviewImage={onPreviewImage}
 						onPreviewMedia={onPreviewMedia}
 						onPreviewPdf={onPreviewPdf}
+						onPreviewText={onPreviewText}
 					/>
 				{/if}
 
