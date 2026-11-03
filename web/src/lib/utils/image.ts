@@ -7,12 +7,13 @@ const IMAGE_MIME_BY_EXTENSION: Record<string, string> = {
 	jpeg: 'image/jpeg',
 	jpg: 'image/jpeg',
 	png: 'image/png',
-	webp: 'image/webp'
+	webp: 'image/webp',
 };
 
 export function imageMimeType(name: string, mime = ''): string {
 	if (mime.toLowerCase().startsWith('image/')) return mime;
 	const extension = name.split('.').pop()?.toLowerCase() ?? '';
+
 	return IMAGE_MIME_BY_EXTENSION[extension] ?? '';
 }
 
@@ -23,6 +24,7 @@ export function isImageFile(name: string, mime = ''): boolean {
 export function isHeicImage(name: string, mime = ''): boolean {
 	const normalizedMime = mime.toLowerCase();
 	const extension = name.split('.').pop()?.toLowerCase() ?? '';
+
 	return (
 		extension === 'heic' ||
 		extension === 'heif' ||

@@ -7,7 +7,7 @@
 		children,
 		disabled = false,
 		className = '',
-		side = 'right'
+		side = 'right',
 	}: {
 		label: string;
 		children: Snippet;
@@ -32,14 +32,16 @@
 		const margin = 8;
 		const gap = 10;
 		let actualSide = side;
-		if (actualSide === 'right' && trigger.right + gap + tip.width > window.innerWidth - margin) actualSide = 'left';
+
+		if (actualSide === 'right' && trigger.right + gap + tip.width > window.innerWidth - margin)
+			actualSide = 'left';
 		else if (actualSide === 'left' && trigger.left - gap - tip.width < margin) actualSide = 'right';
 
 		const left = actualSide === 'right' ? trigger.right + gap : trigger.left - gap - tip.width;
 		const top = trigger.top + (trigger.height - tip.height) / 2;
 		position = {
 			left: Math.round(Math.min(Math.max(left, margin), window.innerWidth - tip.width - margin)),
-			top: Math.round(Math.min(Math.max(top, margin), window.innerHeight - tip.height - margin))
+			top: Math.round(Math.min(Math.max(top, margin), window.innerHeight - tip.height - margin)),
 		};
 	}
 

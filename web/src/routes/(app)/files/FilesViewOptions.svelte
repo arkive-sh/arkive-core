@@ -28,7 +28,7 @@
 		onTileSizeChange,
 		onShowTypeChange,
 		onShowSizeChange,
-		onShowDimensionsChange
+		onShowDimensionsChange,
 	}: Props = $props();
 	let open = $state(false);
 	let root = $state<HTMLDivElement>();
@@ -39,33 +39,43 @@
 	$effect(() => {
 		if (!open) {
 			position = null;
+
 			return;
 		}
 
 		const updatePosition = () => {
 			const anchor = trigger?.getBoundingClientRect();
 			const panelHeight = panel?.offsetHeight ?? 0;
+
 			if (!anchor) return;
 
 			const margin = 8;
 			const width = Math.min(288, window.innerWidth - margin * 2);
-			const sidebarRight = document.getElementById('app-sidebar')?.getBoundingClientRect().right ?? 0;
-			const canAvoidSidebar = sidebarRight > 0 && sidebarRight + width + margin * 2 <= window.innerWidth;
+			const sidebarRight =
+				document.getElementById('app-sidebar')?.getBoundingClientRect().right ?? 0;
+			const canAvoidSidebar =
+				sidebarRight > 0 && sidebarRight + width + margin * 2 <= window.innerWidth;
 			const minLeft = canAvoidSidebar ? sidebarRight + margin : margin;
-			const left = Math.max(minLeft, Math.min(anchor.right - width, window.innerWidth - width - margin));
+			const left = Math.max(
+				minLeft,
+				Math.min(anchor.right - width, window.innerWidth - width - margin),
+			);
 			const below = anchor.bottom + margin;
-			const top = below + panelHeight <= window.innerHeight - margin
-				? below
-				: Math.max(margin, anchor.top - panelHeight - margin);
+			const top =
+				below + panelHeight <= window.innerHeight - margin
+					? below
+					: Math.max(margin, anchor.top - panelHeight - margin);
 
 			position = { top, left, width };
 		};
 
 		updatePosition();
 		const resizeObserver = new ResizeObserver(updatePosition);
+
 		if (panel) resizeObserver.observe(panel);
 		window.addEventListener('resize', updatePosition);
 		window.addEventListener('scroll', updatePosition, true);
+
 		return () => {
 			resizeObserver.disconnect();
 			window.removeEventListener('resize', updatePosition);
@@ -85,6 +95,7 @@
 		};
 		document.addEventListener('pointerdown', closeOutside);
 		window.addEventListener('keydown', closeOnEscape);
+
 		return () => {
 			document.removeEventListener('pointerdown', closeOutside);
 			window.removeEventListener('keydown', closeOnEscape);
@@ -100,7 +111,7 @@
 		aria-label="View options"
 		aria-expanded={open}
 		aria-controls="files-view-options"
-		onclick={() => open = !open}
+		onclick={() => (open = !open)}
 	>
 		<SlidersHorizontal class="size-4.5" aria-hidden="true" />
 	</button>
@@ -116,7 +127,11 @@
 			<h2 class="m-0 text-sm font-semibold">View options</h2>
 			<div class="grid gap-2">
 				<span class="text-xs font-medium text-(--text)">Layout</span>
-				<div class="inline-flex w-fit items-center rounded-md border border-(--border) bg-(--surface-raised) p-1" role="group" aria-label="File layout">
+				<div
+					class="inline-flex w-fit items-center rounded-md border border-(--border) bg-(--surface-raised) p-1"
+					role="group"
+					aria-label="File layout"
+				>
 					<Tooltip label="List view">
 						<button
 							class={`inline-flex size-9 cursor-pointer items-center justify-center rounded transition-colors ${view === 'list' ? 'bg-(--surface-highest) text-(--text)' : 'text-(--muted) hover:text-(--text)'}`}
@@ -158,16 +173,28 @@
 						aria-valuetext={`${tileSize} pixels`}
 						oninput={(event) => onTileSizeChange(Number(event.currentTarget.value))}
 					/>
-					<span class="flex justify-between text-(--muted)"><span>Small</span><span>Large</span></span>
+					<span class="flex justify-between text-(--muted)"
+						><span>Small</span><span>Large</span></span
+					>
 				</label>
 				<fieldset class="m-0 grid gap-2 border-0 border-t border-(--border) p-0 pt-3">
 					<legend class="mb-2 px-0 text-xs font-medium text-(--text)">Show on cards</legend>
 					<label class="flex cursor-pointer items-center gap-2 text-xs text-(--muted)">
-						<input class="size-4 cursor-pointer accent-(--accent)" type="checkbox" checked={showType} onchange={(event) => onShowTypeChange(event.currentTarget.checked)} />
+						<input
+							class="size-4 cursor-pointer accent-(--accent)"
+							type="checkbox"
+							checked={showType}
+							onchange={(event) => onShowTypeChange(event.currentTarget.checked)}
+						/>
 						<span>File type</span>
 					</label>
 					<label class="flex cursor-pointer items-center gap-2 text-xs text-(--muted)">
-						<input class="size-4 cursor-pointer accent-(--accent)" type="checkbox" checked={showSize} onchange={(event) => onShowSizeChange(event.currentTarget.checked)} />
+						<input
+							class="size-4 cursor-pointer accent-(--accent)"
+							type="checkbox"
+							checked={showSize}
+							onchange={(event) => onShowSizeChange(event.currentTarget.checked)}
+						/>
 						<span>File size</span>
 					</label>
 				</fieldset>
@@ -175,7 +202,12 @@
 			<fieldset class="m-0 grid gap-2 border-0 border-t border-(--border) p-0 pt-3">
 				<legend class="mb-2 px-0 text-xs font-medium text-(--text)">Show details</legend>
 				<label class="flex cursor-pointer items-center gap-2 text-xs text-(--muted)">
-					<input class="size-4 cursor-pointer accent-(--accent)" type="checkbox" checked={showDimensions} onchange={(event) => onShowDimensionsChange(event.currentTarget.checked)} />
+					<input
+						class="size-4 cursor-pointer accent-(--accent)"
+						type="checkbox"
+						checked={showDimensions}
+						onchange={(event) => onShowDimensionsChange(event.currentTarget.checked)}
+					/>
 					<span>Resolution</span>
 				</label>
 			</fieldset>

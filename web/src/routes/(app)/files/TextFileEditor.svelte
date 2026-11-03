@@ -5,7 +5,11 @@
 	import { Pencil, X } from '@lucide/svelte';
 	import Modal from '#lib/components/Modal.svelte';
 	import FileTypeIcon from '#lib/components/FileTypeIcon.svelte';
-	import { useTransferManager, type UploadItem, type UploadSource } from '#lib/transfers/manager.ts';
+	import {
+		useTransferManager,
+		type UploadItem,
+		type UploadSource,
+	} from '#lib/transfers/manager.ts';
 	import { DecryptedFileReader } from '#lib/vault/read-file.ts';
 	import { formatBytes } from '#lib/utils/format.ts';
 	import TextEditorLine from './TextEditorLine.svelte';
@@ -19,12 +23,26 @@
 	const encoder = new TextEncoder();
 	// Map Unicode Bidi_Control code points (UAX #9) to labels; this displays controls and does not implement the bidi algorithm.
 	const bidiControlNames = new Map<number, string>([
-		[0x061c, 'ALM'], [0x200e, 'LRM'], [0x200f, 'RLM'],
-		[0x202a, 'LRE'], [0x202b, 'RLE'], [0x202c, 'PDF'], [0x202d, 'LRO'], [0x202e, 'RLO'],
-		[0x2066, 'LRI'], [0x2067, 'RLI'], [0x2068, 'FSI'], [0x2069, 'PDI']
+		[0x061c, 'ALM'],
+		[0x200e, 'LRM'],
+		[0x200f, 'RLM'],
+		[0x202a, 'LRE'],
+		[0x202b, 'RLE'],
+		[0x202c, 'PDF'],
+		[0x202d, 'LRO'],
+		[0x202e, 'RLO'],
+		[0x2066, 'LRI'],
+		[0x2067, 'RLI'],
+		[0x2068, 'FSI'],
+		[0x2069, 'PDI'],
 	]);
 
-	let { entry, vaultId, parentFolderId, onClose }: {
+	let {
+		entry,
+		vaultId,
+		parentFolderId,
+		onClose,
+	}: {
 		entry: FileManagerEntry | null;
 		vaultId: string;
 		parentFolderId: string | null;
@@ -57,7 +75,7 @@
 		getScrollElement: () => viewport ?? null,
 		estimateSize: () => 28,
 		overscan: 16,
-		getItemKey: (index) => index
+		getItemKey: (index) => index,
 	});
 	const virtualRows = $derived($virtualizer.getVirtualItems());
 	const totalRowsHeight = $derived($virtualizer.getTotalSize());
@@ -68,11 +86,12 @@
 			get(virtualizer).measureElement(element);
 		};
 		measure();
+
 		return {
 			update(nextIndex: number) {
 				index = nextIndex;
 				measure();
-			}
+			},
 		};
 	}
 
@@ -99,41 +118,50 @@
 			allLinesSelected = true;
 			selectionMessage = '';
 		}
+
 		return true;
 	}
 
 	function replaceSelectedLines(event: KeyboardEvent): boolean {
 		if (!allLinesSelected || !editing) return false;
-		if ((event.ctrlKey || event.metaKey) && ['c', 'x', 'v'].includes(event.key.toLowerCase())) return true;
+		if ((event.ctrlKey || event.metaKey) && ['c', 'x', 'v'].includes(event.key.toLowerCase()))
+			return true;
 
 		let replacement: string[];
 		let focusIndex = 0;
 		let focusOffset = 0;
+
 		if (event.key === 'Backspace' || event.key === 'Delete') {
 			replacement = [''];
 		} else if (event.key === 'Enter') {
 			replacement = ['', ''];
 			focusIndex = 1;
 		} else if (
-			!event.ctrlKey && !event.metaKey && !event.altKey &&
-			[...event.key].length === 1 && !['Dead', 'Process', 'Unidentified'].includes(event.key)
+			!event.ctrlKey &&
+			!event.metaKey &&
+			!event.altKey &&
+			[...event.key].length === 1 &&
+			!['Dead', 'Process', 'Unidentified'].includes(event.key)
 		) {
 			replacement = [event.key];
 			focusOffset = event.key.length;
 		} else {
 			allLinesSelected = false;
+
 			return false;
 		}
 
 		event.preventDefault();
 		if (replaceLines(0, lines.length, replacement)) focusLine(focusIndex, focusOffset);
 		allLinesSelected = false;
+
 		return true;
 	}
 
 	function handleDocumentKeydown(event: KeyboardEvent): void {
 		if (selectAllLines(event)) return;
-		if ((event.ctrlKey || event.metaKey) && ['c', 'x', 'v'].includes(event.key.toLowerCase())) return;
+		if ((event.ctrlKey || event.metaKey) && ['c', 'x', 'v'].includes(event.key.toLowerCase()))
+			return;
 		if (showHiddenCharacters && replaceSelectedLines(event)) return;
 		if (event.key === 'Escape' || allLinesSelected) allLinesSelected = false;
 	}
@@ -143,6 +171,7 @@
 		event.preventDefault();
 		const decoder = new TextDecoder();
 		let text = '';
+
 		for (let index = 0; index < lines.length; index++) {
 			const line = decoder.decode(lines[index]);
 			text += showHiddenCharacters ? visibleBidiMarkers(line) : line;
@@ -155,7 +184,7 @@
 		if (!allLinesSelected) return;
 		handleCopy(event);
 		if (!editing) return;
-		if (replaceLines(0, lines.length, [""])) focusLine(0, 0);
+		if (replaceLines(0, lines.length, [''])) focusLine(0, 0);
 		allLinesSelected = false;
 	}
 
@@ -167,6 +196,7 @@
 		if (!allLinesSelected || !editing || !showHiddenCharacters) return;
 		event.preventDefault();
 		const parts = pastedLines(event);
+
 		if (replaceLines(0, lines.length, parts)) focusLine(parts.length - 1, parts.at(-1)!.length);
 		allLinesSelected = false;
 	}
@@ -179,7 +209,10 @@
 
 	function copyName(name: string): string {
 		const extensionAt = name.lastIndexOf('.');
-		return extensionAt > 0 ? `${name.slice(0, extensionAt)} (copy)${name.slice(extensionAt)}` : `${name} (copy).txt`;
+
+		return extensionAt > 0
+			? `${name.slice(0, extensionAt)} (copy)${name.slice(extensionAt)}`
+			: `${name} (copy).txt`;
 	}
 
 	function decodedLine(index: number): string {
@@ -188,24 +221,33 @@
 
 	function countBidiControls(value: string): number {
 		let count = 0;
+
 		for (const character of value) {
 			if (bidiControlNames.has(character.codePointAt(0)!)) count++;
 		}
+
 		return count;
 	}
 
 	function visibleBidiMarkers(value: string): string {
-		return [...value].map((character) => {
-			const codePoint = character.codePointAt(0)!;
-			const name = bidiControlNames.get(codePoint);
-			return name ? `⟦U+${codePoint.toString(16).toUpperCase().padStart(4, '0')} ${name}⟧` : character;
-		}).join('');
+		return [...value]
+			.map((character) => {
+				const codePoint = character.codePointAt(0)!;
+				const name = bidiControlNames.get(codePoint);
+
+				return name
+					? `⟦U+${codePoint.toString(16).toUpperCase().padStart(4, '0')} ${name}⟧`
+					: character;
+			})
+			.join('');
 	}
 
 	function addLoadedLine(value: string): void {
 		const bytes = encoder.encode(value);
+
 		if (bytes.byteLength > MAX_TEXT_LINE_BYTES || lines.length >= MAX_TEXT_LINES) {
 			bytes.fill(0);
+
 			throw new Error('This text file has a line that is too large to edit.');
 		}
 		contentByteCount += bytes.byteLength;
@@ -230,6 +272,7 @@
 		const appendDecoded = (value: string) => {
 			pending += value;
 			let newlineAt = pending.indexOf('\n');
+
 			while (newlineAt >= 0) {
 				const line = pending.slice(0, newlineAt).replace(/\r$/, '');
 				addLoadedLine(line);
@@ -244,10 +287,16 @@
 
 		try {
 			const { plaintextSize } = await reader.load();
-			if (plaintextSize > MAX_TEXT_FILE_BYTES) throw new Error('Text files larger than 128 MiB cannot be opened in the editor.');
+
+			if (plaintextSize > MAX_TEXT_FILE_BYTES)
+				throw new Error('Text files larger than 128 MiB cannot be opened in the editor.');
 			totalPlaintextSize = plaintextSize;
 			for (let start = 0; start < plaintextSize; start += READ_CHUNK_SIZE) {
-				const bytes = await reader.readRange(start, Math.min(plaintextSize, start + READ_CHUNK_SIZE));
+				const bytes = await reader.readRange(
+					start,
+					Math.min(plaintextSize, start + READ_CHUNK_SIZE),
+				);
+
 				try {
 					appendDecoded(decode(bytes, true));
 					loadedPlaintextBytes = Math.min(plaintextSize, start + bytes.byteLength);
@@ -260,9 +309,12 @@
 			showHiddenCharacters = bidiControlCount > 0;
 		} catch (error) {
 			clearLines();
-			errorMessage = error instanceof TypeError
-				? 'This file is not valid UTF-8 text.'
-				: error instanceof Error ? error.message : 'Could not open this text file.';
+			errorMessage =
+				error instanceof TypeError
+					? 'This file is not valid UTF-8 text.'
+					: error instanceof Error
+						? error.message
+						: 'Could not open this text file.';
 		} finally {
 			await reader?.dispose();
 			reader = undefined;
@@ -283,24 +335,33 @@
 	function replaceLines(index: number, deleteCount: number, values: string[]): boolean {
 		if (values.length === 0 || lines.length - deleteCount + values.length > MAX_TEXT_LINES) {
 			errorMessage = 'This edit would exceed the text editor limit.';
+
 			return false;
 		}
 		const replacement = values.map((value) => encoder.encode(value));
+
 		if (replacement.some((line) => line.byteLength > MAX_TEXT_LINE_BYTES)) {
 			for (const line of replacement) line.fill(0);
 			errorMessage = 'A line cannot be larger than 1 MiB.';
+
 			return false;
 		}
 		const removed = lines.slice(index, index + deleteCount);
-		const removedBidiControls = removed.reduce((sum, line) => sum + countBidiControls(new TextDecoder().decode(line)), 0);
+		const removedBidiControls = removed.reduce(
+			(sum, line) => sum + countBidiControls(new TextDecoder().decode(line)),
+			0,
+		);
 		const insertedBidiControls = values.reduce((sum, value) => sum + countBidiControls(value), 0);
-		const nextContentBytes = contentByteCount
-			- removed.reduce((sum, line) => sum + line.byteLength, 0)
-			+ replacement.reduce((sum, line) => sum + line.byteLength, 0);
+		const nextContentBytes =
+			contentByteCount -
+			removed.reduce((sum, line) => sum + line.byteLength, 0) +
+			replacement.reduce((sum, line) => sum + line.byteLength, 0);
 		const nextLineCount = lines.length - deleteCount + replacement.length;
+
 		if (nextContentBytes + nextLineCount - 1 > MAX_TEXT_FILE_BYTES) {
 			for (const line of replacement) line.fill(0);
 			errorMessage = 'This edit would exceed the 128 MiB editor limit.';
+
 			return false;
 		}
 		for (const line of removed) line.fill(0);
@@ -310,6 +371,7 @@
 		bidiControlCount += insertedBidiControls - removedBidiControls;
 		dirty = true;
 		errorMessage = '';
+
 		return true;
 	}
 
@@ -323,7 +385,14 @@
 	}
 
 	function handleLineKeydown(index: number, event: KeyboardEvent): void {
-		if (!editing || !(event.currentTarget instanceof HTMLInputElement || event.currentTarget instanceof HTMLTextAreaElement)) return;
+		if (
+			!editing ||
+			!(
+				event.currentTarget instanceof HTMLInputElement ||
+				event.currentTarget instanceof HTMLTextAreaElement
+			)
+		)
+			return;
 		const input = event.currentTarget;
 		const value = input.value;
 		const start = input.selectionStart ?? value.length;
@@ -334,54 +403,85 @@
 
 		if (event.key === 'Enter') {
 			event.preventDefault();
-			if (replaceLines(index, 1, [value.slice(0, start), value.slice(end)])) focusLine(index + 1, 0);
+			if (replaceLines(index, 1, [value.slice(0, start), value.slice(end)]))
+				focusLine(index + 1, 0);
 		} else if (event.key === 'Backspace' && start === 0 && end === 0 && index > 0) {
 			event.preventDefault();
 			const previous = decodedLine(index - 1);
+
 			if (replaceLines(index - 1, 2, [previous + value])) focusLine(index - 1, previous.length);
-		} else if (event.key === 'Delete' && start === value.length && end === start && index < lines.length - 1) {
+		} else if (
+			event.key === 'Delete' &&
+			start === value.length &&
+			end === start &&
+			index < lines.length - 1
+		) {
 			event.preventDefault();
 			if (replaceLines(index, 2, [value + decodedLine(index + 1)])) focusLine(index, start);
 		} else if (!wrapLines && event.key === 'ArrowUp' && start === end && index > 0) {
 			event.preventDefault();
 			focusLine(index - 1, start);
-		} else if (!wrapLines && event.key === 'ArrowDown' && start === end && index < lines.length - 1) {
+		} else if (
+			!wrapLines &&
+			event.key === 'ArrowDown' &&
+			start === end &&
+			index < lines.length - 1
+		) {
 			event.preventDefault();
 			focusLine(index + 1, start);
 		} else if (!wrapLines && event.key === 'ArrowLeft' && start === 0 && end === 0 && index > 0) {
 			event.preventDefault();
 			focusLine(index - 1, decodedLine(index - 1).length);
-		} else if (!wrapLines && event.key === 'ArrowRight' && start === value.length && end === start && index < lines.length - 1) {
+		} else if (
+			!wrapLines &&
+			event.key === 'ArrowRight' &&
+			start === value.length &&
+			end === start &&
+			index < lines.length - 1
+		) {
 			event.preventDefault();
 			focusLine(index + 1, 0);
 		}
 	}
 
 	function handleLinePaste(index: number, event: ClipboardEvent): void {
-		if (!editing || !(event.currentTarget instanceof HTMLInputElement || event.currentTarget instanceof HTMLTextAreaElement)) return;
+		if (
+			!editing ||
+			!(
+				event.currentTarget instanceof HTMLInputElement ||
+				event.currentTarget instanceof HTMLTextAreaElement
+			)
+		)
+			return;
 		event.preventDefault();
 		const input = event.currentTarget;
 		const value = input.value;
 		const start = input.selectionStart ?? value.length;
 		const end = input.selectionEnd ?? start;
 		const parts = pastedLines(event);
+
 		if (allLinesSelected) {
 			if (replaceLines(0, lines.length, parts)) focusLine(parts.length - 1, parts.at(-1)!.length);
 			allLinesSelected = false;
+
 			return;
 		}
 		parts[0] = value.slice(0, start) + parts[0];
 		parts[parts.length - 1] += value.slice(end);
-		if (replaceLines(index, 1, parts)) focusLine(index + parts.length - 1, parts.at(-1)!.length - value.slice(end).length);
+		if (replaceLines(index, 1, parts))
+			focusLine(index + parts.length - 1, parts.at(-1)!.length - value.slice(end).length);
 	}
 
 	function makeUploadSource(name: string, sourceLines: Uint8Array[]): UploadSource {
 		const offsets = new Float64Array(sourceLines.length + 1);
+
 		for (let index = 0; index < sourceLines.length; index++) {
-			offsets[index + 1] = offsets[index]! + sourceLines[index]!.byteLength + (index < sourceLines.length - 1 ? 1 : 0);
+			offsets[index + 1] =
+				offsets[index]! + sourceLines[index]!.byteLength + (index < sourceLines.length - 1 ? 1 : 0);
 		}
 		const size = offsets.at(-1) ?? 0;
 		let disposed = false;
+
 		return {
 			name,
 			type: 'text/plain;charset=utf-8',
@@ -396,8 +496,10 @@
 						const bytes = new Uint8Array(to - from);
 						let low = 0;
 						let high = sourceLines.length;
+
 						while (low < high) {
 							const middle = (low + high) >>> 1;
+
 							if (offsets[middle + 1]! <= from) low = middle + 1;
 							else high = middle;
 						}
@@ -406,12 +508,20 @@
 							const line = sourceLines[index]!;
 							const copyStart = Math.max(from, lineStart);
 							const copyEnd = Math.min(to, lineStart + line.byteLength);
-							if (copyEnd > copyStart) bytes.set(line.subarray(copyStart - lineStart, copyEnd - lineStart), copyStart - from);
+
+							if (copyEnd > copyStart)
+								bytes.set(
+									line.subarray(copyStart - lineStart, copyEnd - lineStart),
+									copyStart - from,
+								);
 							const newlineAt = lineStart + line.byteLength;
-							if (index < sourceLines.length - 1 && newlineAt >= from && newlineAt < to) bytes[newlineAt - from] = 10;
+
+							if (index < sourceLines.length - 1 && newlineAt >= from && newlineAt < to)
+								bytes[newlineAt - from] = 10;
 						}
+
 						return bytes.buffer;
-					}
+					},
 				};
 			},
 			dispose() {
@@ -420,20 +530,33 @@
 				for (const line of sourceLines) line.fill(0);
 				sourceLines.length = 0;
 				offsets.fill(0);
-			}
+			},
 		};
 	}
 
 	function saveCopy(): void {
 		const name = filename.trim();
-		if (!name || /[/\\\u0000-\u001f]/.test(name) || name === '.' || name === '..' || textSize === 0) {
-			errorMessage = textSize === 0 ? 'Add text before saving; empty files are not supported by the upload API.' : 'Enter a valid file name without path separators.';
+
+		if (
+			!name ||
+			/[/\\\u0000-\u001f]/.test(name) ||
+			name === '.' ||
+			name === '..' ||
+			textSize === 0
+		) {
+			errorMessage =
+				textSize === 0
+					? 'Add text before saving; empty files are not supported by the upload API.'
+					: 'Enter a valid file name without path separators.';
+
 			return;
 		}
 		const source = makeUploadSource(name, [...lines]);
 		const item: UploadItem = { file: source, relativePath: name };
+
 		if (!transfers.enqueueUploads([item], vaultId, parentFolderId)) {
 			errorMessage = 'Could not add the text file to transfers.';
+
 			return;
 		}
 		lines = [];
@@ -451,6 +574,7 @@
 		const count = lines.length;
 		const scrollElement = viewport;
 		const current = get(virtualizer);
+
 		if (current.options.count !== count || current.options.getScrollElement() !== scrollElement) {
 			current.setOptions({ count, getScrollElement: () => scrollElement ?? null });
 		}
@@ -458,18 +582,27 @@
 
 	$effect(() => {
 		const target = pendingFocus;
+
 		if (!target || !viewport) return;
-		void tick().then(() => {
-			if (pendingFocus !== target) return;
-			get(virtualizer).scrollToIndex(target.index, { align: 'auto' });
-			return tick();
-		}).then(() => {
-			if (pendingFocus !== target) return;
-			const input = viewport?.querySelector<HTMLTextAreaElement>(`[data-line-input="${target.index}"]`);
-			input?.focus();
-			input?.setSelectionRange(Math.min(target.offset, input.value.length), Math.min(target.offset, input.value.length));
-			pendingFocus = null;
-		});
+		void tick()
+			.then(() => {
+				if (pendingFocus !== target) return;
+				get(virtualizer).scrollToIndex(target.index, { align: 'auto' });
+
+				return tick();
+			})
+			.then(() => {
+				if (pendingFocus !== target) return;
+				const input = viewport?.querySelector<HTMLTextAreaElement>(
+					`[data-line-input="${target.index}"]`,
+				);
+				input?.focus();
+				input?.setSelectionRange(
+					Math.min(target.offset, input.value.length),
+					Math.min(target.offset, input.value.length),
+				);
+				pendingFocus = null;
+			});
 	});
 
 	onMount(() => {
@@ -503,43 +636,129 @@
 >
 	{#snippet header()}
 		<header class="flex min-w-0 items-center gap-3 border-b border-(--border) px-5 py-3">
-			<FileTypeIcon name={entry?.name ?? filename} mime={entry?.type ?? 'text/plain'} className="size-5 shrink-0" />
+			<FileTypeIcon
+				name={entry?.name ?? filename}
+				mime={entry?.type ?? 'text/plain'}
+				className="size-5 shrink-0"
+			/>
 			<div class="min-w-0 flex-1">
 				<h2 class="m-0 truncate text-base font-semibold">{entry ? entry.name : 'New text file'}</h2>
-				<p class="m-0 text-xs text-(--muted)">{loading ? (totalPlaintextSize === null ? 'Loading…' : `${formatBytes(loadedPlaintextBytes)} of ${formatBytes(totalPlaintextSize)} loaded`) : `${formatBytes(textSize)} · ${lines.length.toLocaleString()} lines`}</p>
+				<p class="m-0 text-xs text-(--muted)">
+					{loading
+						? totalPlaintextSize === null
+							? 'Loading…'
+							: `${formatBytes(loadedPlaintextBytes)} of ${formatBytes(totalPlaintextSize)} loaded`
+						: `${formatBytes(textSize)} · ${lines.length.toLocaleString()} lines`}
+				</p>
 			</div>
 			{#if entry && !editing && !errorMessage && !loading}
-					<button class={`h-9 cursor-pointer rounded border px-3 text-sm hover:bg-(--surface-highest) ${wrapLines ? 'border-(--accent)' : 'border-(--border)'}`} type="button" aria-pressed={wrapLines} onclick={toggleWrapLines}>Wrap lines</button>
+				<button
+					class={`h-9 cursor-pointer rounded border px-3 text-sm hover:bg-(--surface-highest) ${wrapLines ? 'border-(--accent)' : 'border-(--border)'}`}
+					type="button"
+					aria-pressed={wrapLines}
+					onclick={toggleWrapLines}>Wrap lines</button
+				>
 				{#if bidiControlCount > 0}
-						<button class="h-9 cursor-pointer rounded border border-(--border) px-3 text-sm hover:bg-(--surface-highest)" type="button" onclick={toggleHiddenCharacters}>{showHiddenCharacters ? 'Hide character markers' : 'Show hidden characters'}</button>
+					<button
+						class="h-9 cursor-pointer rounded border border-(--border) px-3 text-sm hover:bg-(--surface-highest)"
+						type="button"
+						onclick={toggleHiddenCharacters}
+						>{showHiddenCharacters ? 'Hide character markers' : 'Show hidden characters'}</button
+					>
 				{/if}
-				<button class="inline-flex size-9 cursor-pointer items-center justify-center rounded border border-(--border) hover:bg-(--surface-highest)" type="button" aria-label="Edit a copy" onclick={() => { editing = true; filename = copyName(entry.name); showHiddenCharacters = false; allLinesSelected = false; selectionMessage = ''; }}><Pencil class="size-4" aria-hidden="true" /></button>
+				<button
+					class="inline-flex size-9 cursor-pointer items-center justify-center rounded border border-(--border) hover:bg-(--surface-highest)"
+					type="button"
+					aria-label="Edit a copy"
+					onclick={() => {
+						editing = true;
+						filename = copyName(entry.name);
+						showHiddenCharacters = false;
+						allLinesSelected = false;
+						selectionMessage = '';
+					}}><Pencil class="size-4" aria-hidden="true" /></button
+				>
 			{/if}
-			<button class="inline-flex size-9 cursor-pointer items-center justify-center rounded border border-(--border) hover:bg-(--surface-highest)" type="button" aria-label="Close text editor" onclick={requestClose}><X class="size-4" aria-hidden="true" /></button>
+			<button
+				class="inline-flex size-9 cursor-pointer items-center justify-center rounded border border-(--border) hover:bg-(--surface-highest)"
+				type="button"
+				aria-label="Close text editor"
+				onclick={requestClose}><X class="size-4" aria-hidden="true" /></button
+			>
 		</header>
 	{/snippet}
 	{#snippet children()}
 		<div class="flex min-h-0 flex-1 flex-col">
 			{#if editing}
 				<div class="flex flex-wrap items-center gap-2 border-b border-(--border) px-4 py-3">
-					<input class="h-9 min-w-0 flex-1 rounded border border-(--border) bg-(--bg) px-3 text-sm text-(--text) outline-none focus:border-(--accent)" aria-label="Text file name" bind:value={filename} oninput={() => dirty = true} />
-					<button class={`h-9 cursor-pointer rounded border px-3 text-sm hover:bg-(--surface-highest) ${wrapLines ? 'border-(--accent)' : 'border-(--border)'}`} type="button" aria-pressed={wrapLines} onclick={toggleWrapLines}>Wrap lines</button>
-					{#if bidiControlCount > 0}<button class="h-9 cursor-pointer rounded border border-(--border) px-3 text-sm hover:bg-(--surface-highest)" type="button" aria-pressed={showHiddenCharacters} onclick={toggleHiddenCharacters}>{showHiddenCharacters ? 'Hide character markers' : 'Show hidden characters'}</button>{/if}
-					<button class="h-9 cursor-pointer rounded border border-(--accent) bg-(--accent) px-3 text-sm font-semibold text-(--accent-ink) disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={loading || textSize === 0 || (!dirty && entry !== null)} onclick={saveCopy}>{entry ? 'Save copy' : 'Save file'}</button>
+					<input
+						class="h-9 min-w-0 flex-1 rounded border border-(--border) bg-(--bg) px-3 text-sm text-(--text) outline-none focus:border-(--accent)"
+						aria-label="Text file name"
+						bind:value={filename}
+						oninput={() => (dirty = true)}
+					/>
+					<button
+						class={`h-9 cursor-pointer rounded border px-3 text-sm hover:bg-(--surface-highest) ${wrapLines ? 'border-(--accent)' : 'border-(--border)'}`}
+						type="button"
+						aria-pressed={wrapLines}
+						onclick={toggleWrapLines}>Wrap lines</button
+					>
+					{#if bidiControlCount > 0}<button
+							class="h-9 cursor-pointer rounded border border-(--border) px-3 text-sm hover:bg-(--surface-highest)"
+							type="button"
+							aria-pressed={showHiddenCharacters}
+							onclick={toggleHiddenCharacters}
+							>{showHiddenCharacters ? 'Hide character markers' : 'Show hidden characters'}</button
+						>{/if}
+					<button
+						class="h-9 cursor-pointer rounded border border-(--accent) bg-(--accent) px-3 text-sm font-semibold text-(--accent-ink) disabled:cursor-not-allowed disabled:opacity-50"
+						type="button"
+						disabled={loading || textSize === 0 || (!dirty && entry !== null)}
+						onclick={saveCopy}>{entry ? 'Save copy' : 'Save file'}</button
+					>
 				</div>
-				{#if !loading && textSize === 0}<p class="m-0 border-b border-(--border) px-4 py-2 text-xs text-(--muted)">Type some text before saving. Empty files are not accepted by the upload API.</p>{/if}
+				{#if !loading && textSize === 0}<p
+						class="m-0 border-b border-(--border) px-4 py-2 text-xs text-(--muted)"
+					>
+						Type some text before saving. Empty files are not accepted by the upload API.
+					</p>{/if}
 			{/if}
-				{#if bidiControlCount > 0}
-					<p class="m-0 border-b border-(--border) px-4 py-2 text-xs text-amber-300" role="status">
-						{bidiControlCount} hidden formatting character{bidiControlCount === 1 ? '' : 's'} can make nearby text appear in a different order.
-						{showHiddenCharacters ? ' Each is marked inline, for example ⟦U+202E RLO⟧.' : ' Select “Show hidden characters” to inspect them.'}
-					</p>
-				{/if}
-				{#if allLinesSelected}<p class="m-0 border-b border-(--border) px-4 py-2 text-xs text-(--muted)" role="status">{editing ? 'All text selected. Copy, replace, or delete it.' : 'All text selected. Copy to place it on the clipboard.'}</p>{/if}
-				{#if selectionMessage}<p class="m-0 border-b border-(--border) px-4 py-2 text-xs text-(--muted)" role="status">{selectionMessage}</p>{/if}
-			{#if errorMessage}<p class="m-0 border-b border-(--border) px-4 py-2 text-sm text-red-400" role="alert">{errorMessage}</p>{/if}
+			{#if bidiControlCount > 0}
+				<p class="m-0 border-b border-(--border) px-4 py-2 text-xs text-amber-300" role="status">
+					{bidiControlCount} hidden formatting character{bidiControlCount === 1 ? '' : 's'} can make nearby
+					text appear in a different order.
+					{showHiddenCharacters
+						? ' Each is marked inline, for example ⟦U+202E RLO⟧.'
+						: ' Select “Show hidden characters” to inspect them.'}
+				</p>
+			{/if}
+			{#if allLinesSelected}<p
+					class="m-0 border-b border-(--border) px-4 py-2 text-xs text-(--muted)"
+					role="status"
+				>
+					{editing
+						? 'All text selected. Copy, replace, or delete it.'
+						: 'All text selected. Copy to place it on the clipboard.'}
+				</p>{/if}
+			{#if selectionMessage}<p
+					class="m-0 border-b border-(--border) px-4 py-2 text-xs text-(--muted)"
+					role="status"
+				>
+					{selectionMessage}
+				</p>{/if}
+			{#if errorMessage}<p
+					class="m-0 border-b border-(--border) px-4 py-2 text-sm text-red-400"
+					role="alert"
+				>
+					{errorMessage}
+				</p>{/if}
 			{#if lines.length}
-				{#if loading}<p class="m-0 border-b border-(--border) px-4 py-2 text-xs text-(--muted)" role="status">Loading and decrypting text. You can read the lines loaded so far.</p>{/if}
+				{#if loading}<p
+						class="m-0 border-b border-(--border) px-4 py-2 text-xs text-(--muted)"
+						role="status"
+					>
+						Loading and decrypting text. You can read the lines loaded so far.
+					</p>{/if}
 				<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions: the virtual text region needs focus and keyboard handlers for document-level selection. -->
 				<div
 					bind:this={viewport}
@@ -555,8 +774,15 @@
 				>
 					<div class="relative w-full" style={`height:${totalRowsHeight}px`}>
 						{#each virtualRows as row (row.key)}
-							<div use:measureTextRow={row.index} class={`absolute left-0 flex min-h-7 items-start ${wrapLines ? 'w-full' : 'w-max min-w-full'} ${allLinesSelected ? 'bg-(--surface-highest)' : ''}`} style={`transform:translateY(${row.start}px)`}>
-								<span class="w-14 shrink-0 select-none pr-3 text-right font-mono text-xs leading-7 text-(--muted)" aria-hidden="true">{row.index + 1}</span>
+							<div
+								use:measureTextRow={row.index}
+								class={`absolute left-0 flex min-h-7 items-start ${wrapLines ? 'w-full' : 'w-max min-w-full'} ${allLinesSelected ? 'bg-(--surface-highest)' : ''}`}
+								style={`transform:translateY(${row.start}px)`}
+							>
+								<span
+									class="w-14 shrink-0 select-none pr-3 text-right font-mono text-xs leading-7 text-(--muted)"
+									aria-hidden="true">{row.index + 1}</span
+								>
 								{#if editing && !showHiddenCharacters}
 									<TextEditorLine
 										index={row.index}
@@ -567,16 +793,23 @@
 										onPaste={handleLinePaste}
 									/>
 								{:else}
-									<pre class={`m-0 px-2 font-mono text-sm leading-7 text-(--text) ${wrapLines ? 'min-w-0 flex-1 whitespace-pre-wrap wrap-break-word' : 'w-max whitespace-pre'}`}>{showHiddenCharacters ? visibleBidiMarkers(decodedLine(row.index)) : decodedLine(row.index) || ' '}</pre>
+									<pre
+										class={`m-0 px-2 font-mono text-sm leading-7 text-(--text) ${wrapLines ? 'min-w-0 flex-1 whitespace-pre-wrap wrap-break-word' : 'w-max whitespace-pre'}`}>{showHiddenCharacters
+											? visibleBidiMarkers(decodedLine(row.index))
+											: decodedLine(row.index) || ' '}</pre>
 								{/if}
 							</div>
 						{/each}
 					</div>
 				</div>
 			{:else if loading}
-				<div class="grid flex-1 place-items-center text-sm text-(--muted)" role="status">Decrypting text file…</div>
+				<div class="grid flex-1 place-items-center text-sm text-(--muted)" role="status">
+					Decrypting text file…
+				</div>
 			{:else if !errorMessage}
-				<div class="grid flex-1 place-items-center text-sm text-(--muted)">This text file is empty.</div>
+				<div class="grid flex-1 place-items-center text-sm text-(--muted)">
+					This text file is empty.
+				</div>
 			{/if}
 		</div>
 	{/snippet}

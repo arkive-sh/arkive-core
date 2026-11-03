@@ -47,19 +47,25 @@
 			type === 'password' && 'pr-13.5',
 			nativeClass,
 			inputClass,
-			invalid && 'border-(--danger)!'
+			invalid && 'border-(--danger)!',
 		]
 			.filter(Boolean)
-			.join(' ')
+			.join(' '),
 	);
 	let helperID = $derived(helperText ? `${id}-helper` : undefined);
-	let describedBy = $derived([inputProps['aria-describedby'], helperID].filter(Boolean).join(' ') || undefined);
+	let describedBy = $derived(
+		[inputProps['aria-describedby'], helperID].filter(Boolean).join(' ') || undefined,
+	);
 </script>
 
 <div class={`mb-4 flex flex-col gap-2 ${fieldClass}`}>
-	<label class={`flex items-center justify-between gap-2 text-[11px] font-semibold uppercase leading-4 tracking-wider text-(--muted) ${labelClass}`} for={id}>
+	<label
+		class={`flex items-center justify-between gap-2 text-[11px] font-semibold uppercase leading-4 tracking-wider text-(--muted) ${labelClass}`}
+		for={id}
+	>
 		<span>{label}</span>
-		{#if suffix}<span class="inline-flex items-center text-(--accent-cool)">{@render suffix()}</span>{/if}
+		{#if suffix}<span class="inline-flex items-center text-(--accent-cool)">{@render suffix()}</span
+			>{/if}
 	</label>
 	{#if description}<p class="m-0 text-[13px] leading-4.5 text-(--muted)">{description}</p>{/if}
 	{#if type === 'password'}
@@ -104,5 +110,7 @@
 			aria-describedby={describedBy}
 		/>
 	{/if}
-	{#if helperText}<p class="m-0 text-[13px] leading-4.5 text-(--danger)" id={helperID}>{helperText}</p>{/if}
+	{#if helperText}<p class="m-0 text-[13px] leading-4.5 text-(--danger)" id={helperID}>
+			{helperText}
+		</p>{/if}
 </div>

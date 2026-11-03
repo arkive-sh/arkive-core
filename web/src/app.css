@@ -1,12 +1,12 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 @theme {
-	--font-sans: "Inter", system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-	--font-mono: "Inter", system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+	--font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+	--font-mono: 'Inter', system-ui, -apple-system, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
 }
 
 /* Keep the document from scrolling behind modal and PhotoSwipe overlays. */
-body:has([data-modal-open="true"], .pswp--open) {
+body:has([data-modal-open='true'], .pswp--open) {
 	overflow: hidden;
 }
 
@@ -30,7 +30,7 @@ body:has([data-modal-open="true"], .pswp--open) {
 	--shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
-[data-theme="light"] {
+[data-theme='light'] {
 	color-scheme: light;
 	--bg: #f5f6fb;
 	--surface: #ffffff;

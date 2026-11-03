@@ -42,11 +42,15 @@
 
 <section class="mx-auto grid min-h-[calc(100vh-56px)] max-w-md content-center px-4 py-10">
 	<div class="rounded-lg border border-(--border) bg-(--surface-raised) p-6 min-[640px]:p-8">
-		<div class="mb-5 flex size-12 items-center justify-center rounded-md bg-(--surface-highest) text-(--accent-cool)">
+		<div
+			class="mb-5 flex size-12 items-center justify-center rounded-md bg-(--surface-highest) text-(--accent-cool)"
+		>
 			<LockKeyhole class="size-6" aria-hidden="true" />
 		</div>
 		<h1 class="m-0 text-2xl leading-8 font-semibold text-(--text)">Unlock your vault</h1>
-		<p class="mt-2 mb-6 text-sm leading-5 text-(--muted)">Enter your password to unlock your files on this device.</p>
+		<p class="mt-2 mb-6 text-sm leading-5 text-(--muted)">
+			Enter your password to unlock your files on this device.
+		</p>
 		<form class="grid gap-2" onsubmit={submit}>
 			<InputField
 				label="Password"
@@ -60,7 +64,14 @@
 			{#if error}
 				<p class="m-0 text-sm text-(--danger)" role="alert">{error}</p>
 			{/if}
-			<Button text="Unlock vault" busyText="Unlocking…" type="submit" busy={submitting} disabled={!password} class="mt-2 w-full" />
+			<Button
+				text="Unlock vault"
+				busyText="Unlocking…"
+				type="submit"
+				busy={submitting}
+				disabled={!password}
+				class="mt-2 w-full"
+			/>
 		</form>
 	</div>
 </section>

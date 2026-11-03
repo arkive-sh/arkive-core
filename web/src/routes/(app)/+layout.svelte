@@ -66,12 +66,17 @@
 			setMobileOpen(false);
 		};
 		const closeOnEscape = (event: KeyboardEvent) => {
-			if (event.key === 'Escape' && !document.querySelector('[data-modal-open="true"], [role="menu"], .pswp--open')) closeSidebar();
+			if (
+				event.key === 'Escape' &&
+				!document.querySelector('[data-modal-open="true"], [role="menu"], .pswp--open')
+			)
+				closeSidebar();
 		};
 
 		syncView();
 		media.addEventListener('change', syncView);
 		window.addEventListener('keydown', closeOnEscape);
+
 		return () => {
 			media.removeEventListener('change', syncView);
 			window.removeEventListener('keydown', closeOnEscape);
@@ -95,7 +100,13 @@
 		onToggleVault={toggleVault}
 		onOpenSearch={openSearch}
 	/>
-	<SearchPalette open={searchOpen} vaultUnlocked={$vaultUnlocked} vaultId={data.user.id} onOpen={openSearch} onClose={closeSearch} />
+	<SearchPalette
+		open={searchOpen}
+		vaultUnlocked={$vaultUnlocked}
+		vaultId={data.user.id}
+		onOpen={openSearch}
+		onClose={closeSearch}
+	/>
 	<AppSidebar
 		currentPath={page.url.pathname}
 		{mobileView}
@@ -104,7 +115,10 @@
 		onClose={closeSidebar}
 		onNavigate={() => mobileView && setMobileOpen(false)}
 	/>
-	<main class={`min-h-[calc(100vh-56px)] overflow-x-clip ${desktopCollapsed ? '' : 'min-[961px]:ml-16'}`} id="main-content">
+	<main
+		class={`min-h-[calc(100vh-56px)] overflow-x-clip ${desktopCollapsed ? '' : 'min-[961px]:ml-16'}`}
+		id="main-content"
+	>
 		{@render children()}
 	</main>
 </div>

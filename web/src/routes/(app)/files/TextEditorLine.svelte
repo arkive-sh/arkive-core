@@ -6,7 +6,7 @@
 		wrapLines,
 		onChange,
 		onKeydown,
-		onPaste
+		onPaste,
 	}: {
 		index: number;
 		bytes: Uint8Array;
@@ -33,17 +33,20 @@
 
 	$effect(() => {
 		const next = new TextDecoder().decode(bytes);
+
 		if (untrack(() => value) !== next) value = next;
 		void tick().then(resizeEditor);
 	});
 
 	$effect(() => {
 		const node = editor;
+
 		if (!node) return;
 		if (wrapLines) node.style.width = '';
 		let size = `${node.clientWidth}:${node.parentElement?.clientWidth ?? 0}`;
 		const observer = new ResizeObserver(() => {
 			const nextSize = `${node.clientWidth}:${node.parentElement?.clientWidth ?? 0}`;
+
 			if (nextSize === size) return;
 			size = nextSize;
 			resizeEditor();
@@ -51,6 +54,7 @@
 		observer.observe(node);
 		if (node.parentElement) observer.observe(node.parentElement);
 		resizeEditor();
+
 		return () => observer.disconnect();
 	});
 </script>
@@ -73,5 +77,4 @@
 		resizeEditor();
 	}}
 	onkeydown={(event) => onKeydown(index, event)}
-	onpaste={(event) => onPaste(index, event)}
-></textarea>
+	onpaste={(event) => onPaste(index, event)}></textarea>

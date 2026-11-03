@@ -22,18 +22,29 @@ interface RegistrationResult {
 }
 
 export class OpaqueAuth {
-	async login(email: string, password: string): Promise<LoginFinishResponse & { exportKey: Uint8Array<ArrayBuffer> }> {
-		let clientState: ReturnType<typeof opaque.client.startLogin> | null = opaque.client.startLogin({ password });
+	async login(
+		email: string,
+		password: string,
+	): Promise<LoginFinishResponse & { exportKey: Uint8Array<ArrayBuffer> }> {
+		let clientState: ReturnType<typeof opaque.client.startLogin> | null = opaque.client.startLogin({
+			password,
+		});
 		let login: ReturnType<typeof opaque.client.finishLogin> | null = null;
 		let encodedExportKey: string | null = null;
 		let exportKey: Uint8Array<ArrayBuffer> | null = null;
+
 		try {
 			const { data: start } = await api.post<LoginStartResponse>('/api/auth/opaque/login/start', {
 				email,
-				startLoginRequest: clientState.startLoginRequest
+				startLoginRequest: clientState.startLoginRequest,
 			});
+
 			try {
-				login = opaque.client.finishLogin({ clientLoginState: clientState.clientLoginState, loginResponse: start.loginResponse, password });
+				login = opaque.client.finishLogin({
+					clientLoginState: clientState.clientLoginState,
+					loginResponse: start.loginResponse,
+					password,
+				});
 			} catch {
 				throw new Error('Invalid email or password');
 			}
@@ -46,10 +57,11 @@ export class OpaqueAuth {
 			encodedExportKey = null;
 			const { data } = await api.post<LoginFinishResponse>('/api/auth/opaque/login/finish', {
 				attemptId: start.attemptId,
-				finishLoginRequest
+				finishLoginRequest,
 			});
 			const result = { ...data, exportKey };
 			exportKey = null;
+
 			return result;
 		} finally {
 			password = '';
@@ -64,10 +76,14 @@ export class OpaqueAuth {
 	async registerSetup(username: string, password: string): Promise<RegistrationResult> {
 		try {
 			return await this.register(password, async (registrationRequest) => {
-				const { data } = await api.post<RegistrationStartResponse>('/api/setup/opaque/registration/start', {
-					username,
-					registrationRequest
-				});
+				const { data } = await api.post<RegistrationStartResponse>(
+					'/api/setup/opaque/registration/start',
+					{
+						username,
+						registrationRequest,
+					},
+				);
+
 				return data.registrationResponse;
 			});
 		} finally {
@@ -78,10 +94,14 @@ export class OpaqueAuth {
 	async registerPasswordReset(token: string, password: string): Promise<RegistrationResult> {
 		try {
 			return await this.register(password, async (registrationRequest) => {
-				const { data } = await api.post<RegistrationStartResponse>('/api/auth/password-reset/opaque/start', {
-					token,
-					registrationRequest
-				});
+				const { data } = await api.post<RegistrationStartResponse>(
+					'/api/auth/password-reset/opaque/start',
+					{
+						token,
+						registrationRequest,
+					},
+				);
+
 				return data.registrationResponse;
 			});
 		} finally {
@@ -91,20 +111,22 @@ export class OpaqueAuth {
 
 	private async register(
 		password: string,
-		getRegistrationResponse: (request: string) => Promise<string>
+		getRegistrationResponse: (request: string) => Promise<string>,
 	): Promise<RegistrationResult> {
-    let clientState: ReturnType<typeof opaque.client.startRegistration> | null = opaque.client.startRegistration({ password });
+		let clientState: ReturnType<typeof opaque.client.startRegistration> | null =
+			opaque.client.startRegistration({ password });
 
-    let registration: ReturnType<typeof opaque.client.finishRegistration> | null = null;
+		let registration: ReturnType<typeof opaque.client.finishRegistration> | null = null;
 
 		let encodedExportKey: string | null = null;
 		let exportKey: Uint8Array<ArrayBuffer> | null = null;
+
 		try {
 			const registrationResponse = await getRegistrationResponse(clientState.registrationRequest);
 			registration = opaque.client.finishRegistration({
 				clientRegistrationState: clientState.clientRegistrationState,
 				registrationResponse,
-				password
+				password,
 			});
 			const registrationRecord = registration.registrationRecord;
 			encodedExportKey = registration.exportKey;
@@ -114,6 +136,7 @@ export class OpaqueAuth {
 			encodedExportKey = null;
 			const result = { registrationRecord, exportKey };
 			exportKey = null;
+
 			return result;
 		} finally {
 			password = '';

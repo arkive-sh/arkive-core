@@ -8,7 +8,7 @@
 			? 'Arkive · Forbidden'
 			: page.status === 404
 				? `Arkive · ${page.url.pathname} not found`
-				: 'Arkive · Error'
+				: 'Arkive · Error',
 	);
 </script>
 

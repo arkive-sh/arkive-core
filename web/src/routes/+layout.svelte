@@ -11,13 +11,14 @@
 
 	let { children }: { children: Snippet } = $props();
 	const queryClient = new QueryClient({
-		defaultOptions: { queries: { enabled: browser, staleTime: 30_000 } }
+		defaultOptions: { queries: { enabled: browser, staleTime: 30_000 } },
 	});
 	const transferManager = createTransferManager();
 	provideTransferManager(transferManager);
 
 	onMount(() => {
-		void api.get<{ concurrency: number; maxInProgressUploads: number }>('/api/transfers/limits')
+		void api
+			.get<{ concurrency: number; maxInProgressUploads: number }>('/api/transfers/limits')
 			.then(({ data }) => transferManager.setLimits(data))
 			.catch(() => transferManager.setLimits({ concurrency: 3, maxInProgressUploads: 300 }));
 		const onUploadComplete = () => {
@@ -28,7 +29,11 @@
 		const stored = localStorage.getItem('theme');
 		const mode = ['dark', 'system', 'light'].includes(stored || '') ? stored : 'system';
 		const light = window.matchMedia('(prefers-color-scheme: light)').matches;
-		document.documentElement.setAttribute('data-theme', mode === 'light' || (mode === 'system' && light) ? 'light' : 'dark');
+		document.documentElement.setAttribute(
+			'data-theme',
+			mode === 'light' || (mode === 'system' && light) ? 'light' : 'dark',
+		);
+
 		return () => window.removeEventListener('arkive:upload-complete', onUploadComplete);
 	});
 </script>

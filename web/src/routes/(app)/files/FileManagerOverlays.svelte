@@ -46,7 +46,7 @@
 		onCloseProperties,
 		onCloseDelete,
 		onCancelDelete,
-		onConfirmDelete
+		onConfirmDelete,
 	}: {
 		imageEntries: FileManagerEntry[];
 		imagePreviewRequest: { fileId: string; trigger?: HTMLElement } | null;
@@ -91,7 +91,12 @@
 	} = $props();
 </script>
 
-<ImageViewer entries={imageEntries} request={imagePreviewRequest} onClose={onCloseImage} onError={onError} />
+<ImageViewer
+	entries={imageEntries}
+	request={imagePreviewRequest}
+	onClose={onCloseImage}
+	{onError}
+/>
 
 {#if MediaViewer}
 	<MediaViewer entry={mediaPreviewEntry} onClose={onCloseMedia} />
@@ -125,7 +130,11 @@
 	{onUploadFolder}
 />
 
-<FilePropertiesModal entry={propertiesEntry} location={currentLocation} onClose={onCloseProperties} />
+<FilePropertiesModal
+	entry={propertiesEntry}
+	location={currentLocation}
+	onClose={onCloseProperties}
+/>
 
 <Modal
 	open={deleteDialogOpen}
@@ -135,7 +144,17 @@
 >
 	<p class="m-0 text-sm text-(--muted)">This action cannot be undone.</p>
 	{#snippet actions()}
-		<button class="cursor-pointer rounded border border-(--border) px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={deleting} onclick={onCancelDelete}>Cancel</button>
-		<button class="cursor-pointer rounded border border-red-500 bg-red-500 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={deleting || !deleteTargets.length} onclick={onConfirmDelete}>{deleting ? 'Deleting…' : 'Delete'}</button>
+		<button
+			class="cursor-pointer rounded border border-(--border) px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+			type="button"
+			disabled={deleting}
+			onclick={onCancelDelete}>Cancel</button
+		>
+		<button
+			class="cursor-pointer rounded border border-red-500 bg-red-500 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+			type="button"
+			disabled={deleting || !deleteTargets.length}
+			onclick={onConfirmDelete}>{deleting ? 'Deleting…' : 'Delete'}</button
+		>
 	{/snippet}
 </Modal>

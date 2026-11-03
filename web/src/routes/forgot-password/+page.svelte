@@ -13,19 +13,26 @@
 		event.preventDefault();
 		if (submitting) return;
 		const form = event.currentTarget;
+
 		if (!(form instanceof HTMLFormElement)) return;
 		const email = String(new FormData(form).get('email') ?? '').trim();
 		error = '';
 		submitting = true;
 		try {
-			const { data } = await api.post<{ resetURL: string }>('/api/auth/forgot-password', { email: email.trim() });
+			const { data } = await api.post<{ resetURL: string }>('/api/auth/forgot-password', {
+				email: email.trim(),
+			});
 			const token = new URL(data.resetURL, window.location.origin).searchParams.get('token');
-			if (!token) throw new Error('No recovery link was generated. Check that a recovery key was set up.');
+
+			if (!token)
+				throw new Error('No recovery link was generated. Check that a recovery key was set up.');
 			await goto(`/reset-password?token=${encodeURIComponent(token)}`);
 		} catch (cause) {
 			error = axios.isAxiosError<APIErrorResponse>(cause)
-				? cause.response?.data?.error?.message ?? cause.message
-				: cause instanceof Error ? cause.message : 'Password recovery could not be started.';
+				? (cause.response?.data?.error?.message ?? cause.message)
+				: cause instanceof Error
+					? cause.message
+					: 'Password recovery could not be started.';
 		} finally {
 			submitting = false;
 		}
@@ -45,9 +52,27 @@
 		</header>
 		<Card class="w-full! rounded-lg! border-(--border-soft)! bg-(--surface-raised)! p-7!">
 			<form class="grid gap-4" onsubmit={submit}>
-				{#if error}<p class="m-0 rounded border border-(--danger) bg-(--danger)/10 px-3 py-2 text-sm text-(--danger)" role="alert">{error}</p>{/if}
-			<InputField label="Email" name="email" type="email" placeholder="user@local.node" required />
-				<Button text="Continue" type="submit" variant="primary" busy={submitting} busyText="Checking account..." class="w-full!" />
+				{#if error}<p
+						class="m-0 rounded border border-(--danger) bg-(--danger)/10 px-3 py-2 text-sm text-(--danger)"
+						role="alert"
+					>
+						{error}
+					</p>{/if}
+				<InputField
+					label="Email"
+					name="email"
+					type="email"
+					placeholder="user@local.node"
+					required
+				/>
+				<Button
+					text="Continue"
+					type="submit"
+					variant="primary"
+					busy={submitting}
+					busyText="Checking account..."
+					class="w-full!"
+				/>
 				<a href="/login" class="text-center text-sm text-(--muted) underline">Back to login</a>
 			</form>
 		</Card>

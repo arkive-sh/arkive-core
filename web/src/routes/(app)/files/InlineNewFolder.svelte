@@ -17,7 +17,8 @@
 	onMount(() => input?.focus());
 
 	function handleOutsidePointer(event: PointerEvent): void {
-		if (!busy && container && event.target instanceof Node && !container.contains(event.target)) onCancel();
+		if (!busy && container && event.target instanceof Node && !container.contains(event.target))
+			onCancel();
 	}
 
 	function handleKeydown(event: KeyboardEvent): void {

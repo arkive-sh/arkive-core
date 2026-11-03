@@ -3,7 +3,11 @@
 	import { formatBytes, formatDate } from '#lib/utils/format.ts';
 	import type { FileManagerEntry } from './types';
 
-	let { entry, location, onClose }: { entry: FileManagerEntry | null; location: string; onClose: () => void } = $props();
+	let {
+		entry,
+		location,
+		onClose,
+	}: { entry: FileManagerEntry | null; location: string; onClose: () => void } = $props();
 </script>
 
 <Modal open={entry !== null} label="Item properties" title={entry?.name ?? 'Properties'} {onClose}>

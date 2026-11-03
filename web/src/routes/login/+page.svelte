@@ -51,13 +51,22 @@
 					<Lock class="size-8 stroke-2" aria-hidden="true" />
 				</span>
 				<h1 class="m-0 text-2xl leading-8 font-semibold">Arkive Core</h1>
-				<p class="m-0 text-[13px] leading-4.5 text-(--muted)">Sign in to your self-hosted encrypted file server.</p>
+				<p class="m-0 text-[13px] leading-4.5 text-(--muted)">
+					Sign in to your self-hosted encrypted file server.
+				</p>
 			</header>
 
-			<Card class="w-full! rounded-lg! border-[color-mix(in_srgb,var(--border)_88%,white_8%)]! bg-[color-mix(in_srgb,var(--surface)_88%,black)]! p-7.5! shadow-[0_10px_30px_rgba(0,0,0,0.32)]!">
+			<Card
+				class="w-full! rounded-lg! border-[color-mix(in_srgb,var(--border)_88%,white_8%)]! bg-[color-mix(in_srgb,var(--surface)_88%,black)]! p-7.5! shadow-[0_10px_30px_rgba(0,0,0,0.32)]!"
+			>
 				<form class="grid gap-4" method="POST" onsubmit={submit}>
 					{#if generalError}
-						<p class="m-0 rounded border border-[rgba(147,0,10,0.3)] bg-[rgba(147,0,10,0.18)] px-3.5 py-3 text-[13px] leading-4.5 text-(--danger)" role="alert">{generalError}</p>
+						<p
+							class="m-0 rounded border border-[rgba(147,0,10,0.3)] bg-[rgba(147,0,10,0.18)] px-3.5 py-3 text-[13px] leading-4.5 text-(--danger)"
+							role="alert"
+						>
+							{generalError}
+						</p>
 					{/if}
 
 					<InputField
@@ -97,14 +106,22 @@
 							<Key class="size-5 stroke-2" aria-hidden="true" />
 						{/snippet}
 					</Button>
-					<p class="m-0 rounded bg-[rgba(107,209,230,0.12)] px-3.5 py-3 text-[13px] leading-4.5 text-(--accent-cool)">
-						<a href="/forgot-password" class="underline decoration-current underline-offset-2">Forgot password?</a>
+					<p
+						class="m-0 rounded bg-[rgba(107,209,230,0.12)] px-3.5 py-3 text-[13px] leading-4.5 text-(--accent-cool)"
+					>
+						<a href="/forgot-password" class="underline decoration-current underline-offset-2"
+							>Forgot password?</a
+						>
 					</p>
 				</form>
 			</Card>
 
-			<footer class="inline-flex items-center justify-center gap-2.5 font-mono text-[13px] leading-4.5 text-[color-mix(in_srgb,var(--muted)_82%,white_4%)]">
-				<span class="size-1.5 rounded-full bg-(--accent-cool) shadow-[0_0_0_3px_rgba(107,209,230,0.08)]"></span>
+			<footer
+				class="inline-flex items-center justify-center gap-2.5 font-mono text-[13px] leading-4.5 text-[color-mix(in_srgb,var(--muted)_82%,white_4%)]"
+			>
+				<span
+					class="size-1.5 rounded-full bg-(--accent-cool) shadow-[0_0_0_3px_rgba(107,209,230,0.08)]"
+				></span>
 				<span>System standing by.</span>
 			</footer>
 		</div>
