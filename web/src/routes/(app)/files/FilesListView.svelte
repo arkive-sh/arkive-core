@@ -123,6 +123,19 @@
 		});
 		return () => { canceled = true; };
 	});
+
+	function entryActionLabel(entry: FileManagerEntry): string | undefined {
+		if (entry.kind === 'folder') return `Open folder ${entry.name}`;
+		if (isImageFile(entry.name, entry.type) || isPdfFile(entry)) return `Preview ${entry.name}`;
+		if (entry.type.startsWith('video/')) return `Play ${entry.name}`;
+	}
+
+	function openEntry(entry: FileManagerEntry, trigger: HTMLElement): void {
+		if (entry.kind === 'folder') onOpenFolder(entry.id);
+		else if (isImageFile(entry.name, entry.type)) onPreviewImage(entry, trigger);
+		else if (entry.type.startsWith('video/')) onPreviewVideo(entry);
+		else if (isPdfFile(entry)) onPreviewPdf(entry);
+	}
 </script>
 
 <div class="overflow-x-auto">
@@ -158,10 +171,11 @@
 				{#each virtualRows as virtualRow (virtualRow.key)}
 					{@const row = tableRows[virtualRow.index]}
 					{@const isDraftFolder = row.original.id === NEW_FOLDER_DRAFT_ID}
+					{@const actionLabel = isDraftFolder ? undefined : entryActionLabel(row.original)}
 					<tr
 						data-index={virtualRow.index}
 						data-file-entry
-						class={`absolute top-0 left-0 grid h-11.25 w-full transition-colors hover:bg-(--surface-highest) ${selectedIds.has(fileManagerEntryKey(row.original)) ? 'bg-(--surface-highest)' : 'bg-(--surface-raised)'} ${focusFileId === row.original.id ? 'ring-2 ring-inset ring-(--accent)' : ''}`}
+						class={`absolute top-0 left-0 grid h-11.25 w-full transition-colors hover:bg-(--surface-highest) ${actionLabel ? 'cursor-pointer' : ''} ${selectedIds.has(fileManagerEntryKey(row.original)) ? 'bg-(--surface-highest)' : 'bg-(--surface-raised)'} ${focusFileId === row.original.id ? 'ring-2 ring-inset ring-(--accent)' : ''}`}
 						style={`grid-template-columns: ${activeGridColumns}; transform: translateY(${virtualRow.start - rowScrollMargin}px)`}
 						oncontextmenu={isDraftFolder ? undefined : (event) => {
 							event.preventDefault();
@@ -169,8 +183,11 @@
 						}}
 					>
 						<td class="flex items-center px-4 py-1.5 first:pl-5">
+							{#if actionLabel}
+								<button class="absolute inset-0 z-0 m-0 cursor-pointer appearance-none border-0 bg-transparent p-0 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--accent)" type="button" aria-label={actionLabel} onclick={(event) => openEntry(row.original, event.currentTarget)}></button>
+							{/if}
 							{#if !isDraftFolder}<input
-								class="size-4 cursor-pointer accent-(--accent)"
+								class="relative z-10 size-4 cursor-pointer accent-(--accent)"
 								type="checkbox"
 								checked={selectedIds.has(fileManagerEntryKey(row.original))}
 								aria-label={`Select ${row.original.name}`}
@@ -185,25 +202,25 @@
 								{:else if isDraftFolder}
 									<span></span>
 								{:else if cell.column.id === 'name' && row.original.kind === 'folder'}
-									<button class="inline-flex min-w-0 max-w-full cursor-pointer items-center gap-2 text-left font-medium text-(--text) hover:text-(--accent)" type="button" onclick={() => onOpenFolder(row.original.id)}>
+											<span class="inline-flex min-w-0 max-w-full items-center gap-2 text-left font-medium text-(--text)">
 										<Folder class="size-4 shrink-0 text-(--accent)" aria-hidden="true" />
 										<span class="min-w-0 truncate" title={row.original.name}><FlexRender {cell} /></span>
-									</button>
+											</span>
 								{:else if cell.column.id === 'name' && isImageFile(row.original.name, row.original.type)}
-									<button class="inline-flex min-w-0 max-w-full cursor-pointer items-center gap-2 text-left font-medium hover:text-(--accent)" type="button" onclick={(event) => onPreviewImage(row.original, event.currentTarget)}>
+											<span class="inline-flex min-w-0 max-w-full items-center gap-2 text-left font-medium">
 										<FileTypeIcon name={row.original.name} mime={row.original.type} className="size-4 shrink-0" />
 										<span class="min-w-0 truncate" title={row.original.name}><FlexRender {cell} /></span>
-									</button>
+											</span>
 								{:else if cell.column.id === 'name' && row.original.type.startsWith('video/')}
-									<button class="inline-flex min-w-0 max-w-full cursor-pointer items-center gap-2 text-left font-medium hover:text-(--accent)" type="button" onclick={() => onPreviewVideo(row.original)}>
+											<span class="inline-flex min-w-0 max-w-full items-center gap-2 text-left font-medium">
 										<FileTypeIcon name={row.original.name} mime={row.original.type} className="size-4 shrink-0" />
 										<span class="min-w-0 truncate" title={row.original.name}><FlexRender {cell} /></span>
-									</button>
+											</span>
 								{:else if cell.column.id === 'name' && isPdfFile(row.original)}
-									<button class="inline-flex min-w-0 max-w-full cursor-pointer items-center gap-2 text-left font-medium hover:text-(--accent)" type="button" aria-label={`Preview ${row.original.name}`} onclick={() => onPreviewPdf(row.original)}>
+											<span class="inline-flex min-w-0 max-w-full items-center gap-2 text-left font-medium">
 										<FileTypeIcon name={row.original.name} mime={row.original.type} className="size-4 shrink-0" />
 										<span class="min-w-0 truncate" title={row.original.name}><FlexRender {cell} /></span>
-									</button>
+											</span>
 								{:else if cell.column.id === 'name'}
 									<span class="inline-flex min-w-0 max-w-full items-center gap-2 font-medium">
 										<FileTypeIcon name={row.original.name} mime={row.original.type} className="size-4 shrink-0" />

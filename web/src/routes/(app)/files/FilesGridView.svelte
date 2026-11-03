@@ -148,6 +148,19 @@
 		};
 	}
 
+	function entryActionLabel(entry: FileManagerEntry): string | undefined {
+		if (entry.kind === 'folder') return `Open folder ${entry.name}`;
+		if (isImageFile(entry.name, entry.type) || isPdfFile(entry)) return `Preview ${entry.name}`;
+		if (entry.type.startsWith('video/')) return `Play ${entry.name}`;
+	}
+
+	function openEntry(entry: FileManagerEntry, trigger: HTMLElement): void {
+		if (entry.kind === 'folder') onOpenFolder(entry.id);
+		else if (isImageFile(entry.name, entry.type)) onPreviewImage(entry, trigger);
+		else if (entry.type.startsWith('video/')) onPreviewVideo(entry);
+		else if (isPdfFile(entry)) onPreviewPdf(entry);
+	}
+
 	async function loadThumbnail(entry: FileManagerEntry): Promise<void> {
 		if (!entry.thumbnail) return;
 		try {
@@ -248,16 +261,20 @@
 								</div>
 							</article>
 						{:else}
+						{@const actionLabel = entryActionLabel(entry)}
 						<article
 							data-file-entry
-							class={`group relative min-w-0 overflow-hidden rounded-md border bg-(--surface) transition-colors hover:border-(--accent) ${selectedIds.has(fileManagerEntryKey(entry)) || focusFileId === entry.id ? 'border-(--accent)' : 'border-(--border)'} ${focusFileId === entry.id ? 'ring-2 ring-(--accent)' : ''}`}
+							class={`group relative min-w-0 overflow-hidden rounded-md border bg-(--surface) transition-colors hover:border-(--accent) ${actionLabel ? 'cursor-pointer' : ''} ${selectedIds.has(fileManagerEntryKey(entry)) || focusFileId === entry.id ? 'border-(--accent)' : 'border-(--border)'} ${focusFileId === entry.id ? 'ring-2 ring-(--accent)' : ''}`}
 							oncontextmenu={(event) => {
 								event.preventDefault();
 								onShowContextMenu(entry, event.clientX, event.clientY);
 							}}
 						>
+							{#if actionLabel}
+								<button class="absolute inset-0 z-1 m-0 cursor-pointer appearance-none border-0 bg-transparent p-0 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--accent)" type="button" aria-label={actionLabel} onclick={(event) => openEntry(entry, event.currentTarget)}></button>
+							{/if}
 							<input
-								class="absolute z-1 cursor-pointer"
+								class="absolute z-10 cursor-pointer"
 								style={`top: ${checkboxInset}px; right: ${checkboxInset}px; width: ${checkboxSize}px; height: ${checkboxSize}px`}
 								type="checkbox"
 								checked={selectedIds.has(fileManagerEntryKey(entry))}
@@ -265,31 +282,31 @@
 								onchange={() => onToggleSelection(entry)}
 							/>
 							{#if entry.kind === 'file' && isImageFile(entry.name, entry.type)}
-								<button class="grid aspect-4/3 w-full cursor-pointer place-items-center overflow-hidden bg-(--surface-highest)" type="button" aria-label={`Preview ${entry.name}`} onclick={(event) => onPreviewImage(entry, event.currentTarget)}>
+								<div class="grid aspect-4/3 w-full place-items-center overflow-hidden bg-(--surface-highest)" aria-hidden="true">
 									{#if thumbnails.get(entry.id)}
-										<img class="size-full object-cover" src={thumbnails.get(entry.id)} alt={entry.name} loading="lazy" decoding="async" />
+										<img class="size-full object-cover" src={thumbnails.get(entry.id)} alt="" loading="lazy" decoding="async" />
 									{:else}
 										<FileTypeIcon name={entry.name} mime={entry.type} style={`width: ${iconSize}px; height: ${iconSize}px`} />
 									{/if}
-								</button>
+								</div>
 							{:else if entry.kind === 'file' && entry.type.startsWith('video/')}
-								<button class="grid aspect-4/3 w-full cursor-pointer place-items-center overflow-hidden bg-(--surface-highest)" type="button" aria-label={`Play ${entry.name}`} onclick={() => onPreviewVideo(entry)}>
+								<div class="grid aspect-4/3 w-full place-items-center overflow-hidden bg-(--surface-highest)" aria-hidden="true">
 									{#if thumbnails.get(entry.id)}
-										<img class="size-full object-cover" src={thumbnails.get(entry.id)} alt={entry.name} loading="lazy" decoding="async" />
+										<img class="size-full object-cover" src={thumbnails.get(entry.id)} alt="" loading="lazy" decoding="async" />
 									{:else}
 										<FileTypeIcon name={entry.name} mime={entry.type} style={`width: ${iconSize}px; height: ${iconSize}px`} />
 									{/if}
-								</button>
+								</div>
 							{:else if entry.kind === 'file' && isPdfFile(entry)}
-								<button class="grid aspect-4/3 w-full cursor-pointer place-items-center overflow-hidden bg-(--surface-highest)" type="button" aria-label={`Preview ${entry.name}`} onclick={() => onPreviewPdf(entry)}>
+								<div class="grid aspect-4/3 w-full place-items-center overflow-hidden bg-(--surface-highest)" aria-hidden="true">
 									{#if thumbnails.get(entry.id)}
-										<img class="size-full object-cover" src={thumbnails.get(entry.id)} alt={entry.name} loading="lazy" decoding="async" />
+										<img class="size-full object-cover" src={thumbnails.get(entry.id)} alt="" loading="lazy" decoding="async" />
 									{:else}
 										<FileTypeIcon name={entry.name} mime={entry.type} style={`width: ${iconSize}px; height: ${iconSize}px`} />
 									{/if}
-								</button>
+								</div>
 							{:else}
-								<div class="grid aspect-4/3 place-items-center overflow-hidden bg-(--surface-highest)">
+								<div class="grid aspect-4/3 place-items-center overflow-hidden bg-(--surface-highest)" aria-hidden="true">
 									{#if entry.kind === 'folder'}
 										<Folder class="text-(--accent)" style={`width: ${iconSize}px; height: ${iconSize}px`} aria-hidden="true" />
 									{:else if thumbnails.get(entry.id)}
@@ -302,17 +319,7 @@
 							<div class="grid min-w-0" style={`gap: ${contentGap}px; padding: ${cardGap}px`}>
 								<div class="flex min-w-0 items-center gap-1">
 									<div class="min-w-0 flex-1" title={entry.name}>
-										{#if entry.kind === 'folder'}
-											<button class="block w-full cursor-pointer truncate text-left font-medium leading-tight hover:text-(--accent)" style={`font-size: ${nameFontSize}px`} type="button" onclick={() => onOpenFolder(entry.id)}>{entry.name}</button>
-										{:else if isImageFile(entry.name, entry.type)}
-											<button class="block w-full cursor-pointer truncate text-left font-medium leading-tight hover:text-(--accent)" style={`font-size: ${nameFontSize}px`} type="button" onclick={(event) => onPreviewImage(entry, event.currentTarget)}>{entry.name}</button>
-										{:else if entry.type.startsWith('video/')}
-											<button class="block w-full cursor-pointer truncate text-left font-medium leading-tight hover:text-(--accent)" style={`font-size: ${nameFontSize}px`} type="button" onclick={() => onPreviewVideo(entry)}>{entry.name}</button>
-										{:else if isPdfFile(entry)}
-											<button class="block w-full cursor-pointer truncate text-left font-medium leading-tight hover:text-(--accent)" style={`font-size: ${nameFontSize}px`} type="button" onclick={() => onPreviewPdf(entry)}>{entry.name}</button>
-										{:else}
-											<span class="block truncate font-medium leading-tight" style={`font-size: ${nameFontSize}px`}>{entry.name}</span>
-										{/if}
+										<span class="block truncate font-medium leading-tight" style={`font-size: ${nameFontSize}px`}>{entry.name}</span>
 									</div>
 								</div>
 								{#if showType}<span class="truncate font-mono leading-tight text-(--muted)" style={`font-size: ${detailFontSize}px`} title={entry.type}>{entry.type}</span>{/if}
