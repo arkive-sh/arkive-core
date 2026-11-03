@@ -89,14 +89,14 @@ export async function createUploadFolder(
 	name: string,
 	parentFolderId: string | null,
 	vaultId: string,
-	signal: AbortSignal
+	signal?: AbortSignal
 ): Promise<string> {
 	const [{ encryptedMetadata: encryptedName }, { encryptedMetadata }, tokens] = await Promise.all([
 		encryptFolderName({ name }),
 		encryptFolderMetadata({ name }),
 		createSearchTokens(name, vaultId, 128)
 	]);
-	if (signal.aborted) throw new DOMException('Upload canceled.', 'AbortError');
+	if (signal?.aborted) throw new DOMException('Upload canceled.', 'AbortError');
 	const searchTokens = tokens.map((token): SearchTokenEntry => ({ token, field: 'name', weight: 10 }));
 	const { data } = await api.post<{ folder: { id: string } }>(
 		'/api/folders',

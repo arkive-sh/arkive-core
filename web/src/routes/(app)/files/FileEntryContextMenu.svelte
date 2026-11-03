@@ -1,26 +1,31 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { Download, FileText, FolderOpen, Info, Trash2 } from '@lucide/svelte';
+	import { Download, Film, FileText, FolderOpen, FolderPlus, Image, Info, Trash2 } from '@lucide/svelte';
+	import { isImageFile } from '#lib/utils/image.ts';
 	import { isPdfFile, type FileManagerEntry } from './types';
 
 	type Props = {
+		open: boolean;
 		entry: FileManagerEntry | null;
 		x: number;
 		y: number;
 		onClose: () => void;
 		onOpenFolder: (id: string) => void;
 		onDownload: (entry: FileManagerEntry) => void;
+		onPreviewImage: (entry: FileManagerEntry) => void;
+		onPreviewVideo: (entry: FileManagerEntry) => void;
 		onPreviewPdf: (entry: FileManagerEntry) => void;
 		onProperties: (entry: FileManagerEntry) => void;
 		onDelete: (entry: FileManagerEntry) => void;
+		onCreateFolder: (entry: FileManagerEntry | null) => void;
 	};
 
-	let { entry, x, y, onClose, onOpenFolder, onDownload, onPreviewPdf, onProperties, onDelete }: Props = $props();
+	let { open, entry, x, y, onClose, onOpenFolder, onDownload, onPreviewImage, onPreviewVideo, onPreviewPdf, onProperties, onDelete, onCreateFolder }: Props = $props();
 	let menu = $state<HTMLDivElement>();
 	let position = $state({ left: 8, top: 8 });
 
 	$effect(() => {
-		if (!entry) return;
+		if (!open) return;
 		const targetX = x;
 		const targetY = y;
 		void tick().then(() => {
@@ -35,11 +40,11 @@
 	});
 
 	function closeOutside(event: PointerEvent): void {
-		if (entry && event.target instanceof Node && !menu?.contains(event.target)) onClose();
+		if (open && event.target instanceof Node && !menu?.contains(event.target)) onClose();
 	}
 
 	function handleKeydown(event: KeyboardEvent): void {
-		if (!entry) return;
+		if (!open) return;
 		if (event.key === 'Escape') {
 			event.preventDefault();
 			onClose();
@@ -86,32 +91,61 @@
 		onPreviewPdf(selected);
 	}
 
+	function previewImage(): void {
+		if (!entry || entry.kind !== 'file' || !isImageFile(entry.name, entry.type)) return;
+		const selected = entry;
+		onClose();
+		onPreviewImage(selected);
+	}
+
+	function previewVideo(): void {
+		if (!entry || entry.kind !== 'file' || !entry.type.startsWith('video/')) return;
+		const selected = entry;
+		onClose();
+		onPreviewVideo(selected);
+	}
+
 	function confirmDelete(): void {
 		if (!entry) return;
 		const selected = entry;
 		onClose();
 		onDelete(selected);
 	}
+
+	function createFolder(): void {
+		onClose();
+		onCreateFolder(entry);
+	}
 </script>
 
 <svelte:window onpointerdown={closeOutside} onkeydown={handleKeydown} />
 
-{#if entry}
+{#if open}
 	<div
 		bind:this={menu}
 		class="fixed z-50 grid w-52 gap-1 rounded-md border border-(--border) bg-(--surface) p-1.5 shadow-xl"
 		style={`left: ${position.left}px; top: ${position.top}px`}
 		role="menu"
-		aria-label={`${entry.name} actions`}
+		aria-label={entry ? `${entry.name} actions` : 'Folder actions'}
 	>
-		{#if entry.kind === 'folder'}
+		{#if entry?.kind === 'folder'}
 			<button class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)" type="button" role="menuitem" onclick={openFolder}>
 				<FolderOpen class="size-4 text-(--muted)" aria-hidden="true" />
 				<span>Open folder</span>
 			</button>
 		{/if}
-		{#if entry.kind === 'file'}
-			{#if isPdfFile(entry)}
+		{#if entry?.kind === 'file'}
+			{#if isImageFile(entry.name, entry.type)}
+				<button class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)" type="button" role="menuitem" onclick={previewImage}>
+					<Image class="size-4 text-(--muted)" aria-hidden="true" />
+					<span>Preview</span>
+				</button>
+			{:else if entry.type.startsWith('video/')}
+				<button class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)" type="button" role="menuitem" onclick={previewVideo}>
+					<Film class="size-4 text-(--muted)" aria-hidden="true" />
+					<span>Preview</span>
+				</button>
+			{:else if isPdfFile(entry)}
 				<button class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)" type="button" role="menuitem" onclick={previewPdf}>
 					<FileText class="size-4 text-(--muted)" aria-hidden="true" />
 					<span>Preview</span>
@@ -122,13 +156,21 @@
 				<span>Download</span>
 			</button>
 		{/if}
-		<button class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)" type="button" role="menuitem" onclick={showProperties}>
-			<Info class="size-4 text-(--muted)" aria-hidden="true" />
-			<span>Properties</span>
-		</button>
-		<button class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm text-red-400 hover:bg-red-500/10" type="button" role="menuitem" onclick={confirmDelete}>
-			<Trash2 class="size-4" aria-hidden="true" />
-			<span>Delete</span>
-		</button>
+		{#if entry?.kind !== 'folder'}
+			<button class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)" type="button" role="menuitem" onclick={createFolder}>
+				<FolderPlus class="size-4 text-(--muted)" aria-hidden="true" />
+				<span>New folder here</span>
+			</button>
+		{/if}
+		{#if entry}
+			<button class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)" type="button" role="menuitem" onclick={showProperties}>
+				<Info class="size-4 text-(--muted)" aria-hidden="true" />
+				<span>Properties</span>
+			</button>
+			<button class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm text-red-400 hover:bg-red-500/10" type="button" role="menuitem" onclick={confirmDelete}>
+				<Trash2 class="size-4" aria-hidden="true" />
+				<span>Delete</span>
+			</button>
+		{/if}
 	</div>
 {/if}
