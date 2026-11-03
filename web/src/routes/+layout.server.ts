@@ -8,10 +8,11 @@ export const load: LayoutServerLoad = async ({ request, url }) => {
 
 	try {
 		await api.get('/api/me', {
-			headers: { Cookie: request.headers.get('cookie') ?? '' }
+			headers: { Cookie: request.headers.get('cookie') ?? '' },
 		});
 	} catch (error) {
 		if (axios.isAxiosError(error) && error.response?.status === 401) return {};
+
 		throw error;
 	}
 

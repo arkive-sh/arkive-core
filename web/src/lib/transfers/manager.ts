@@ -33,7 +33,11 @@ export interface UploadSource {
 	dispose?(): void;
 }
 
-export type TransferRunner = (signal: AbortSignal, onProgress: (transferredBytes: number) => void, concurrency: number) => Promise<void>;
+export type TransferRunner = (
+	signal: AbortSignal,
+	onProgress: (transferredBytes: number) => void,
+	concurrency: number,
+) => Promise<void>;
 
 export interface TransferManager {
 	state: Readable<TransferState>;
@@ -60,7 +64,9 @@ export function provideTransferManager(manager: TransferManager): void {
 
 export function useTransferManager(): TransferManager {
 	const manager = getContext<TransferManager | undefined>(contextKey);
+
 	if (!manager) throw new Error('Transfer manager is unavailable.');
+
 	return manager;
 }
 
@@ -79,7 +85,12 @@ export function createTransferManager(): TransferManager {
 
 	function notifyUploadsChangedIfIdle(): void {
 		if (!uploadsChanged || typeof window === 'undefined') return;
-		if (get(state).jobs.some((job) => job.kind === 'upload' && (job.status === 'queued' || job.status === 'running'))) return;
+		if (
+			get(state).jobs.some(
+				(job) => job.kind === 'upload' && (job.status === 'queued' || job.status === 'running'),
+			)
+		)
+			return;
 		uploadsChanged = false;
 		window.dispatchEvent(new Event('arkive:upload-complete'));
 	}
@@ -88,9 +99,10 @@ export function createTransferManager(): TransferManager {
 		concurrency = Number.isFinite(limits.concurrency)
 			? Math.min(8, Math.max(1, Math.floor(limits.concurrency)))
 			: DEFAULT_TRANSFER_CONCURRENCY;
-		maxInProgressUploads = Number.isFinite(limits.maxInProgressUploads) && limits.maxInProgressUploads > 0
-			? Math.floor(limits.maxInProgressUploads)
-			: DEFAULT_MAX_IN_PROGRESS_UPLOADS;
+		maxInProgressUploads =
+			Number.isFinite(limits.maxInProgressUploads) && limits.maxInProgressUploads > 0
+				? Math.floor(limits.maxInProgressUploads)
+				: DEFAULT_MAX_IN_PROGRESS_UPLOADS;
 		settingsReady = true;
 		void runQueue();
 	}
@@ -98,35 +110,41 @@ export function createTransferManager(): TransferManager {
 	function updateJob(id: string, update: Partial<Transfer>): void {
 		state.update((current) => ({
 			...current,
-			jobs: current.jobs.map((job) => job.id === id ? { ...job, ...update } : job)
+			jobs: current.jobs.map((job) => (job.id === id ? { ...job, ...update } : job)),
 		}));
 	}
 
 	async function runJob(job: Transfer, controller: AbortController): Promise<void> {
 		const run = runners.get(job.id);
+
 		if (!run) {
 			updateJob(job.id, { status: 'failed', error: 'This transfer cannot be retried.' });
+
 			return;
 		}
 
 		updateJob(job.id, { status: 'running', error: undefined });
 		try {
-			await run(controller.signal, (transferredBytes) => updateJob(job.id, {
-				transferredBytes: Math.min(job.totalBytes, Math.max(0, transferredBytes))
-			}), concurrency);
+			await run(
+				controller.signal,
+				(transferredBytes) =>
+					updateJob(job.id, {
+						transferredBytes: Math.min(job.totalBytes, Math.max(0, transferredBytes)),
+					}),
+				concurrency,
+			);
 			updateJob(job.id, { status: 'completed', transferredBytes: job.totalBytes });
 			runners.delete(job.id);
 			uploadSources.get(job.id)?.dispose?.();
 			uploadSources.delete(job.id);
 			if (job.kind === 'upload') uploadsChanged = true;
-
 		} catch (error) {
 			if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
 				updateJob(job.id, { status: 'canceled' });
 			} else {
 				updateJob(job.id, {
 					status: 'failed',
-					error: error instanceof Error ? error.message : 'Transfer failed.'
+					error: error instanceof Error ? error.message : 'Transfer failed.',
 				});
 			}
 		} finally {
@@ -142,12 +160,16 @@ export function createTransferManager(): TransferManager {
 			while (true) {
 				const jobs = get(state).jobs;
 				const next = jobs.find((job) => job.status === 'queued');
+
 				if (!next) return;
 
 				const active = jobs.filter((job) => job.status === 'running');
-				const canRun = next.kind === 'upload'
-					? active.every((job) => job.kind === 'upload') && active.length < Math.min(MAX_CONCURRENT_UPLOAD_FILES, maxInProgressUploads)
-					: active.length === 0;
+				const canRun =
+					next.kind === 'upload'
+						? active.every((job) => job.kind === 'upload') &&
+							active.length < Math.min(MAX_CONCURRENT_UPLOAD_FILES, maxInProgressUploads)
+						: active.length === 0;
+
 				if (!canRun) return;
 
 				const controller = new AbortController();
@@ -169,17 +191,23 @@ export function createTransferManager(): TransferManager {
 		runners.set(id, run);
 		state.update((current) => ({
 			...current,
-			jobs: [...current.jobs, { id, kind: 'download', fileName, totalBytes, transferredBytes: 0, status: 'queued' }],
-			open: true
+			jobs: [
+				...current.jobs,
+				{ id, kind: 'download', fileName, totalBytes, transferredBytes: 0, status: 'queued' },
+			],
+			open: true,
 		}));
 		void runQueue();
+
 		return id;
 	}
 
 	function cancelMany(ids: string[]): void {
 		const selected = new Set(ids);
+
 		if (!selected.size) return;
 		const queued = new Set<string>();
+
 		for (const job of get(state).jobs) {
 			if (!selected.has(job.id)) continue;
 			if (job.status === 'queued') queued.add(job.id);
@@ -188,7 +216,9 @@ export function createTransferManager(): TransferManager {
 		if (queued.size) {
 			state.update((current) => ({
 				...current,
-				jobs: current.jobs.map((job) => queued.has(job.id) ? { ...job, status: 'canceled' } : job)
+				jobs: current.jobs.map((job) =>
+					queued.has(job.id) ? { ...job, status: 'canceled' } : job,
+				),
 			}));
 			notifyUploadsChangedIfIdle();
 		}
@@ -196,14 +226,34 @@ export function createTransferManager(): TransferManager {
 
 	async function cancelAll(): Promise<void> {
 		const jobs = get(state).jobs;
-		cancelMany(jobs.filter((job) => job.status === 'queued' || job.status === 'running').map((job) => job.id));
-		await Promise.all(jobs.filter((job) => job.status === 'running').map((job) => runningTasks.get(job.id)).filter((task): task is Promise<void> => !!task));
+		cancelMany(
+			jobs
+				.filter((job) => job.status === 'queued' || job.status === 'running')
+				.map((job) => job.id),
+		);
+		await Promise.all(
+			jobs
+				.filter((job) => job.status === 'running')
+				.map((job) => runningTasks.get(job.id))
+				.filter((task): task is Promise<void> => !!task),
+		);
 	}
 
 	async function cancelUploads(): Promise<void> {
 		const jobs = get(state).jobs;
-		cancelMany(jobs.filter((job) => job.kind === 'upload' && (job.status === 'queued' || job.status === 'running')).map((job) => job.id));
-		await Promise.all(jobs.filter((job) => job.kind === 'upload').map((job) => runningTasks.get(job.id)).filter((task): task is Promise<void> => !!task));
+		cancelMany(
+			jobs
+				.filter(
+					(job) => job.kind === 'upload' && (job.status === 'queued' || job.status === 'running'),
+				)
+				.map((job) => job.id),
+		);
+		await Promise.all(
+			jobs
+				.filter((job) => job.kind === 'upload')
+				.map((job) => runningTasks.get(job.id))
+				.filter((task): task is Promise<void> => !!task),
+		);
 		for (const job of get(state).jobs) {
 			if (job.kind === 'upload') {
 				runners.delete(job.id);
@@ -211,21 +261,34 @@ export function createTransferManager(): TransferManager {
 				uploadSources.delete(job.id);
 			}
 		}
-		state.update((current) => ({ ...current, jobs: current.jobs.filter((job) => job.kind !== 'upload') }));
+		state.update((current) => ({
+			...current,
+			jobs: current.jobs.filter((job) => job.kind !== 'upload'),
+		}));
 		notifyUploadsChangedIfIdle();
 	}
 
 	function retryMany(ids: string[]): void {
 		const selected = new Set(ids);
-		const retryable = new Set(get(state).jobs
-			.filter((job) => selected.has(job.id) && runners.has(job.id) && (job.status === 'failed' || job.status === 'canceled'))
-			.map((job) => job.id));
+		const retryable = new Set(
+			get(state)
+				.jobs.filter(
+					(job) =>
+						selected.has(job.id) &&
+						runners.has(job.id) &&
+						(job.status === 'failed' || job.status === 'canceled'),
+				)
+				.map((job) => job.id),
+		);
+
 		if (!retryable.size) return;
 		state.update((current) => ({
 			...current,
-			jobs: current.jobs.map((job) => retryable.has(job.id)
-				? { ...job, status: 'queued', transferredBytes: 0, error: undefined }
-				: job)
+			jobs: current.jobs.map((job) =>
+				retryable.has(job.id)
+					? { ...job, status: 'queued', transferredBytes: 0, error: undefined }
+					: job,
+			),
 		}));
 		void runQueue();
 	}
@@ -236,10 +299,13 @@ export function createTransferManager(): TransferManager {
 		state.update((current) => ({
 			...current,
 			jobs: current.jobs.filter((job) => {
-				const removable = selected.has(job.id) && job.status !== 'queued' && job.status !== 'running';
+				const removable =
+					selected.has(job.id) && job.status !== 'queued' && job.status !== 'running';
+
 				if (removable) removed.add(job.id);
+
 				return !removable;
-			})
+			}),
 		}));
 		for (const id of removed) {
 			runners.delete(id);
@@ -257,21 +323,27 @@ export function createTransferManager(): TransferManager {
 			async function getFolderId(file: UploadItem, signal: AbortSignal): Promise<string | null> {
 				let parentFolderId = baseFolderId;
 				let path = '';
+
 				for (const name of file.relativePath.split('/').filter(Boolean).slice(0, -1)) {
 					path = path ? `${path}/${name}` : name;
 					let folderId = folderIds.get(path);
+
 					if (!folderId) {
 						const currentParentId = parentFolderId;
 						folderId = import('#lib/uploads/upload-file.ts')
-							.then(({ createUploadFolder }) => createUploadFolder(name, currentParentId, vaultId, signal))
+							.then(({ createUploadFolder }) =>
+								createUploadFolder(name, currentParentId, vaultId, signal),
+							)
 							.catch((error: unknown) => {
 								folderIds.delete(path);
+
 								throw error;
 							});
 						folderIds.set(path, folderId);
 					}
 					parentFolderId = await folderId;
 				}
+
 				return parentFolderId;
 			}
 
@@ -280,12 +352,27 @@ export function createTransferManager(): TransferManager {
 				uploadSources.set(id, file.file);
 				runners.set(id, async (signal, onProgress, concurrency) => {
 					const { uploadFile } = await import('#lib/uploads/upload-file.ts');
-					await uploadFile(file.file, signal, onProgress, await getFolderId(file, signal), concurrency);
+					await uploadFile(
+						file.file,
+						signal,
+						onProgress,
+						await getFolderId(file, signal),
+						concurrency,
+					);
 				});
-				return { id, kind: 'upload', fileName: file.relativePath || file.file.name, totalBytes: file.file.size, transferredBytes: 0, status: 'queued' };
+
+				return {
+					id,
+					kind: 'upload',
+					fileName: file.relativePath || file.file.name,
+					totalBytes: file.file.size,
+					transferredBytes: 0,
+					status: 'queued',
+				};
 			});
 			state.update((current) => ({ ...current, jobs: [...current.jobs, ...jobs], open: true }));
 			void runQueue();
+
 			return jobs.length;
 		},
 		enqueueDownload,
@@ -300,8 +387,8 @@ export function createTransferManager(): TransferManager {
 		clearCompleted() {
 			state.update((current) => ({
 				...current,
-				jobs: current.jobs.filter((job) => job.status !== 'completed')
+				jobs: current.jobs.filter((job) => job.status !== 'completed'),
 			}));
-		}
+		},
 	};
 }

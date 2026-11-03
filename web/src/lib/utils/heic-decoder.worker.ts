@@ -30,7 +30,10 @@ const workerScope = self as unknown as {
 
 async function loadLibheif(): Promise<HeifModule> {
 	const { default: initialize } = await import(/* @vite-ignore */ moduleURL);
-	return initialize({ locateFile: (path: string) => new URL(path, moduleURL).href }) as Promise<HeifModule>;
+
+	return initialize({
+		locateFile: (path: string) => new URL(path, moduleURL).href,
+	}) as Promise<HeifModule>;
 }
 
 workerScope.addEventListener('message', async (event: MessageEvent<DecodeRequest>) => {
@@ -46,49 +49,66 @@ workerScope.addEventListener('message', async (event: MessageEvent<DecodeRequest
 		module = await loadLibheif();
 		decoder = new module.HeifDecoder();
 		images = decoder.decode(input);
-		if (!decoder.decoder || images.length === 0) throw new Error('This HEIC/HEIF image could not be decoded.');
+		if (!decoder.decoder || images.length === 0)
+			throw new Error('This HEIC/HEIF image could not be decoded.');
 
 		const image = images.find((candidate) => candidate.is_primary()) ?? images[0];
 		const width = image.get_width();
 		const height = image.get_height();
-		if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width <= 0 || height <= 0) {
+
+		if (
+			!Number.isSafeInteger(width) ||
+			!Number.isSafeInteger(height) ||
+			width <= 0 ||
+			height <= 0
+		) {
 			throw new Error('This HEIC/HEIF image has invalid dimensions.');
 		}
 		if (width > MAX_HEIC_DIMENSION || height > MAX_HEIC_DIMENSION) {
-			throw new Error('HEIC/HEIF images larger than 8K on either side cannot be decoded by this browser.');
+			throw new Error(
+				'HEIC/HEIF images larger than 8K on either side cannot be decoded by this browser.',
+			);
 		}
 
-		const scale = event.data.maxDimension ? Math.min(1, event.data.maxDimension / Math.max(width, height)) : 1;
+		const scale = event.data.maxDimension
+			? Math.min(1, event.data.maxDimension / Math.max(width, height))
+			: 1;
 		const outputWidth = Math.max(1, Math.round(width * scale));
 		const outputHeight = Math.max(1, Math.round(height * scale));
 		pixels = new ImageData(width, height);
 		await new Promise<void>((resolve, reject) => {
-			image.display(pixels!, (decoded) => decoded ? resolve() : reject(new Error('This HEIC/HEIF image could not be decoded.')));
+			image.display(pixels!, (decoded) =>
+				decoded ? resolve() : reject(new Error('This HEIC/HEIF image could not be decoded.')),
+			);
 		});
 		resized = await createImageBitmap(pixels, {
 			resizeWidth: outputWidth,
 			resizeHeight: outputHeight,
-			resizeQuality: 'high'
+			resizeQuality: 'high',
 		});
 		pixels.data.fill(0);
 
 		canvas = new OffscreenCanvas(outputWidth, outputHeight);
 		const context = canvas.getContext('2d', { alpha: false });
+
 		if (!context) throw new Error('HEIC/HEIF preview rendering is unavailable.');
 		context.drawImage(resized, 0, 0);
-		const blob = await canvas.convertToBlob({ type: 'image/webp', quality: event.data.maxDimension ? 0.7 : 0.9 });
+		const blob = await canvas.convertToBlob({
+			type: 'image/webp',
+			quality: event.data.maxDimension ? 0.7 : 0.9,
+		});
 		workerScope.postMessage({
 			ok: true,
 			blob,
 			thumbnailWidth: outputWidth,
 			thumbnailHeight: outputHeight,
 			originalWidth: width,
-			originalHeight: height
+			originalHeight: height,
 		});
 	} catch (error) {
 		workerScope.postMessage({
 			ok: false,
-			error: error instanceof Error ? error.message : 'HEIC/HEIF decoding failed.'
+			error: error instanceof Error ? error.message : 'HEIC/HEIF decoding failed.',
 		});
 	} finally {
 		resized?.close();

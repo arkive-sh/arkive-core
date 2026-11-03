@@ -1,40 +1,52 @@
 {
-  "name": "arkive-web",
-  "private": true,
-  "type": "module",
-  "packageManager": "pnpm@12.16.1",
-  "imports": {
-    "#lib/*": "./src/lib/*"
-  },
-  "scripts": {
-    "dev": "vite dev --host 0.0.0.0",
-    "build": "vite build",
-    "build:heic": "bash scripts/build-heic-wasm.sh",
-    "preview": "node build/index.js",
-    "prepare": "svelte-kit sync"
-  },
-  "devDependencies": {
-    "@sveltejs/adapter-node": "^6.0.0",
-    "@sveltejs/kit": "^3.0.0",
-    "@sveltejs/vite-plugin-svelte": "^7.0.0",
-    "@tailwindcss/vite": "^4.3.3",
-    "@types/node": "^24.0.0",
-    "svelte": "^5.57.1",
-    "svelte-check": "^4.3.4",
-    "tailwindcss": "^4.3.3",
-    "typescript": "^6.0.0",
-    "vite": "^8.0.12"
-  },
-  "dependencies": {
-    "@lucide/svelte": "^1.61.0",
-    "@serenity-kit/opaque": "1.1.0",
-    "@tanstack/svelte-query": "^6.3.5",
-    "@tanstack/svelte-table": "^9.3.1",
-    "@tanstack/svelte-virtual": "^3.13.48",
-    "@videojs/html": "^10.2.0",
-    "axios": "^1.20.0",
-    "pdfjs-dist": "6.5.438",
-    "photoswipe": "^5.4.4",
-    "valibot": "^1.5.0"
-  }
+	"name": "arkive-web",
+	"private": true,
+	"type": "module",
+	"packageManager": "pnpm@12.16.1",
+	"imports": {
+		"#lib/*": "./src/lib/*"
+	},
+	"scripts": {
+		"dev": "vite dev --host 0.0.0.0",
+		"build": "vite build",
+		"build:heic": "bash scripts/build-heic-wasm.sh",
+		"lint": "eslint --ext .js,.ts,.svelte src static/lib vite.config.ts eslint.config.js",
+		"format": "prettier --write .",
+		"format:check": "prettier --check .",
+		"preview": "node build/index.js",
+		"prepare": "svelte-kit sync"
+	},
+	"devDependencies": {
+		"@eslint/js": "^10.0.1",
+		"@stylistic/eslint-plugin": "^5.10.0",
+		"@sveltejs/adapter-node": "^6.0.0",
+		"@sveltejs/kit": "^3.0.0",
+		"@sveltejs/vite-plugin-svelte": "^7.0.0",
+		"@tailwindcss/vite": "^4.3.3",
+		"@types/node": "^24.0.0",
+		"eslint": "^10.14.0",
+		"eslint-config-prettier": "^10.1.8",
+		"eslint-plugin-svelte": "^3.23.1",
+		"globals": "^17.14.0",
+		"prettier": "^3.9.10",
+		"prettier-plugin-svelte": "^4.1.1",
+		"svelte": "^5.57.1",
+		"svelte-check": "^4.3.4",
+		"tailwindcss": "^4.3.3",
+		"typescript": "^6.0.0",
+		"typescript-eslint": "^8.72.1",
+		"vite": "^8.0.12"
+	},
+	"dependencies": {
+		"@lucide/svelte": "^1.61.0",
+		"@serenity-kit/opaque": "1.1.0",
+		"@tanstack/svelte-query": "^6.3.5",
+		"@tanstack/svelte-table": "^9.3.1",
+		"@tanstack/svelte-virtual": "^3.13.48",
+		"@videojs/html": "^10.2.0",
+		"axios": "^1.20.0",
+		"pdfjs-dist": "6.5.438",
+		"photoswipe": "^5.4.4",
+		"valibot": "^1.5.0"
+	}
 }

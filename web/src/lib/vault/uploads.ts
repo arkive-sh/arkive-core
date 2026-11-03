@@ -6,12 +6,12 @@ export function prepareUpload(
 	uploadToken: string,
 	vaultId: string,
 	fileId: string,
-	totalParts: number
+	totalParts: number,
 ): Promise<VaultWorkerCalls['prepareUpload']['result']> {
 	return callVaultWorker('prepareUpload', {
 		uploadToken,
 		totalParts,
-		fileKeyAad: `arkive:file-key:v1:${vaultId}:${fileId}`
+		fileKeyAad: `arkive:file-key:v1:${vaultId}:${fileId}`,
 	});
 }
 
@@ -19,36 +19,52 @@ export function encryptUploadMetadata(
 	uploadToken: string,
 	metadata: VaultMetadata,
 	vaultId: string,
-	fileId: string
+	fileId: string,
 ): Promise<VaultWorkerCalls['encryptUploadMetadata']['result']> {
 	const metadataBytes = encodeJSON(metadata);
-	return callVaultWorker('encryptUploadMetadata', {
-		uploadToken,
-		metadataBytes,
-		metadataAad: `arkive:file-metadata:v1:${vaultId}:${fileId}`
-	}, [metadataBytes]);
+
+	return callVaultWorker(
+		'encryptUploadMetadata',
+		{
+			uploadToken,
+			metadataBytes,
+			metadataAad: `arkive:file-metadata:v1:${vaultId}:${fileId}`,
+		},
+		[metadataBytes],
+	);
 }
 
 export function encryptUploadThumbnail(
 	uploadToken: string,
 	thumbnailBytes: VaultBytes,
-	aad: VaultAAD
+	aad: VaultAAD,
 ): Promise<VaultWorkerCalls['encryptUploadThumbnail']['result']> {
 	const payload = toWorkerBytes(thumbnailBytes);
-	return callVaultWorker('encryptUploadThumbnail', { uploadToken, thumbnailBytes: payload, aad: normalizeAAD(aad) }, [payload]);
+
+	return callVaultWorker(
+		'encryptUploadThumbnail',
+		{ uploadToken, thumbnailBytes: payload, aad: normalizeAAD(aad) },
+		[payload],
+	);
 }
 
 export function encryptUploadPart(
 	uploadToken: string,
 	chunkBytes: VaultBytes,
-	aad?: VaultAAD
+	aad?: VaultAAD,
 ): Promise<VaultWorkerCalls['encryptUploadPart']['result']> {
 	const payload = toWorkerBytes(chunkBytes);
-	return callVaultWorker('encryptUploadPart', { uploadToken, chunkBytes: payload, aad: normalizeAAD(aad) }, [payload]);
+
+	return callVaultWorker(
+		'encryptUploadPart',
+		{ uploadToken, chunkBytes: payload, aad: normalizeAAD(aad) },
+		[payload],
+	);
 }
 
 export function hashUploadPayload(bytes: VaultBytes): Promise<{ hash: string }> {
 	const payload = toWorkerBytes(bytes);
+
 	return callVaultWorker('hashUploadPayload', { bytes: payload }, [payload]);
 }
 
@@ -57,15 +73,20 @@ export function finalizeUpload(
 	vaultId: string,
 	fileId: string,
 	manifest: VaultMetadata,
-	partHashes: string[]
+	partHashes: string[],
 ): Promise<VaultWorkerCalls['finalizeUpload']['result']> {
 	const manifestBytes = encodeJSON(manifest);
-	return callVaultWorker('finalizeUpload', {
-		uploadToken,
-		manifestBytes,
-		partHashes,
-		manifestAad: `arkive:file-manifest:v1:${vaultId}:${fileId}`
-	}, [manifestBytes]);
+
+	return callVaultWorker(
+		'finalizeUpload',
+		{
+			uploadToken,
+			manifestBytes,
+			partHashes,
+			manifestAad: `arkive:file-manifest:v1:${vaultId}:${fileId}`,
+		},
+		[manifestBytes],
+	);
 }
 
 export function clearUploadContext(uploadToken: string): Promise<{ cleared: boolean }> {

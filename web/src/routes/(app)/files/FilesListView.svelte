@@ -9,9 +9,16 @@
 	import InlineNewFolder from './InlineNewFolder.svelte';
 	import { isImageFile } from '#lib/utils/image.ts';
 	import { isMediaMimeType } from '#lib/utils/media.ts';
-	import { fileManagerEntryKey, isPdfFile, isTextFile, NEW_FOLDER_DRAFT_ID, type FileManagerEntry } from './types';
+	import {
+		fileManagerEntryKey,
+		isPdfFile,
+		isTextFile,
+		NEW_FOLDER_DRAFT_ID,
+		type FileManagerEntry,
+	} from './types';
 
-	const GRID_COLUMNS = '3rem minmax(220px, 2fr) minmax(160px, 1.2fr) minmax(90px, 0.75fr) minmax(150px, 1fr)';
+	const GRID_COLUMNS =
+		'3rem minmax(220px, 2fr) minmax(160px, 1.2fr) minmax(90px, 0.75fr) minmax(150px, 1fr)';
 	const GRID_COLUMNS_WITH_DIMENSIONS = `${GRID_COLUMNS} minmax(120px, 0.8fr)`;
 
 	let {
@@ -32,7 +39,7 @@
 		onPreviewImage,
 		onPreviewMedia,
 		onPreviewPdf,
-		onPreviewText
+		onPreviewText,
 	}: {
 		rows: FileManagerEntry[];
 		focusFileId: string | null;
@@ -70,9 +77,10 @@
 		{ accessorKey: 'updatedAt', header: 'Modified' },
 		{
 			id: 'dimensions',
-			accessorFn: (entry) => entry.dimensions ? `${entry.dimensions.width} × ${entry.dimensions.height}` : '—',
-			header: 'Resolution'
-		}
+			accessorFn: (entry) =>
+				entry.dimensions ? `${entry.dimensions.width} × ${entry.dimensions.height}` : '—',
+			header: 'Resolution',
+		},
 	];
 	const table = createTable({
 		features,
@@ -80,14 +88,14 @@
 		get data() {
 			return rows;
 		},
-		getRowId: (row) => `${row.kind}:${row.id}`
+		getRowId: (row) => `${row.kind}:${row.id}`,
 	});
 	const tableRows = $derived(table.getRowModel().rows);
 	const rowVirtualizer = createWindowVirtualizer({
 		count: 0,
 		estimateSize: () => 45,
 		overscan: 8,
-		getItemKey: (index) => tableRows[index]?.id ?? index
+		getItemKey: (index) => tableRows[index]?.id ?? index,
 	});
 	const virtualRows = $derived($rowVirtualizer.getVirtualItems());
 	const rowScrollMargin = $derived($rowVirtualizer.options.scrollMargin);
@@ -95,20 +103,23 @@
 	$effect(() => {
 		const body = tableBody;
 		const count = tableRows.length;
+
 		if (!body || typeof window === 'undefined') return;
 
 		const updateOptions = () => {
 			get(rowVirtualizer).setOptions({
 				count,
-				scrollMargin: body.getBoundingClientRect().top + window.scrollY
+				scrollMargin: body.getBoundingClientRect().top + window.scrollY,
 			});
 		};
 		updateOptions();
 
 		const resizeObserver = new ResizeObserver(updateOptions);
 		const content = document.getElementById('main-content');
+
 		if (content) resizeObserver.observe(content);
 		window.addEventListener('resize', updateOptions);
+
 		return () => {
 			resizeObserver.disconnect();
 			window.removeEventListener('resize', updateOptions);
@@ -117,14 +128,20 @@
 
 	$effect(() => {
 		const targetId = focusFileId;
-		const index = tableRows.findIndex((row) => row.original.kind === 'file' && row.original.id === targetId);
+		const index = tableRows.findIndex(
+			(row) => row.original.kind === 'file' && row.original.id === targetId,
+		);
+
 		if (!targetId || index < 0) return;
 
 		let canceled = false;
 		void tick().then(() => {
 			if (!canceled) get(rowVirtualizer).scrollToIndex(index, { align: 'center' });
 		});
-		return () => { canceled = true; };
+
+		return () => {
+			canceled = true;
+		};
 	});
 
 	function entryActionLabel(entry: FileManagerEntry): string | undefined {
@@ -144,8 +161,13 @@
 </script>
 
 <div class="overflow-x-auto">
-	<table class="grid w-full border-collapse text-left" style={`min-width: ${showDimensions ? '940px' : '800px'}`}>
-		<thead class="grid border-b border-(--border) bg-(--surface-highest) text-xs font-semibold tracking-wide text-(--muted)">
+	<table
+		class="grid w-full border-collapse text-left"
+		style={`min-width: ${showDimensions ? '940px' : '800px'}`}
+	>
+		<thead
+			class="grid border-b border-(--border) bg-(--surface-highest) text-xs font-semibold tracking-wide text-(--muted)"
+		>
 			{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
 				<tr class="grid w-full" style={`grid-template-columns: ${activeGridColumns}`}>
 					<th class="flex items-center px-4 py-3 first:pl-5" scope="col">
@@ -169,9 +191,18 @@
 				</tr>
 			{/each}
 		</thead>
-		<tbody bind:this={tableBody} class="relative block divide-y divide-(--border-soft)" style={tableRows.length ? `height: ${$rowVirtualizer.getTotalSize()}px` : 'height: auto'}>
+		<tbody
+			bind:this={tableBody}
+			class="relative block divide-y divide-(--border-soft)"
+			style={tableRows.length ? `height: ${$rowVirtualizer.getTotalSize()}px` : 'height: auto'}
+		>
 			{#if !tableRows.length}
-				<tr class="grid w-full" style={`grid-template-columns: ${activeGridColumns}`}><td class="px-5 py-10 text-center text-(--muted)" style={`grid-column: 1 / ${showDimensions ? 7 : 6}`}>This folder is empty.</td></tr>
+				<tr class="grid w-full" style={`grid-template-columns: ${activeGridColumns}`}
+					><td
+						class="px-5 py-10 text-center text-(--muted)"
+						style={`grid-column: 1 / ${showDimensions ? 7 : 6}`}>This folder is empty.</td
+					></tr
+				>
 			{:else}
 				{#each virtualRows as virtualRow (virtualRow.key)}
 					{@const row = tableRows[virtualRow.index]}
@@ -182,65 +213,119 @@
 						data-file-entry
 						class={`absolute top-0 left-0 grid h-11.25 w-full transition-colors hover:bg-(--surface-highest) ${actionLabel ? 'cursor-pointer' : ''} ${selectedIds.has(fileManagerEntryKey(row.original)) ? 'bg-(--surface-highest)' : 'bg-(--surface-raised)'} ${focusFileId === row.original.id ? 'ring-2 ring-inset ring-(--accent)' : ''}`}
 						style={`grid-template-columns: ${activeGridColumns}; transform: translateY(${virtualRow.start - rowScrollMargin}px)`}
-						oncontextmenu={isDraftFolder ? undefined : (event) => {
-							event.preventDefault();
-							onShowContextMenu(row.original, event.clientX, event.clientY);
-						}}
+						oncontextmenu={isDraftFolder
+							? undefined
+							: (event) => {
+									event.preventDefault();
+									onShowContextMenu(row.original, event.clientX, event.clientY);
+								}}
 					>
 						<td class="flex items-center px-4 py-1.5 first:pl-5">
 							{#if actionLabel}
-								<button class="absolute inset-0 z-0 m-0 cursor-pointer appearance-none border-0 bg-transparent p-0 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--accent)" type="button" aria-label={actionLabel} onclick={(event) => openEntry(row.original, event.currentTarget)}></button>
+								<button
+									class="absolute inset-0 z-0 m-0 cursor-pointer appearance-none border-0 bg-transparent p-0 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--accent)"
+									type="button"
+									aria-label={actionLabel}
+									onclick={(event) => openEntry(row.original, event.currentTarget)}
+								></button>
 							{/if}
 							{#if !isDraftFolder}<input
-								class="relative z-10 size-4 cursor-pointer accent-(--accent)"
-								type="checkbox"
-								checked={selectedIds.has(fileManagerEntryKey(row.original))}
-								aria-label={`Select ${row.original.name}`}
-								onchange={() => onToggleSelection(row.original)}
-							/>{/if}
+									class="relative z-10 size-4 cursor-pointer accent-(--accent)"
+									type="checkbox"
+									checked={selectedIds.has(fileManagerEntryKey(row.original))}
+									aria-label={`Select ${row.original.name}`}
+									onchange={() => onToggleSelection(row.original)}
+								/>{/if}
 						</td>
 						{#each row.getAllCells() as cell (cell.id)}
 							{#if cell.column.id !== 'dimensions' || showDimensions}
-							<td class="flex min-w-0 items-center whitespace-nowrap px-4 py-1.5 first:pl-5 last:pr-5">
-								{#if isDraftFolder && cell.column.id === 'name'}
-									<InlineNewFolder variant="list" bind:name={newFolderName} busy={creatingFolder} onCreate={onCreateFolder} onCancel={onCancelNewFolder} />
-								{:else if isDraftFolder}
-									<span></span>
-								{:else if cell.column.id === 'name' && row.original.kind === 'folder'}
-											<span class="inline-flex min-w-0 max-w-full items-center gap-2 text-left font-medium text-(--text)">
-										<Folder class="size-4 shrink-0 text-(--accent)" aria-hidden="true" />
-										<span class="min-w-0 truncate" title={row.original.name}><FlexRender {cell} /></span>
-											</span>
-								{:else if cell.column.id === 'name' && isImageFile(row.original.name, row.original.type)}
-											<span class="inline-flex min-w-0 max-w-full items-center gap-2 text-left font-medium">
-										<FileTypeIcon name={row.original.name} mime={row.original.type} className="size-4 shrink-0" />
-										<span class="min-w-0 truncate" title={row.original.name}><FlexRender {cell} /></span>
-											</span>
-				{:else if cell.column.id === 'name' && isMediaMimeType(row.original.type)}
-											<span class="inline-flex min-w-0 max-w-full items-center gap-2 text-left font-medium">
-										<FileTypeIcon name={row.original.name} mime={row.original.type} className="size-4 shrink-0" />
-										<span class="min-w-0 truncate" title={row.original.name}><FlexRender {cell} /></span>
-											</span>
-								{:else if cell.column.id === 'name' && isPdfFile(row.original)}
-											<span class="inline-flex min-w-0 max-w-full items-center gap-2 text-left font-medium">
-										<FileTypeIcon name={row.original.name} mime={row.original.type} className="size-4 shrink-0" />
-										<span class="min-w-0 truncate" title={row.original.name}><FlexRender {cell} /></span>
-											</span>
-								{:else if cell.column.id === 'name'}
-									<span class="inline-flex min-w-0 max-w-full items-center gap-2 font-medium">
-										<FileTypeIcon name={row.original.name} mime={row.original.type} className="size-4 shrink-0" />
-										<span class="min-w-0 truncate" title={row.original.name}><FlexRender {cell} /></span>
-									</span>
-								{:else if cell.column.id === 'size'}
-									<span class="text-(--muted)">{formatBytes(cell.getValue() as number | null)}</span>
-								{:else if cell.column.id === 'updatedAt'}
-									<span class="text-(--muted)">{formatDate(cell.getValue() as string)}</span>
-								{:else if cell.column.id === 'dimensions'}
-									<span class="text-(--muted)">{cell.getValue() as string}</span>
-								{:else}
-									<span class="block min-w-0 truncate font-mono text-xs text-(--muted)" title={cell.getValue() as string}>{cell.getValue() as string}</span>
-								{/if}
-							</td>
+								<td
+									class="flex min-w-0 items-center whitespace-nowrap px-4 py-1.5 first:pl-5 last:pr-5"
+								>
+									{#if isDraftFolder && cell.column.id === 'name'}
+										<InlineNewFolder
+											variant="list"
+											bind:name={newFolderName}
+											busy={creatingFolder}
+											onCreate={onCreateFolder}
+											onCancel={onCancelNewFolder}
+										/>
+									{:else if isDraftFolder}
+										<span></span>
+									{:else if cell.column.id === 'name' && row.original.kind === 'folder'}
+										<span
+											class="inline-flex min-w-0 max-w-full items-center gap-2 text-left font-medium text-(--text)"
+										>
+											<Folder class="size-4 shrink-0 text-(--accent)" aria-hidden="true" />
+											<span class="min-w-0 truncate" title={row.original.name}
+												><FlexRender {cell} /></span
+											>
+										</span>
+									{:else if cell.column.id === 'name' && isImageFile(row.original.name, row.original.type)}
+										<span
+											class="inline-flex min-w-0 max-w-full items-center gap-2 text-left font-medium"
+										>
+											<FileTypeIcon
+												name={row.original.name}
+												mime={row.original.type}
+												className="size-4 shrink-0"
+											/>
+											<span class="min-w-0 truncate" title={row.original.name}
+												><FlexRender {cell} /></span
+											>
+										</span>
+									{:else if cell.column.id === 'name' && isMediaMimeType(row.original.type)}
+										<span
+											class="inline-flex min-w-0 max-w-full items-center gap-2 text-left font-medium"
+										>
+											<FileTypeIcon
+												name={row.original.name}
+												mime={row.original.type}
+												className="size-4 shrink-0"
+											/>
+											<span class="min-w-0 truncate" title={row.original.name}
+												><FlexRender {cell} /></span
+											>
+										</span>
+									{:else if cell.column.id === 'name' && isPdfFile(row.original)}
+										<span
+											class="inline-flex min-w-0 max-w-full items-center gap-2 text-left font-medium"
+										>
+											<FileTypeIcon
+												name={row.original.name}
+												mime={row.original.type}
+												className="size-4 shrink-0"
+											/>
+											<span class="min-w-0 truncate" title={row.original.name}
+												><FlexRender {cell} /></span
+											>
+										</span>
+									{:else if cell.column.id === 'name'}
+										<span class="inline-flex min-w-0 max-w-full items-center gap-2 font-medium">
+											<FileTypeIcon
+												name={row.original.name}
+												mime={row.original.type}
+												className="size-4 shrink-0"
+											/>
+											<span class="min-w-0 truncate" title={row.original.name}
+												><FlexRender {cell} /></span
+											>
+										</span>
+									{:else if cell.column.id === 'size'}
+										<span class="text-(--muted)"
+											>{formatBytes(cell.getValue() as number | null)}</span
+										>
+									{:else if cell.column.id === 'updatedAt'}
+										<span class="text-(--muted)">{formatDate(cell.getValue() as string)}</span>
+									{:else if cell.column.id === 'dimensions'}
+										<span class="text-(--muted)">{cell.getValue() as string}</span>
+									{:else}
+										<span
+											class="block min-w-0 truncate font-mono text-xs text-(--muted)"
+											title={cell.getValue() as string}>{cell.getValue() as string}</span
+										>
+									{/if}
+								</td>
 							{/if}
 						{/each}
 					</tr>

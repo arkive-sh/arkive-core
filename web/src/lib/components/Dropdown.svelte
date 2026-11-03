@@ -21,7 +21,7 @@
 		id,
 		rootClass = '',
 		triggerClass = '',
-		menuClass = ''
+		menuClass = '',
 	}: Props = $props();
 	let open = $state(false);
 	let root: HTMLDivElement | undefined;
@@ -32,7 +32,7 @@
 			duration: 160,
 			easing: cubicOut,
 			css: (progress: number) =>
-				`opacity: ${progress}; transform: translateY(${(1 - progress) * -6}px) scale(${0.98 + progress * 0.02});`
+				`opacity: ${progress}; transform: translateY(${(1 - progress) * -6}px) scale(${0.98 + progress * 0.02});`,
 		};
 	}
 
@@ -44,7 +44,12 @@
 		const closeOutside = (event: MouseEvent) => {
 			if (!(event.target instanceof Node)) return;
 			if (!root?.contains(event.target)) close();
-			else if (!triggerButton?.contains(event.target) && event.target instanceof Element && event.target.closest('a, button')) close();
+			else if (
+				!triggerButton?.contains(event.target) &&
+				event.target instanceof Element &&
+				event.target.closest('a, button')
+			)
+				close();
 		};
 		const closeOnEscape = (event: KeyboardEvent) => {
 			if (event.key === 'Escape' && open) {
@@ -55,6 +60,7 @@
 
 		document.addEventListener('click', closeOutside);
 		window.addEventListener('keydown', closeOnEscape);
+
 		return () => {
 			document.removeEventListener('click', closeOutside);
 			window.removeEventListener('keydown', closeOnEscape);
@@ -62,7 +68,10 @@
 	});
 </script>
 
-<div class={`relative inline-flex items-center ${open ? 'z-50' : ''} ${rootClass}`} bind:this={root}>
+<div
+	class={`relative inline-flex items-center ${open ? 'z-50' : ''} ${rootClass}`}
+	bind:this={root}
+>
 	<button
 		class={`inline-flex cursor-pointer items-center justify-center border-0 bg-transparent p-0 ${triggerClass}`}
 		type="button"

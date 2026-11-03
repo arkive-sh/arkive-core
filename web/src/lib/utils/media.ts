@@ -1,6 +1,17 @@
-function canStreamNativeMedia(mimeType: string, type: 'audio' | 'video', createMedia: () => HTMLMediaElement): boolean {
-	if (typeof window === 'undefined' || typeof document === 'undefined' || !window.isSecureContext || !('serviceWorker' in navigator)) return false;
+function canStreamNativeMedia(
+	mimeType: string,
+	type: 'audio' | 'video',
+	createMedia: () => HTMLMediaElement,
+): boolean {
+	if (
+		typeof window === 'undefined' ||
+		typeof document === 'undefined' ||
+		!window.isSecureContext ||
+		!('serviceWorker' in navigator)
+	)
+		return false;
 	if (!mimeType.toLowerCase().startsWith(`${type}/`)) return false;
+
 	return createMedia().canPlayType(mimeType) !== '';
 }
 
@@ -10,6 +21,7 @@ export function isAudioMimeType(mimeType: string): boolean {
 
 export function isMediaMimeType(mimeType: string): boolean {
 	const type = mimeType.toLowerCase();
+
 	return type.startsWith('audio/') || type.startsWith('video/');
 }
 

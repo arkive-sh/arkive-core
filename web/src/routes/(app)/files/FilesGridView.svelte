@@ -10,7 +10,13 @@
 	import { isImageFile } from '#lib/utils/image.ts';
 	import { isMediaMimeType } from '#lib/utils/media.ts';
 	import { readDecryptedThumbnail } from '#lib/vault/thumbnail.ts';
-	import { fileManagerEntryKey, isPdfFile, isTextFile, NEW_FOLDER_DRAFT_ID, type FileManagerEntry } from './types';
+	import {
+		fileManagerEntryKey,
+		isPdfFile,
+		isTextFile,
+		NEW_FOLDER_DRAFT_ID,
+		type FileManagerEntry,
+	} from './types';
 
 	const THUMBNAIL_CONCURRENCY = 4;
 	let {
@@ -31,7 +37,7 @@
 		onPreviewImage,
 		onPreviewMedia,
 		onPreviewPdf,
-		onPreviewText
+		onPreviewText,
 	}: {
 		rows: FileManagerEntry[];
 		focusFileId: string | null;
@@ -78,35 +84,50 @@
 			const contentWidth = Math.max(tileSize, (gridLayout?.clientWidth ?? 0) - gridPadding * 2);
 			const cardWidth = (contentWidth - cardGap * (columnCount - 1)) / columnCount;
 			const detailLines = Number(showType) + Number(showSize) + Number(showDimensions);
-			return cardWidth * 0.75 + cardGap * 2 + nameFontSize * 1.25 + detailLines * (detailFontSize * 1.25 + contentGap) + 2;
+
+			return (
+				cardWidth * 0.75 +
+				cardGap * 2 +
+				nameFontSize * 1.25 +
+				detailLines * (detailFontSize * 1.25 + contentGap) +
+				2
+			);
 		},
 		gap: cardGap,
 		overscan: 2,
 		getItemKey: (index) => {
 			const entry = rows[index * columnCount];
+
 			return entry ? fileManagerEntryKey(entry) : index;
-		}
+		},
 	});
 	const virtualRows = $derived($rowVirtualizer.getVirtualItems());
 	const totalGridSize = $derived($rowVirtualizer.getTotalSize());
 	const rowScrollMargin = $derived($rowVirtualizer.options.scrollMargin);
-	const renderedEntries = $derived(virtualRows.flatMap(({ index }) => rows.slice(index * columnCount, (index + 1) * columnCount)));
+	const renderedEntries = $derived(
+		virtualRows.flatMap(({ index }) => rows.slice(index * columnCount, (index + 1) * columnCount)),
+	);
 
 	$effect(() => {
 		const layout = gridLayout;
 		const content = gridContent;
 		const count = rows.length;
+
 		if (!layout || !content || typeof window === 'undefined') return;
 
 		const updateOptions = () => {
-			const columns = Math.max(1, Math.floor((layout.clientWidth - gridPadding * 2 + cardGap) / (tileSize + cardGap)));
+			const columns = Math.max(
+				1,
+				Math.floor((layout.clientWidth - gridPadding * 2 + cardGap) / (tileSize + cardGap)),
+			);
 			columnCount = columns;
 			get(rowVirtualizer).setOptions({
 				count: Math.ceil(count / columns),
 				gap: cardGap,
-				scrollMargin: content.getBoundingClientRect().top + window.scrollY
+				scrollMargin: content.getBoundingClientRect().top + window.scrollY,
 			});
 			const layoutKey = `${tileSize}:${columns}:${showType}:${showSize}:${showDimensions}`;
+
 			if (layoutKey !== measuredLayout) {
 				get(rowVirtualizer).measure();
 				measuredLayout = layoutKey;
@@ -117,8 +138,10 @@
 		const resizeObserver = new ResizeObserver(updateOptions);
 		resizeObserver.observe(layout);
 		const mainContent = document.getElementById('main-content');
+
 		if (mainContent) resizeObserver.observe(mainContent);
 		window.addEventListener('resize', updateOptions);
+
 		return () => {
 			resizeObserver.disconnect();
 			window.removeEventListener('resize', updateOptions);
@@ -128,13 +151,18 @@
 	$effect(() => {
 		const targetId = focusFileId;
 		const index = rows.findIndex((entry) => entry.kind === 'file' && entry.id === targetId);
+
 		if (!targetId || index < 0) return;
 
 		let canceled = false;
 		void tick().then(() => {
-			if (!canceled) get(rowVirtualizer).scrollToIndex(Math.floor(index / columnCount), { align: 'center' });
+			if (!canceled)
+				get(rowVirtualizer).scrollToIndex(Math.floor(index / columnCount), { align: 'center' });
 		});
-		return () => { canceled = true; };
+
+		return () => {
+			canceled = true;
+		};
 	});
 
 	function measureGridRow(element: HTMLDivElement, index: number) {
@@ -143,11 +171,12 @@
 			get(rowVirtualizer).measureElement(element);
 		};
 		measure();
+
 		return {
 			update(nextIndex: number) {
 				index = nextIndex;
 				measure();
-			}
+			},
 		};
 	}
 
@@ -172,15 +201,19 @@
 			const blob = await readDecryptedThumbnail(
 				{ id: entry.id, ...entry.thumbnail },
 				controller.signal,
-				() => visibleIds.has(entry.id)
+				() => visibleIds.has(entry.id),
 			);
+
 			if (controller.signal.aborted || !visibleIds.has(entry.id) || !blob) return;
 			const url = URL.createObjectURL(blob);
 			objectUrls.set(entry.id, url);
 			thumbnails.set(entry.id, url);
 		} catch (error) {
 			if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
-				console.warn('Thumbnail preview failed:', error instanceof Error ? error.message : 'Unknown error');
+				console.warn(
+					'Thumbnail preview failed:',
+					error instanceof Error ? error.message : 'Unknown error',
+				);
 			}
 		}
 	}
@@ -188,6 +221,7 @@
 	function loadQueuedThumbnails(): void {
 		while (activeLoads < THUMBNAIL_CONCURRENCY && queue.length) {
 			const entry = queue.shift();
+
 			if (!entry) return;
 			if (!visibleIds.has(entry.id)) {
 				pendingIds.delete(entry.id);
@@ -218,7 +252,13 @@
 		}
 		queue = queue.filter((entry) => visibleIds.has(entry.id));
 		for (const entry of renderedEntries) {
-			if (entry.kind === 'file' && entry.thumbnail && !objectUrls.has(entry.id) && !pendingIds.has(entry.id) && !attemptedIds.has(entry.id)) {
+			if (
+				entry.kind === 'file' &&
+				entry.thumbnail &&
+				!objectUrls.has(entry.id) &&
+				!pendingIds.has(entry.id) &&
+				!attemptedIds.has(entry.id)
+			) {
 				attemptedIds.add(entry.id);
 				pendingIds.add(entry.id);
 				queue.push(entry);
@@ -257,81 +297,171 @@
 				>
 					{#each rows.slice(start, start + columnCount) as entry (`${entry.kind}:${entry.id}`)}
 						{#if entry.id === NEW_FOLDER_DRAFT_ID}
-							<article data-file-entry class="min-w-0 overflow-hidden rounded-md border border-(--accent) bg-(--surface)">
-								<div class="grid aspect-4/3 place-items-center overflow-hidden bg-(--surface-highest)">
-									<Folder class="text-(--accent)" style={`width: ${iconSize}px; height: ${iconSize}px`} aria-hidden="true" />
+							<article
+								data-file-entry
+								class="min-w-0 overflow-hidden rounded-md border border-(--accent) bg-(--surface)"
+							>
+								<div
+									class="grid aspect-4/3 place-items-center overflow-hidden bg-(--surface-highest)"
+								>
+									<Folder
+										class="text-(--accent)"
+										style={`width: ${iconSize}px; height: ${iconSize}px`}
+										aria-hidden="true"
+									/>
 								</div>
 								<div style={`padding: ${cardGap}px`}>
-									<InlineNewFolder variant="grid" bind:name={newFolderName} busy={creatingFolder} onCreate={onCreateFolder} onCancel={onCancelNewFolder} />
+									<InlineNewFolder
+										variant="grid"
+										bind:name={newFolderName}
+										busy={creatingFolder}
+										onCreate={onCreateFolder}
+										onCancel={onCancelNewFolder}
+									/>
 								</div>
 							</article>
 						{:else}
-						{@const actionLabel = entryActionLabel(entry)}
-						<article
-							data-file-entry
-							class={`group relative min-w-0 overflow-hidden rounded-md border bg-(--surface) transition-colors hover:border-(--accent) ${actionLabel ? 'cursor-pointer' : ''} ${selectedIds.has(fileManagerEntryKey(entry)) || focusFileId === entry.id ? 'border-(--accent)' : 'border-(--border)'} ${focusFileId === entry.id ? 'ring-2 ring-(--accent)' : ''}`}
-							oncontextmenu={(event) => {
-								event.preventDefault();
-								onShowContextMenu(entry, event.clientX, event.clientY);
-							}}
-						>
-							{#if actionLabel}
-								<button class="absolute inset-0 z-1 m-0 cursor-pointer appearance-none border-0 bg-transparent p-0 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--accent)" type="button" aria-label={actionLabel} onclick={(event) => openEntry(entry, event.currentTarget)}></button>
-							{/if}
-							<input
-								class="absolute z-10 cursor-pointer"
-								style={`top: ${checkboxInset}px; right: ${checkboxInset}px; width: ${checkboxSize}px; height: ${checkboxSize}px`}
-								type="checkbox"
-								checked={selectedIds.has(fileManagerEntryKey(entry))}
-								aria-label={`Select ${entry.name}`}
-								onchange={() => onToggleSelection(entry)}
-							/>
-							{#if entry.kind === 'file' && isImageFile(entry.name, entry.type)}
-								<div class="grid aspect-4/3 w-full place-items-center overflow-hidden bg-(--surface-highest)" aria-hidden="true">
-									{#if thumbnails.get(entry.id)}
-										<img class="size-full object-cover" src={thumbnails.get(entry.id)} alt="" loading="lazy" decoding="async" />
-									{:else}
-										<FileTypeIcon name={entry.name} mime={entry.type} style={`width: ${iconSize}px; height: ${iconSize}px`} />
-									{/if}
-								</div>
-			{:else if entry.kind === 'file' && entry.type.startsWith('video/')}
-								<div class="grid aspect-4/3 w-full place-items-center overflow-hidden bg-(--surface-highest)" aria-hidden="true">
-									{#if thumbnails.get(entry.id)}
-										<img class="size-full object-cover" src={thumbnails.get(entry.id)} alt="" loading="lazy" decoding="async" />
-									{:else}
-										<FileTypeIcon name={entry.name} mime={entry.type} style={`width: ${iconSize}px; height: ${iconSize}px`} />
-									{/if}
-								</div>
-							{:else if entry.kind === 'file' && isPdfFile(entry)}
-								<div class="grid aspect-4/3 w-full place-items-center overflow-hidden bg-(--surface-highest)" aria-hidden="true">
-									{#if thumbnails.get(entry.id)}
-										<img class="size-full object-cover" src={thumbnails.get(entry.id)} alt="" loading="lazy" decoding="async" />
-									{:else}
-										<FileTypeIcon name={entry.name} mime={entry.type} style={`width: ${iconSize}px; height: ${iconSize}px`} />
-									{/if}
-								</div>
-							{:else}
-								<div class="grid aspect-4/3 place-items-center overflow-hidden bg-(--surface-highest)" aria-hidden="true">
-									{#if entry.kind === 'folder'}
-										<Folder class="text-(--accent)" style={`width: ${iconSize}px; height: ${iconSize}px`} aria-hidden="true" />
-									{:else if thumbnails.get(entry.id)}
-										<img class="size-full object-cover" src={thumbnails.get(entry.id)} alt={entry.name} loading="lazy" decoding="async" />
-									{:else}
-										<FileTypeIcon name={entry.name} mime={entry.type} style={`width: ${iconSize}px; height: ${iconSize}px`} />
-									{/if}
-								</div>
-							{/if}
-							<div class="grid min-w-0" style={`gap: ${contentGap}px; padding: ${cardGap}px`}>
-								<div class="flex min-w-0 items-center gap-1">
-									<div class="min-w-0 flex-1" title={entry.name}>
-										<span class="block truncate font-medium leading-tight" style={`font-size: ${nameFontSize}px`}>{entry.name}</span>
+							{@const actionLabel = entryActionLabel(entry)}
+							<article
+								data-file-entry
+								class={`group relative min-w-0 overflow-hidden rounded-md border bg-(--surface) transition-colors hover:border-(--accent) ${actionLabel ? 'cursor-pointer' : ''} ${selectedIds.has(fileManagerEntryKey(entry)) || focusFileId === entry.id ? 'border-(--accent)' : 'border-(--border)'} ${focusFileId === entry.id ? 'ring-2 ring-(--accent)' : ''}`}
+								oncontextmenu={(event) => {
+									event.preventDefault();
+									onShowContextMenu(entry, event.clientX, event.clientY);
+								}}
+							>
+								{#if actionLabel}
+									<button
+										class="absolute inset-0 z-1 m-0 cursor-pointer appearance-none border-0 bg-transparent p-0 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--accent)"
+										type="button"
+										aria-label={actionLabel}
+										onclick={(event) => openEntry(entry, event.currentTarget)}
+									></button>
+								{/if}
+								<input
+									class="absolute z-10 cursor-pointer"
+									style={`top: ${checkboxInset}px; right: ${checkboxInset}px; width: ${checkboxSize}px; height: ${checkboxSize}px`}
+									type="checkbox"
+									checked={selectedIds.has(fileManagerEntryKey(entry))}
+									aria-label={`Select ${entry.name}`}
+									onchange={() => onToggleSelection(entry)}
+								/>
+								{#if entry.kind === 'file' && isImageFile(entry.name, entry.type)}
+									<div
+										class="grid aspect-4/3 w-full place-items-center overflow-hidden bg-(--surface-highest)"
+										aria-hidden="true"
+									>
+										{#if thumbnails.get(entry.id)}
+											<img
+												class="size-full object-cover"
+												src={thumbnails.get(entry.id)}
+												alt=""
+												loading="lazy"
+												decoding="async"
+											/>
+										{:else}
+											<FileTypeIcon
+												name={entry.name}
+												mime={entry.type}
+												style={`width: ${iconSize}px; height: ${iconSize}px`}
+											/>
+										{/if}
 									</div>
+								{:else if entry.kind === 'file' && entry.type.startsWith('video/')}
+									<div
+										class="grid aspect-4/3 w-full place-items-center overflow-hidden bg-(--surface-highest)"
+										aria-hidden="true"
+									>
+										{#if thumbnails.get(entry.id)}
+											<img
+												class="size-full object-cover"
+												src={thumbnails.get(entry.id)}
+												alt=""
+												loading="lazy"
+												decoding="async"
+											/>
+										{:else}
+											<FileTypeIcon
+												name={entry.name}
+												mime={entry.type}
+												style={`width: ${iconSize}px; height: ${iconSize}px`}
+											/>
+										{/if}
+									</div>
+								{:else if entry.kind === 'file' && isPdfFile(entry)}
+									<div
+										class="grid aspect-4/3 w-full place-items-center overflow-hidden bg-(--surface-highest)"
+										aria-hidden="true"
+									>
+										{#if thumbnails.get(entry.id)}
+											<img
+												class="size-full object-cover"
+												src={thumbnails.get(entry.id)}
+												alt=""
+												loading="lazy"
+												decoding="async"
+											/>
+										{:else}
+											<FileTypeIcon
+												name={entry.name}
+												mime={entry.type}
+												style={`width: ${iconSize}px; height: ${iconSize}px`}
+											/>
+										{/if}
+									</div>
+								{:else}
+									<div
+										class="grid aspect-4/3 place-items-center overflow-hidden bg-(--surface-highest)"
+										aria-hidden="true"
+									>
+										{#if entry.kind === 'folder'}
+											<Folder
+												class="text-(--accent)"
+												style={`width: ${iconSize}px; height: ${iconSize}px`}
+												aria-hidden="true"
+											/>
+										{:else if thumbnails.get(entry.id)}
+											<img
+												class="size-full object-cover"
+												src={thumbnails.get(entry.id)}
+												alt={entry.name}
+												loading="lazy"
+												decoding="async"
+											/>
+										{:else}
+											<FileTypeIcon
+												name={entry.name}
+												mime={entry.type}
+												style={`width: ${iconSize}px; height: ${iconSize}px`}
+											/>
+										{/if}
+									</div>
+								{/if}
+								<div class="grid min-w-0" style={`gap: ${contentGap}px; padding: ${cardGap}px`}>
+									<div class="flex min-w-0 items-center gap-1">
+										<div class="min-w-0 flex-1" title={entry.name}>
+											<span
+												class="block truncate font-medium leading-tight"
+												style={`font-size: ${nameFontSize}px`}>{entry.name}</span
+											>
+										</div>
+									</div>
+									{#if showType}<span
+											class="truncate font-mono leading-tight text-(--muted)"
+											style={`font-size: ${detailFontSize}px`}
+											title={entry.type}>{entry.type}</span
+										>{/if}
+									{#if showSize}<span
+											class="leading-tight text-(--muted)"
+											style={`font-size: ${detailFontSize}px`}>{formatBytes(entry.size)}</span
+										>{/if}
+									{#if showDimensions && entry.dimensions}<span
+											class="leading-tight text-(--muted)"
+											style={`font-size: ${detailFontSize}px`}
+											>{entry.dimensions.width} × {entry.dimensions.height}</span
+										>{/if}
 								</div>
-								{#if showType}<span class="truncate font-mono leading-tight text-(--muted)" style={`font-size: ${detailFontSize}px`} title={entry.type}>{entry.type}</span>{/if}
-								{#if showSize}<span class="leading-tight text-(--muted)" style={`font-size: ${detailFontSize}px`}>{formatBytes(entry.size)}</span>{/if}
-								{#if showDimensions && entry.dimensions}<span class="leading-tight text-(--muted)" style={`font-size: ${detailFontSize}px`}>{entry.dimensions.width} × {entry.dimensions.height}</span>{/if}
-							</div>
-						</article>
+							</article>
 						{/if}
 					{/each}
 				</div>

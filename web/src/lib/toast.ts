@@ -16,15 +16,16 @@ function show(message: string, type: ToastType, options: ToastOptions = {}): voi
 	if (typeof window === 'undefined' || !message) return;
 	window.dispatchEvent(
 		new CustomEvent<ToastDetail>(TOAST_EVENT, {
-			detail: { message, type, ...options }
-		})
+			detail: { message, type, ...options },
+		}),
 	);
 }
 
 export const toast = {
-	show: (message: string, type: ToastType = 'info', options?: ToastOptions) => show(message, type, options),
+	show: (message: string, type: ToastType = 'info', options?: ToastOptions) =>
+		show(message, type, options),
 	success: (message: string, options?: ToastOptions) => show(message, 'success', options),
 	warning: (message: string, options?: ToastOptions) => show(message, 'warning', options),
 	error: (message: string, options?: ToastOptions) => show(message, 'error', options),
-	info: (message: string, options?: ToastOptions) => show(message, 'info', options)
+	info: (message: string, options?: ToastOptions) => show(message, 'info', options),
 };

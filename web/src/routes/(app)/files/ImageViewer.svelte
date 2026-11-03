@@ -34,10 +34,13 @@
 	function updateOriginalButton(): void {
 		const content = lightbox?.pswp?.currSlide?.content;
 		const resource = content && contentResources.get(content);
+
 		if (!originalButton) return;
 		originalButton.hidden = resource?.status === 'original';
 		originalButton.disabled =
-			!resource || resource.status === 'loading-thumbnail' || resource.status === 'loading-original';
+			!resource ||
+			resource.status === 'loading-thumbnail' ||
+			resource.status === 'loading-original';
 		originalButton.textContent =
 			resource?.status === 'loading-original'
 				? 'Loading…'
@@ -54,7 +57,7 @@
 			const instance = new PhotoSwipeLightbox({
 				pswpModule: () => import('photoswipe'),
 				preload: [0, 1],
-				showHideAnimationType: 'zoom'
+				showHideAnimationType: 'zoom',
 			});
 			instance.on('uiRegister', () => {
 				instance.pswp?.ui?.registerElement({
@@ -70,8 +73,9 @@
 					},
 					onClick: (_event, _element, pswp) => {
 						const content = pswp.currSlide?.content;
+
 						if (content) void loadOriginal(content);
-					}
+					},
 				});
 			});
 			instance.on('change', updateOriginalButton);
@@ -80,8 +84,10 @@
 				const { content } = event;
 				const entry = entries.find((candidate) => candidate.id === content.data.id);
 				const image = content.element;
+
 				if (!entry || !(image instanceof HTMLImageElement)) {
 					content.onError();
+
 					return;
 				}
 
@@ -95,31 +101,43 @@
 			instance.init();
 			if (destroyed) {
 				instance.destroy();
+
 				return instance;
 			}
 			lightbox = instance;
+
 			return instance;
 		});
+
 		return loadingLightbox;
 	}
 
-	async function loadImage(content: Content, entry: FileManagerEntry, image: HTMLImageElement): Promise<void> {
+	async function loadImage(
+		content: Content,
+		entry: FileManagerEntry,
+		image: HTMLImageElement,
+	): Promise<void> {
 		const resource: ContentResource = {
 			controller: new AbortController(),
-			status: entry.thumbnail ? 'loading-thumbnail' : 'ready'
+			status: entry.thumbnail ? 'loading-thumbnail' : 'ready',
 		};
 		contentResources.set(content, resource);
 		image.style.visibility = 'hidden';
 		updateOriginalButton();
 		try {
 			const blob = entry.thumbnail
-				? await readDecryptedThumbnail({ id: entry.id, ...entry.thumbnail }, resource.controller.signal)
+				? await readDecryptedThumbnail(
+						{ id: entry.id, ...entry.thumbnail },
+						resource.controller.signal,
+					)
 				: null;
+
 			if (resource.controller.signal.aborted) return;
 			if (!blob) {
 				resource.status = 'ready';
 				content.onLoaded();
 				updateOriginalButton();
+
 				return;
 			}
 
@@ -154,6 +172,7 @@
 		const entry = entries.find((candidate) => candidate.id === content.data.id);
 		const resource = contentResources.get(content);
 		const image = content.element;
+
 		if (
 			!entry ||
 			!resource ||
@@ -161,12 +180,14 @@
 			resource.status === 'loading-thumbnail' ||
 			resource.status === 'loading-original' ||
 			resource.status === 'original'
-		) return;
+		)
+			return;
 
 		resource.status = 'loading-original';
 		updateOriginalButton();
 		try {
 			const decrypted = await readDecryptedFile(entry.id, entry.type, resource.controller.signal);
+
 			if (resource.controller.signal.aborted) return;
 
 			const fail = (error?: unknown) => {
@@ -203,11 +224,18 @@
 					resource.pendingObjectUrl = undefined;
 					if (!usingFallback && isHeicImage(entry.name, entry.type)) {
 						image.style.visibility = 'hidden';
-						void decodeHeicImage(decrypted, entry.name, entry.type, null, resource.controller.signal)
+						void decodeHeicImage(
+							decrypted,
+							entry.name,
+							entry.type,
+							null,
+							resource.controller.signal,
+						)
 							.then(({ blob: decoded }) => {
 								if (!resource.controller.signal.aborted) showOriginal(decoded, true);
 							})
 							.catch(fail);
+
 						return;
 					}
 					fail();
@@ -225,6 +253,7 @@
 
 	function releaseContent(content: Content): void {
 		const resource = contentResources.get(content);
+
 		if (!resource) return;
 		resource.controller.abort();
 		if (resource.objectUrl) URL.revokeObjectURL(resource.objectUrl);
@@ -236,8 +265,10 @@
 	$effect(() => {
 		const pending = request;
 		const availableEntries = entries;
+
 		if (!pending) {
 			lastRequest = null;
+
 			return;
 		}
 		if (pending === lastRequest) return;
@@ -246,10 +277,13 @@
 		void (async () => {
 			try {
 				const instance = await ensureLightbox();
+
 				if (generation !== openGeneration) return;
 				const index = availableEntries.findIndex((entry) => entry.id === pending.fileId);
+
 				if (index < 0) {
 					onClose();
+
 					return;
 				}
 				const thumbnail = pending.trigger?.querySelector('img') ?? pending.trigger;
@@ -261,6 +295,7 @@
 					const height = hasThumbnailSize ? thumbnailHeight : 3;
 					// Thumbnails retain aspect ratio but are too small to size the full-resolution viewer.
 					const scale = 4000 / Math.max(width, height);
+
 					return {
 						id: entry.id,
 						src: entry.id,
@@ -269,13 +304,20 @@
 						width: Math.round(width * scale),
 						height: Math.round(height * scale),
 						alt: entry.name,
-						msrc: entry.id === pending.fileId && thumbnail instanceof HTMLImageElement ? thumbnail.currentSrc : undefined
+						msrc:
+							entry.id === pending.fileId && thumbnail instanceof HTMLImageElement
+								? thumbnail.currentSrc
+								: undefined,
 					};
 				});
 				const bounds = thumbnail?.getBoundingClientRect();
-				instance.loadAndOpen(index, dataSource, bounds
-					? { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 }
-					: { x: window.innerWidth / 2, y: window.innerHeight / 2 });
+				instance.loadAndOpen(
+					index,
+					dataSource,
+					bounds
+						? { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 }
+						: { x: window.innerWidth / 2, y: window.innerHeight / 2 },
+				);
 			} catch (error) {
 				onError(error instanceof Error ? error.message : 'Could not open image preview.');
 				onClose();

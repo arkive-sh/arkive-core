@@ -5,7 +5,7 @@
 		title = '',
 		subtitle = '',
 		class: className = '',
-		children
+		children,
 	}: {
 		title?: string;
 		subtitle?: string;
@@ -14,7 +14,9 @@
 	} = $props();
 </script>
 
-<div class={`rounded-md border border-(--border) bg-(--surface) p-4 shadow-[var(--shadow)]${className ? ` ${className}` : ''}`}>
+<div
+	class={`rounded-md border border-(--border) bg-(--surface) p-4 shadow-[var(--shadow)]${className ? ` ${className}` : ''}`}
+>
 	{#if title || subtitle}
 		<div class="mb-3 grid gap-1.5">
 			{#if title}<h3 class="text-base font-semibold leading-6">{title}</h3>{/if}

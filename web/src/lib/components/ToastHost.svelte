@@ -13,19 +13,22 @@
 		success: 'text-emerald-400',
 		warning: 'text-amber-400',
 		error: 'text-red-400',
-		info: 'text-sky-400'
+		info: 'text-sky-400',
 	};
 
 	function dismiss(id: number): void {
 		const item = items.find((entry) => entry.id === id);
+
 		if (item?.timer) window.clearTimeout(item.timer);
 		items = items.filter((entry) => entry.id !== id);
 	}
 
 	function receiveToast(event: Event): void {
 		const detail = (event as CustomEvent<ToastDetail>).detail;
+
 		if (!detail?.message) return;
 		const item: ToastItem = { ...detail, id: ++nextId };
+
 		if ((detail.duration ?? 4000) > 0) {
 			item.timer = window.setTimeout(() => dismiss(item.id), detail.duration ?? 4000);
 		}
@@ -34,6 +37,7 @@
 
 	onMount(() => {
 		window.addEventListener(TOAST_EVENT, receiveToast);
+
 		return () => {
 			window.removeEventListener(TOAST_EVENT, receiveToast);
 			for (const item of items) {
@@ -43,7 +47,11 @@
 	});
 </script>
 
-<div class="pointer-events-none fixed top-4 right-4 z-100 flex w-[min(21rem,calc(100vw-2rem))] flex-col gap-2 max-[640px]:top-3 max-[640px]:right-3" aria-live="polite" aria-atomic="false">
+<div
+	class="pointer-events-none fixed top-4 right-4 z-100 flex w-[min(21rem,calc(100vw-2rem))] flex-col gap-2 max-[640px]:top-3 max-[640px]:right-3"
+	aria-live="polite"
+	aria-atomic="false"
+>
 	{#each items as item (item.id)}
 		<div
 			class="pointer-events-auto flex items-start gap-2.5 rounded-lg border border-(--border) bg-(--surface-raised) px-3 py-2.5 text-(--text) shadow-(--shadow)"
@@ -51,9 +59,15 @@
 			transition:fly={{ y: -6, duration: 160 }}
 		>
 			{#if item.type === 'success'}
-				<CircleCheckBig class={`mt-0.5 size-4 shrink-0 ${iconColors[item.type]}`} aria-hidden="true" />
+				<CircleCheckBig
+					class={`mt-0.5 size-4 shrink-0 ${iconColors[item.type]}`}
+					aria-hidden="true"
+				/>
 			{:else if item.type === 'warning'}
-				<TriangleAlert class={`mt-0.5 size-4 shrink-0 ${iconColors[item.type]}`} aria-hidden="true" />
+				<TriangleAlert
+					class={`mt-0.5 size-4 shrink-0 ${iconColors[item.type]}`}
+					aria-hidden="true"
+				/>
 			{:else if item.type === 'error'}
 				<CircleAlert class={`mt-0.5 size-4 shrink-0 ${iconColors[item.type]}`} aria-hidden="true" />
 			{:else}

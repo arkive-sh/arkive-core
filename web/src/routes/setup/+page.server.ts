@@ -5,9 +5,10 @@ import type { SetupStatus } from './types';
 
 export const load: PageServerLoad = async ({ request }) => {
 	const { data: status } = await api.get<SetupStatus>('/api/setup/status', {
-		headers: { Cookie: request.headers.get('cookie') ?? '' }
+		headers: { Cookie: request.headers.get('cookie') ?? '' },
 	});
 
 	if (status.initialized) redirect(303, status.recoveryPending ? '/setup/recovery-key' : '/login');
+
 	return {};
 };

@@ -1,0 +1,7 @@
+node_modules/
+.svelte-kit/
+.heic-build/
+build/
+dist/
+static/wasm/
+pnpm-lock.yaml

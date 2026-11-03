@@ -29,17 +29,64 @@ export function fileManagerEntryKey(entry: Pick<FileManagerEntry, 'id' | 'kind'>
 }
 
 export function isPdfFile(entry: Pick<FileManagerEntry, 'name' | 'type'>): boolean {
-	return entry.type.toLowerCase() === 'application/pdf' || entry.name.toLowerCase().endsWith('.pdf');
+	return (
+		entry.type.toLowerCase() === 'application/pdf' || entry.name.toLowerCase().endsWith('.pdf')
+	);
 }
 
 const TEXT_EXTENSIONS = new Set([
-	'txt', 'md', 'markdown', 'csv', 'tsv', 'json', 'jsonl', 'log', 'py', 'go', 'rs', 'js', 'jsx', 'ts', 'tsx',
-	'html', 'css', 'scss', 'xml', 'yaml', 'yml', 'toml', 'sh', 'bash', 'zsh', 'sql', 'ini', 'conf', 'c', 'h',
-	'cpp', 'hpp', 'java', 'kt', 'swift', 'php', 'rb', 'lua', 'dart', 'vue', 'svelte', 'graphql', 'proto', 'diff', 'patch'
+	'txt',
+	'md',
+	'markdown',
+	'csv',
+	'tsv',
+	'json',
+	'jsonl',
+	'log',
+	'py',
+	'go',
+	'rs',
+	'js',
+	'jsx',
+	'ts',
+	'tsx',
+	'html',
+	'css',
+	'scss',
+	'xml',
+	'yaml',
+	'yml',
+	'toml',
+	'sh',
+	'bash',
+	'zsh',
+	'sql',
+	'ini',
+	'conf',
+	'c',
+	'h',
+	'cpp',
+	'hpp',
+	'java',
+	'kt',
+	'swift',
+	'php',
+	'rb',
+	'lua',
+	'dart',
+	'vue',
+	'svelte',
+	'graphql',
+	'proto',
+	'diff',
+	'patch',
 ]);
 
 export function isTextFile(entry: Pick<FileManagerEntry, 'name' | 'type'>): boolean {
-	return entry.type.toLowerCase().startsWith('text/') || TEXT_EXTENSIONS.has(entry.name.split('.').at(-1)?.toLowerCase() ?? '');
+	return (
+		entry.type.toLowerCase().startsWith('text/') ||
+		TEXT_EXTENSIONS.has(entry.name.split('.').at(-1)?.toLowerCase() ?? '')
+	);
 }
 
 export type FilesView = 'list' | 'grid';

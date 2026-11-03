@@ -14,7 +14,7 @@ import {
 	encryptUploadPart,
 	finalizeUpload,
 	hashUploadPayload,
-	prepareUpload
+	prepareUpload,
 } from '../vault/uploads';
 
 const FILE_CHUNK_SIZE = 4 * 1024 * 1024;
@@ -35,6 +35,7 @@ interface UploadStart {
 
 function extension(name: string): string {
 	const dot = name.lastIndexOf('.');
+
 	return dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
 }
 
@@ -46,7 +47,10 @@ function storageURL(url: string): string {
 	return new URL(url, CORE_API_ORIGIN).toString();
 }
 
-function createPartURLGetter(started: UploadStart, signal: AbortSignal): (partNumber: number) => Promise<string> {
+function createPartURLGetter(
+	started: UploadStart,
+	signal: AbortSignal,
+): (partNumber: number) => Promise<string> {
 	const urls = new Map<number, string>();
 	let nextBatchStart = 1;
 	let pendingBatch: Promise<void> | null = null;
@@ -56,28 +60,35 @@ function createPartURLGetter(started: UploadStart, signal: AbortSignal): (partNu
 		while (!urls.has(partNumber)) {
 			if (!pendingBatch) {
 				const first = nextBatchStart;
-				if (first > started.uploadPartCount) throw new Error('Storage did not provide an upload URL.');
+
+				if (first > started.uploadPartCount)
+					throw new Error('Storage did not provide an upload URL.');
 				const parts = Array.from(
 					{ length: Math.min(PRESIGN_BATCH_SIZE, started.uploadPartCount - first + 1) },
-					(_, index) => first + index
+					(_, index) => first + index,
 				);
 				nextBatchStart += parts.length;
-				pendingBatch = api.post<{ urls: Record<string, string> }>(
-					`/api/uploads/${encodeURIComponent(started.uploadSessionId)}/parts/presign`,
-					{ parts },
-					{ signal }
-				).then(({ data }) => {
-					for (const [number, url] of Object.entries(data.urls)) urls.set(Number(number), url);
-					if (parts.some((number) => !urls.has(number))) throw new Error('Storage did not provide an upload URL.');
-				}).finally(() => {
-					pendingBatch = null;
-				});
+				pendingBatch = api
+					.post<{ urls: Record<string, string> }>(
+						`/api/uploads/${encodeURIComponent(started.uploadSessionId)}/parts/presign`,
+						{ parts },
+						{ signal },
+					)
+					.then(({ data }) => {
+						for (const [number, url] of Object.entries(data.urls)) urls.set(Number(number), url);
+						if (parts.some((number) => !urls.has(number)))
+							throw new Error('Storage did not provide an upload URL.');
+					})
+					.finally(() => {
+						pendingBatch = null;
+					});
 			}
 			await pendingBatch;
 		}
 		const url = urls.get(partNumber);
 		urls.delete(partNumber);
 		if (!url) throw new Error('Storage did not provide an upload URL.');
+
 		return storageURL(url);
 	};
 }
@@ -90,20 +101,26 @@ export async function createUploadFolder(
 	name: string,
 	parentFolderId: string | null,
 	vaultId: string,
-	signal?: AbortSignal
+	signal?: AbortSignal,
 ): Promise<string> {
 	const [{ encryptedMetadata: encryptedName }, { encryptedMetadata }, tokens] = await Promise.all([
 		encryptFolderName({ name }),
 		encryptFolderMetadata({ name }),
-		createSearchTokens(name, vaultId, 128)
+		createSearchTokens(name, vaultId, 128),
 	]);
+
 	if (signal?.aborted) throw new DOMException('Upload canceled.', 'AbortError');
-	const searchTokens = tokens.map((token): SearchTokenEntry => ({ token, field: 'name', weight: 10 }));
+	const searchTokens = tokens.map((token): SearchTokenEntry => ({
+		token,
+		field: 'name',
+		weight: 10,
+	}));
 	const { data } = await api.post<{ folder: { id: string } }>(
 		'/api/folders',
 		{ parentFolderId, encryptedName, encryptedMetadata, searchTokens },
-		{ signal }
+		{ signal },
 	);
+
 	return data.folder.id;
 }
 
@@ -112,14 +129,16 @@ export async function uploadFile(
 	signal?: AbortSignal,
 	onProgress?: (uploadedBytes: number) => void,
 	folderId: string | null = null,
-	partConcurrency = 3
+	partConcurrency = 3,
 ): Promise<void> {
 	if (!file.size) throw new Error('Empty files cannot be uploaded.');
-	if (!(await waitUntilReady()).unlocked) throw new Error('Unlock the vault before uploading files.');
+	if (!(await waitUntilReady()).unlocked)
+		throw new Error('Unlock the vault before uploading files.');
 	checkAborted(signal);
 
 	const totalChunks = Math.ceil(file.size / FILE_CHUNK_SIZE);
 	const encryptedSize = file.size + totalChunks * ENCRYPTED_ENVELOPE_OVERHEAD_BYTES;
+
 	if (!Number.isSafeInteger(encryptedSize)) throw new Error('File is too large to upload.');
 	const chunksPerPart = Math.floor(UPLOAD_PART_SIZE / FILE_CHUNK_SIZE);
 	const uploadPartCount = Math.ceil(totalChunks / chunksPerPart);
@@ -134,9 +153,9 @@ export async function uploadFile(
 			uploadPartCount,
 			encryptionVersion: ENCRYPTION_VERSION,
 			folderId,
-			singlePart: totalChunks === 1
+			singlePart: totalChunks === 1,
 		},
-		{ signal }
+		{ signal },
 	);
 	let complete = false;
 
@@ -146,9 +165,11 @@ export async function uploadFile(
 			uploadToken,
 			started.vaultId,
 			started.fileId,
-			started.totalChunks
+			started.totalChunks,
 		);
-		const chunksByPart: Array<Array<{ n: number; plain_size: number; cipher_size: number; hash: string }>> = new Array(started.uploadPartCount);
+		const chunksByPart: Array<
+			Array<{ n: number; plain_size: number; cipher_size: number; hash: string }>
+		> = new Array(started.uploadPartCount);
 		let uploadedBytes = 0;
 		let nextPartNumber = 1;
 		const concurrency = Number.isFinite(partConcurrency)
@@ -158,14 +179,17 @@ export async function uploadFile(
 		const abortParts = () => partController.abort();
 		signal?.addEventListener('abort', abortParts, { once: true });
 		if (signal?.aborted) abortParts();
-		const thumbnailPromise = file instanceof File ? createAndUploadThumbnail({
-			file,
-			uploadToken,
-			uploadSessionId: started.uploadSessionId,
-			vaultId: started.vaultId,
-			fileId: started.fileId,
-			signal: partController.signal
-		}) : Promise.resolve(null);
+		const thumbnailPromise =
+			file instanceof File
+				? createAndUploadThumbnail({
+						file,
+						uploadToken,
+						uploadSessionId: started.uploadSessionId,
+						vaultId: started.vaultId,
+						fileId: started.fileId,
+						signal: partController.signal,
+					})
+				: Promise.resolve(null);
 		const getURL = createPartURLGetter(started, partController.signal);
 
 		async function uploadPart(partNumber: number): Promise<void> {
@@ -174,24 +198,35 @@ export async function uploadFile(
 			const partEnd = Math.min(partStart + started.uploadPartSize, file.size);
 			const firstChunk = Math.floor(partStart / started.fileChunkSize) + 1;
 			const encryptedChunks: Uint8Array[] = [];
-			const partChunks: Array<{ n: number; plain_size: number; cipher_size: number; hash: string }> = [];
+			const partChunks: Array<{
+				n: number;
+				plain_size: number;
+				cipher_size: number;
+				hash: string;
+			}> = [];
+
 			try {
-				for (let offset = partStart, chunkNumber = firstChunk; offset < partEnd; offset += started.fileChunkSize, chunkNumber += 1) {
+				for (
+					let offset = partStart, chunkNumber = firstChunk;
+					offset < partEnd;
+					offset += started.fileChunkSize, chunkNumber += 1
+				) {
 					checkAborted(partController.signal);
 					const end = Math.min(offset + started.fileChunkSize, partEnd);
 					const plaintext = new Uint8Array(await file.slice(offset, end).arrayBuffer());
+
 					try {
 						const encrypted = await encryptUploadPart(
 							uploadToken,
 							plaintext,
-							`arkive:file-chunk:v1:${started.vaultId}:${started.fileId}:${chunkNumber}:${started.fileChunkSize}:${started.totalChunks}`
+							`arkive:file-chunk:v1:${started.vaultId}:${started.fileId}:${chunkNumber}:${started.fileChunkSize}:${started.totalChunks}`,
 						);
 						encryptedChunks.push(encrypted.encryptedChunk);
 						partChunks.push({
 							n: chunkNumber,
 							plain_size: end - offset,
 							cipher_size: encrypted.encryptedSize,
-							hash: encrypted.encryptedHash
+							hash: encrypted.encryptedHash,
 						});
 					} finally {
 						plaintext.fill(0);
@@ -200,8 +235,10 @@ export async function uploadFile(
 
 				const partSize = encryptedChunks.reduce((size, chunk) => size + chunk.byteLength, 0);
 				const body = new Uint8Array(partSize);
+
 				try {
 					let offset = 0;
+
 					for (const chunk of encryptedChunks) {
 						body.set(chunk, offset);
 						offset += chunk.byteLength;
@@ -211,14 +248,15 @@ export async function uploadFile(
 						method: 'PUT',
 						headers: { 'Content-Type': 'application/octet-stream' },
 						body: body.buffer,
-						signal: partController.signal
+						signal: partController.signal,
 					});
+
 					if (!response.ok) throw new Error('Encrypted file data upload failed.');
 					if (started.providerUploadId) {
 						await api.post(
 							`/api/uploads/${encodeURIComponent(started.uploadSessionId)}/parts`,
 							{ partNumber, encryptedHash: hash, etag: response.headers.get('etag') || '' },
-							{ signal: partController.signal }
+							{ signal: partController.signal },
 						);
 					}
 					chunksByPart[partNumber - 1] = partChunks;
@@ -232,20 +270,25 @@ export async function uploadFile(
 			}
 		}
 
-		const workers = Array.from({ length: Math.min(concurrency, started.uploadPartCount) }, async () => {
-			while (nextPartNumber <= started.uploadPartCount) {
-				checkAborted(partController.signal);
-				const partNumber = nextPartNumber++;
-				await uploadPart(partNumber);
-			}
-		});
+		const workers = Array.from(
+			{ length: Math.min(concurrency, started.uploadPartCount) },
+			async () => {
+				while (nextPartNumber <= started.uploadPartCount) {
+					checkAborted(partController.signal);
+					const partNumber = nextPartNumber++;
+					await uploadPart(partNumber);
+				}
+			},
+		);
 		let uploadedThumbnail: UploadedThumbnail | null = null;
+
 		try {
 			await Promise.all(workers);
 			uploadedThumbnail = await thumbnailPromise;
 		} catch (error) {
 			partController.abort();
 			await Promise.allSettled(workers);
+
 			throw error;
 		} finally {
 			signal?.removeEventListener('abort', abortParts);
@@ -253,34 +296,42 @@ export async function uploadFile(
 		const chunks = chunksByPart.flat();
 
 		checkAborted(signal);
-		const encryptedMetadata = await encryptUploadMetadata(uploadToken, {
-			schema: 'arkive.file.metadata',
-			version: 1,
-			name: file.name,
-			mime,
-			extension: extension(file.name),
-			size: file.size,
-			dimensions: uploadedThumbnail?.originalWidth && uploadedThumbnail.originalHeight
-				? { width: uploadedThumbnail.originalWidth, height: uploadedThumbnail.originalHeight }
-				: undefined,
-			created_at_client: new Date().toISOString(),
-			modified_at_client: file.lastModified ? new Date(file.lastModified).toISOString() : null,
-			preview: uploadedThumbnail
-				? {
-						thumbnail_file_id: null,
-						has_thumbnail: true,
-						thumbnail_mime: uploadedThumbnail.mime,
-						thumbnail_width: uploadedThumbnail.thumbnailWidth,
-						thumbnail_height: uploadedThumbnail.thumbnailHeight,
-						thumbnail_size: uploadedThumbnail.encryptedSize,
-						thumbnail_version: 1
-					}
-				: { thumbnail_file_id: null, has_thumbnail: false }
-		}, started.vaultId, started.fileId);
-		const searchTokens: SearchTokenEntry[] = (await createSearchTokens(file.name, started.vaultId, 128)).map((token) => ({
+		const encryptedMetadata = await encryptUploadMetadata(
+			uploadToken,
+			{
+				schema: 'arkive.file.metadata',
+				version: 1,
+				name: file.name,
+				mime,
+				extension: extension(file.name),
+				size: file.size,
+				dimensions:
+					uploadedThumbnail?.originalWidth && uploadedThumbnail.originalHeight
+						? { width: uploadedThumbnail.originalWidth, height: uploadedThumbnail.originalHeight }
+						: undefined,
+				created_at_client: new Date().toISOString(),
+				modified_at_client: file.lastModified ? new Date(file.lastModified).toISOString() : null,
+				preview: uploadedThumbnail
+					? {
+							thumbnail_file_id: null,
+							has_thumbnail: true,
+							thumbnail_mime: uploadedThumbnail.mime,
+							thumbnail_width: uploadedThumbnail.thumbnailWidth,
+							thumbnail_height: uploadedThumbnail.thumbnailHeight,
+							thumbnail_size: uploadedThumbnail.encryptedSize,
+							thumbnail_version: 1,
+						}
+					: { thumbnail_file_id: null, has_thumbnail: false },
+			},
+			started.vaultId,
+			started.fileId,
+		);
+		const searchTokens: SearchTokenEntry[] = (
+			await createSearchTokens(file.name, started.vaultId, 128)
+		).map((token) => ({
 			token,
 			field: 'name' as const,
-			weight: 10 as const
+			weight: 10 as const,
 		}));
 		checkAborted(signal);
 		const finalized = await finalizeUpload(
@@ -298,9 +349,9 @@ export async function uploadFile(
 				extension: extension(file.name),
 				size: file.size,
 				chunk_size: started.fileChunkSize,
-				chunks
+				chunks,
 			},
-			chunks.map((chunk) => chunk.hash)
+			chunks.map((chunk) => chunk.hash),
 		);
 		await api.post(
 			`/api/uploads/${encodeURIComponent(started.uploadSessionId)}/complete`,
@@ -311,9 +362,9 @@ export async function uploadFile(
 				encryptedHash: finalized.encryptedHash,
 				searchTokens,
 				hasThumbnail: !!uploadedThumbnail,
-				thumbnailSize: uploadedThumbnail?.encryptedSize ?? 0
+				thumbnailSize: uploadedThumbnail?.encryptedSize ?? 0,
 			},
-			{ signal }
+			{ signal },
 		);
 		complete = true;
 	} finally {

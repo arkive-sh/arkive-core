@@ -73,20 +73,48 @@ export interface VaultWorkerCalls {
 	};
 	prepareInitialRecovery: {
 		params: { masterKeyBytes: ArrayBuffer | null; userID: string };
-		result: { recoveryKey: string; encryptedMasterKeyRecovery: string; recoveryProofPublicKey: string };
+		result: {
+			recoveryKey: string;
+			encryptedMasterKeyRecovery: string;
+			recoveryProofPublicKey: string;
+		};
 	};
 	unlockVault: {
-		params: { exportKey: ArrayBuffer | null; salt: string; encryptedMasterKey: string; aad: string };
+		params: {
+			exportKey: ArrayBuffer | null;
+			salt: string;
+			encryptedMasterKey: string;
+			aad: string;
+		};
 		result: VaultState;
 	};
 	lockVault: { params: Record<string, never>; result: VaultState };
 	preparePasswordReset: {
-		params: { encryptedMasterKeyRecovery: string; recoveryKey: VaultBytes | null; exportKey: ArrayBuffer | null; userID: string; resetToken: string };
+		params: {
+			encryptedMasterKeyRecovery: string;
+			recoveryKey: VaultBytes | null;
+			exportKey: ArrayBuffer | null;
+			userID: string;
+			resetToken: string;
+		};
 		result: { vaultSalt: string; encryptedMasterKey: string; recoveryProof: string };
 	};
 	prepareShare: {
-		params: { vaultId: string; fileId: string; token: string; encryptedFileKey: string; fileKeyAad: string; shareKeyAad: string; shareFileKeyAad: string };
-		result: { encryptedShareKey: string; encryptedFileKeyForShare: string; shareSecret: Uint8Array<ArrayBuffer>; cryptoVersion: number };
+		params: {
+			vaultId: string;
+			fileId: string;
+			token: string;
+			encryptedFileKey: string;
+			fileKeyAad: string;
+			shareKeyAad: string;
+			shareFileKeyAad: string;
+		};
+		result: {
+			encryptedShareKey: string;
+			encryptedFileKeyForShare: string;
+			shareSecret: Uint8Array<ArrayBuffer>;
+			cryptoVersion: number;
+		};
 	};
 	openShareKey: {
 		params: { encryptedShareKey: string; shareKeyAad: string };
@@ -110,12 +138,25 @@ export interface VaultWorkerCalls {
 	};
 	hashUploadPayload: { params: { bytes: VaultBytes | null }; result: { hash: string } };
 	finalizeUpload: {
-		params: { uploadToken: string; manifestBytes: ArrayBuffer | null; partHashes: string[]; manifestAad: string };
+		params: {
+			uploadToken: string;
+			manifestBytes: ArrayBuffer | null;
+			partHashes: string[];
+			manifestAad: string;
+		};
 		result: { encryptedManifest: string; encryptedHash: string };
 	};
 	clearUploadContext: { params: { uploadToken: string }; result: { cleared: boolean } };
 	openFileContext: {
-		params: { contextId: string; encryptedFileKey: string; encryptedMetadata: string; encryptedManifest: string; fileKeyAad: string; metadataAad: string; manifestAad: string };
+		params: {
+			contextId: string;
+			encryptedFileKey: string;
+			encryptedMetadata: string;
+			encryptedManifest: string;
+			fileKeyAad: string;
+			metadataAad: string;
+			manifestAad: string;
+		};
 		result: { metadataBytes: Uint8Array; manifestBytes: Uint8Array };
 	};
 	closeFileContext: { params: { contextId: string }; result: { cleared: boolean } };
@@ -125,11 +166,22 @@ export interface VaultWorkerCalls {
 	};
 	closePublicShareContext: { params: { contextId: string }; result: { cleared: boolean } };
 	decryptPublicShareChunk: {
-		params: { contextId: string; encryptedChunk: VaultBytes | null; aad: VaultAAD; expectedHash: string; hashEncoding: 'base64' | 'hex' };
+		params: {
+			contextId: string;
+			encryptedChunk: VaultBytes | null;
+			aad: VaultAAD;
+			expectedHash: string;
+			hashEncoding: 'base64' | 'hex';
+		};
 		result: { chunkBytes: Uint8Array };
 	};
 	decryptFileChunk: {
-		params: { contextId: string; encryptedChunk: VaultBytes | null; aad: VaultAAD; expectedHash: string };
+		params: {
+			contextId: string;
+			encryptedChunk: VaultBytes | null;
+			aad: VaultAAD;
+			expectedHash: string;
+		};
 		result: { chunkBytes: Uint8Array };
 	};
 	encryptFileMetadataInContext: {
@@ -146,17 +198,37 @@ export interface VaultWorkerCalls {
 		result: { metadataBytes: Uint8Array };
 	};
 	decryptFolderMetadata: VaultWorkerCalls['decryptFileMetadata'];
-	createSearchTokens: { params: { vaultId: string; terms: string[] | null }; result: { tokens: string[] } };
+	createSearchTokens: {
+		params: { vaultId: string; terms: string[] | null };
+		result: { tokens: string[] };
+	};
 	decryptSearchFile: {
-		params: { fileId: string; vaultId: string; encryptedMetadata: string; encryptedFileKey: string; fileKeyAad: string; metadataAad: string };
+		params: {
+			fileId: string;
+			vaultId: string;
+			encryptedMetadata: string;
+			encryptedFileKey: string;
+			fileKeyAad: string;
+			metadataAad: string;
+		};
 		result: { metadataBytes: Uint8Array };
 	};
 	decryptSearchFolder: {
-		params: { encryptedName: string; encryptedMetadata: string; nameAad: string; metadataAad: string };
+		params: {
+			encryptedName: string;
+			encryptedMetadata: string;
+			nameAad: string;
+			metadataAad: string;
+		};
 		result: { nameBytes: Uint8Array; metadataBytes: Uint8Array };
 	};
 	decryptSearchThumbnail: {
-		params: { encryptedFileKey: string; encryptedThumbnail: VaultBytes | null; fileKeyAad: string; thumbnailAad: string };
+		params: {
+			encryptedFileKey: string;
+			encryptedThumbnail: VaultBytes | null;
+			fileKeyAad: string;
+			thumbnailAad: string;
+		};
 		result: { thumbnailBytes: Uint8Array };
 	};
 }

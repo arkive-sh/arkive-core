@@ -11,11 +11,12 @@
 		onNavigate: () => void;
 	};
 
-	let { currentPath, mobileView, mobileOpen, desktopCollapsed, onClose, onNavigate }: Props = $props();
+	let { currentPath, mobileView, mobileOpen, desktopCollapsed, onClose, onNavigate }: Props =
+		$props();
 	const navigation = [
 		{ href: '/', label: 'Files', icon: FolderOpen },
 		{ href: '/shares', label: 'Shares', icon: Share2 },
-		{ href: '/settings', label: 'Settings', icon: Settings }
+		{ href: '/settings', label: 'Settings', icon: Settings },
 	];
 
 	function isActive(href: string) {
@@ -39,14 +40,26 @@
 	aria-hidden={mobileView ? !mobileOpen : desktopCollapsed}
 	inert={mobileView ? !mobileOpen : desktopCollapsed}
 >
-	<div class={`relative flex items-center border-b border-(--border-soft) pb-4 ${mobileView ? 'justify-between px-4' : 'justify-center px-0'}`}>
+	<div
+		class={`relative flex items-center border-b border-(--border-soft) pb-4 ${mobileView ? 'justify-between px-4' : 'justify-center px-0'}`}
+	>
 		<Tooltip label="Arkive Core" disabled={mobileView} className={mobileView ? 'flex-1' : ''}>
-			<div class={`flex items-center ${mobileView ? 'gap-3' : 'justify-center'}`} role="img" aria-label="Arkive Core">
+			<div
+				class={`flex items-center ${mobileView ? 'gap-3' : 'justify-center'}`}
+				role="img"
+				aria-label="Arkive Core"
+			>
 				<Shield class="size-5 shrink-0 text-(--accent)" aria-hidden="true" />
-				{#if mobileView}<span class="font-mono text-lg leading-6 font-semibold">Arkive Core</span>{/if}
+				{#if mobileView}<span class="font-mono text-lg leading-6 font-semibold">Arkive Core</span
+					>{/if}
 			</div>
 		</Tooltip>
-		<button class="inline-flex size-9 cursor-pointer items-center justify-center rounded border border-(--border) bg-transparent p-0 text-(--muted) hover:bg-(--surface-raised) hover:text-(--text) min-[961px]:hidden" type="button" aria-label="Close menu" onclick={onClose}>
+		<button
+			class="inline-flex size-9 cursor-pointer items-center justify-center rounded border border-(--border) bg-transparent p-0 text-(--muted) hover:bg-(--surface-raised) hover:text-(--text) min-[961px]:hidden"
+			type="button"
+			aria-label="Close menu"
+			onclick={onClose}
+		>
 			<X class="size-4.5 stroke-2" aria-hidden="true" />
 		</button>
 	</div>
@@ -55,7 +68,13 @@
 		{#each navigation as item (item.href)}
 			{@const Icon = item.icon}
 			<Tooltip label={item.label} disabled={mobileView} className="w-full">
-				<a class={`flex min-h-11 w-full items-center border-l-2 text-(--muted) transition-[background-color,color,border-color] duration-200 hover:bg-(--surface-raised) hover:text-(--text) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--accent) ${mobileView ? 'gap-3 px-4 font-mono text-sm leading-5' : 'justify-center px-0'} ${isActive(item.href) ? 'border-(--accent) bg-[rgba(57,72,90,0.45)] text-(--accent)' : 'border-transparent'}`} href={item.href} aria-label={item.label} aria-current={isActive(item.href) ? 'page' : undefined} onclick={onNavigate}>
+				<a
+					class={`flex min-h-11 w-full items-center border-l-2 text-(--muted) transition-[background-color,color,border-color] duration-200 hover:bg-(--surface-raised) hover:text-(--text) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--accent) ${mobileView ? 'gap-3 px-4 font-mono text-sm leading-5' : 'justify-center px-0'} ${isActive(item.href) ? 'border-(--accent) bg-[rgba(57,72,90,0.45)] text-(--accent)' : 'border-transparent'}`}
+					href={item.href}
+					aria-label={item.label}
+					aria-current={isActive(item.href) ? 'page' : undefined}
+					onclick={onNavigate}
+				>
 					<Icon class="size-5 shrink-0 stroke-2" aria-hidden="true" />
 					{#if mobileView}<span>{item.label}</span>{/if}
 				</a>

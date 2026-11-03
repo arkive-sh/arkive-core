@@ -28,10 +28,10 @@ export default defineConfig(({ command }) => ({
 					'font-src': ['self', 'https://fonts.gstatic.com', 'data:'],
 					'img-src': ['self', 'data:', 'blob:', 'https:', 'http:'],
 					'media-src': ['self', 'blob:', 'https:', 'http:'],
-					'connect-src': ['self', 'https:', 'http:', 'ws:', 'wss:']
-				}
-			}
-		})
+					'connect-src': ['self', 'https:', 'http:', 'ws:', 'wss:'],
+				},
+			},
+		}),
 	],
-	server: { fs: { allow: [repositoryRoot] } }
+	server: { fs: { allow: [repositoryRoot] } },
 }));

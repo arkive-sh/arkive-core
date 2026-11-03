@@ -8,7 +8,12 @@
 	import { api } from '#lib/api.ts';
 	import { toast } from '#lib/toast.ts';
 	import { isImageFile } from '#lib/utils/image.ts';
-	import { fileManagerEntryKey, NEW_FOLDER_DRAFT_ID, type FileManagerEntry, type FilesView } from './files/types';
+	import {
+		fileManagerEntryKey,
+		NEW_FOLDER_DRAFT_ID,
+		type FileManagerEntry,
+		type FilesView,
+	} from './files/types';
 	import { createFolderEntries } from './files/folder-entries.svelte';
 	import FilesBrowser from './files/FilesBrowser.svelte';
 	import FileManagerOverlays from './files/FileManagerOverlays.svelte';
@@ -20,7 +25,9 @@
 	// shortcut: browsers without File System Access cannot download; add another streaming file sink when supporting them.
 	type FilePickerWindow = Window & {
 		showSaveFilePicker?: (options?: { suggestedName?: string }) => Promise<FileSystemFileHandle>;
-		showDirectoryPicker?: (options?: { mode?: 'read' | 'readwrite' }) => Promise<FileSystemDirectoryHandle>;
+		showDirectoryPicker?: (options?: {
+			mode?: 'read' | 'readwrite';
+		}) => Promise<FileSystemDirectoryHandle>;
 	};
 
 	let { data }: PageProps = $props();
@@ -59,31 +66,60 @@
 	const folderId = $derived(page.url.searchParams.get('folder_id') || null);
 	const focusFileId = $derived(page.url.searchParams.get('focus_file'));
 	const viewMode = $derived(page.url.searchParams.get('view') === 'grid' ? 'grid' : 'list');
-	const folderEntries = createFolderEntries(() => data.user.id, () => folderId, () => focusFileId, () => $vaultUnlocked);
+	const folderEntries = createFolderEntries(
+		() => data.user.id,
+		() => folderId,
+		() => focusFileId,
+		() => $vaultUnlocked,
+	);
 	const entriesQuery = folderEntries.query;
 	const rows = $derived(folderEntries.rows);
 	const breadcrumbs = $derived(folderEntries.breadcrumbs);
 	const entriesReady = $derived(folderEntries.entriesReady);
 	const loadedEntries = $derived(folderEntries.loadedEntries);
-	const selectedEntries = $derived(loadedEntries.filter((entry) => selectedIds.has(fileManagerEntryKey(entry))));
+	const selectedEntries = $derived(
+		loadedEntries.filter((entry) => selectedIds.has(fileManagerEntryKey(entry))),
+	);
 	const selectedFiles = $derived(selectedEntries.filter((entry) => entry.kind === 'file'));
 	const showNewFolder = $derived(newFolderActive && entriesReady && newFolderParentId === folderId);
-	const displayedRows = $derived(showNewFolder ? [{ id: NEW_FOLDER_DRAFT_ID, kind: 'folder' as const, name: '', type: 'Folder', size: null, updatedAt: '' }, ...rows] : rows);
+	const displayedRows = $derived(
+		showNewFolder
+			? [
+					{
+						id: NEW_FOLDER_DRAFT_ID,
+						kind: 'folder' as const,
+						name: '',
+						type: 'Folder',
+						size: null,
+						updatedAt: '',
+					},
+					...rows,
+				]
+			: rows,
+	);
 	// shortcut: PhotoSwipe navigates loaded rows; add paged image lookup if full-folder navigation is needed.
-	const imageEntries = $derived(rows.filter((entry) => entry.kind === 'file' && isImageFile(entry.name, entry.type)));
-	const allRowsSelected = $derived(loadedEntries.length > 0 && selectedEntries.length === loadedEntries.length);
+	const imageEntries = $derived(
+		rows.filter((entry) => entry.kind === 'file' && isImageFile(entry.name, entry.type)),
+	);
+	const allRowsSelected = $derived(
+		loadedEntries.length > 0 && selectedEntries.length === loadedEntries.length,
+	);
 	const currentLocation = $derived(breadcrumbs.map((crumb) => crumb.name).join(' / '));
-	const breadcrumbItems = $derived(breadcrumbs.map((crumb, index) => ({
-		id: crumb.id ?? 'root',
-		label: crumb.name,
-		href: index < breadcrumbs.length - 1 ? urlFor(crumb.id) : undefined
-	})));
+	const breadcrumbItems = $derived(
+		breadcrumbs.map((crumb, index) => ({
+			id: crumb.id ?? 'root',
+			label: crumb.name,
+			href: index < breadcrumbs.length - 1 ? urlFor(crumb.id) : undefined,
+		})),
+	);
 	let lastFolderId: string | null | undefined;
 
 	$effect(() => {
 		const activeFolderId = folderId;
+
 		if (lastFolderId === undefined) {
 			lastFolderId = activeFolderId;
+
 			return;
 		}
 		if (activeFolderId === lastFolderId) return;
@@ -105,9 +141,11 @@
 
 	function urlFor(folder: string | null, nextView: FilesView = viewMode): string {
 		const params = new URLSearchParams();
+
 		if (folder) params.set('folder_id', folder);
 		if (nextView === 'grid') params.set('view', 'grid');
 		const query = params.toString();
+
 		return query ? `/?${query}` : '/';
 	}
 
@@ -124,8 +162,11 @@
 
 	function handleUploadPicker(event: Event): void {
 		const input = event.currentTarget;
+
 		if (!(input instanceof HTMLInputElement)) return;
-		stageUploadFiles(Array.from(input.files ?? [], (file) => ({ file, relativePath: file.webkitRelativePath })));
+		stageUploadFiles(
+			Array.from(input.files ?? [], (file) => ({ file, relativePath: file.webkitRelativePath })),
+		);
 		input.value = '';
 	}
 
@@ -152,6 +193,7 @@
 
 	function toggleSelection(entry: FileManagerEntry): void {
 		const key = fileManagerEntryKey(entry);
+
 		if (selectedIds.has(key)) selectedIds.delete(key);
 		else selectedIds.add(key);
 	}
@@ -159,6 +201,7 @@
 	function toggleAllLoaded(): void {
 		const keys = loadedEntries.map(fileManagerEntryKey);
 		const deselect = keys.length > 0 && keys.every((key) => selectedIds.has(key));
+
 		for (const key of keys) {
 			if (deselect) selectedIds.delete(key);
 			else selectedIds.add(key);
@@ -192,6 +235,7 @@
 
 	async function saveNewFolder(): Promise<void> {
 		const name = newFolderName.trim();
+
 		if (creatingFolder || !name || !showNewFolder || !$vaultUnlocked) return;
 		const parentFolderId = newFolderParentId;
 		const vaultId = data.user.id;
@@ -213,10 +257,29 @@
 
 	function handleFileManagerKeydown(event: KeyboardEvent): void {
 		const target = event.target;
+
 		if (event.defaultPrevented || event.repeat || !(target instanceof HTMLElement)) return;
-		if (target.isContentEditable || target.closest('input:not([type="checkbox"]):not([type="radio"]), textarea, select, [contenteditable="true"]')) return;
-		if (contextMenuOpen || imagePreviewRequest || mediaPreviewEntry || pdfPreviewEntry || document.querySelector('[data-modal-open="true"]')) return;
-		if ((event.ctrlKey || event.metaKey) && event.altKey && !event.shiftKey && event.key.toLowerCase() === 'n') {
+		if (
+			target.isContentEditable ||
+			target.closest(
+				'input:not([type="checkbox"]):not([type="radio"]), textarea, select, [contenteditable="true"]',
+			)
+		)
+			return;
+		if (
+			contextMenuOpen ||
+			imagePreviewRequest ||
+			mediaPreviewEntry ||
+			pdfPreviewEntry ||
+			document.querySelector('[data-modal-open="true"]')
+		)
+			return;
+		if (
+			(event.ctrlKey || event.metaKey) &&
+			event.altKey &&
+			!event.shiftKey &&
+			event.key.toLowerCase() === 'n'
+		) {
 			event.preventDefault();
 			beginNewFolder(folderId);
 		}
@@ -229,7 +292,11 @@
 	}
 
 	function showBackgroundContextMenu(event: MouseEvent): void {
-		if (!(event.target instanceof Element) || event.target.closest('[data-file-entry], button, input, a, [role="menu"]')) return;
+		if (
+			!(event.target instanceof Element) ||
+			event.target.closest('[data-file-entry], button, input, a, [role="menu"]')
+		)
+			return;
 		event.preventDefault();
 		showContextMenu(null, event.clientX, event.clientY);
 	}
@@ -240,12 +307,18 @@
 
 	function previewMedia(entry: FileManagerEntry): void {
 		mediaPreviewEntry = entry;
-		if (!MediaViewer) void import('./files/MediaViewer.svelte').then(({ default: component }) => MediaViewer = component);
+		if (!MediaViewer)
+			void import('./files/MediaViewer.svelte').then(
+				({ default: component }) => (MediaViewer = component),
+			);
 	}
 
 	function previewPdf(entry: FileManagerEntry): void {
 		pdfPreviewEntry = entry;
-		if (!PdfViewer) void import('./files/PdfViewer.svelte').then(({ default: component }) => PdfViewer = component);
+		if (!PdfViewer)
+			void import('./files/PdfViewer.svelte').then(
+				({ default: component }) => (PdfViewer = component),
+			);
 	}
 
 	function previewText(entry: FileManagerEntry): void {
@@ -258,11 +331,19 @@
 		textEditorOpen = true;
 	}
 
-	function enqueueDownload(entry: FileManagerEntry, fileName: string, getTarget: () => Promise<FileSystemFileHandle>): void {
-		transfers.enqueueDownload(fileName, entry.size ?? 0, async (signal, onProgress, concurrency) => {
-			const { downloadEncryptedFile } = await import('#lib/downloads/download-file.ts');
-			await downloadEncryptedFile(entry.id, getTarget, signal, onProgress, concurrency);
-		});
+	function enqueueDownload(
+		entry: FileManagerEntry,
+		fileName: string,
+		getTarget: () => Promise<FileSystemFileHandle>,
+	): void {
+		transfers.enqueueDownload(
+			fileName,
+			entry.size ?? 0,
+			async (signal, onProgress, concurrency) => {
+				const { downloadEncryptedFile } = await import('#lib/downloads/download-file.ts');
+				await downloadEncryptedFile(entry.id, getTarget, signal, onProgress, concurrency);
+			},
+		);
 	}
 
 	function showDownloadError(error: unknown): void {
@@ -277,12 +358,15 @@
 	function downloadEntry(entry: FileManagerEntry): void {
 		if (entry.kind !== 'file') return;
 		const picker = window as FilePickerWindow;
+
 		if (!picker.showSaveFilePicker) {
 			toast.error('This browser cannot save streamed files directly to disk.');
+
 			return;
 		}
 		try {
-			void picker.showSaveFilePicker({ suggestedName: safeDownloadName(entry.name || 'download') })
+			void picker
+				.showSaveFilePicker({ suggestedName: safeDownloadName(entry.name || 'download') })
 				.then((target) => enqueueDownload(entry, target.name, async () => target))
 				.catch(showDownloadError);
 		} catch (error) {
@@ -292,50 +376,60 @@
 
 	function downloadSelected(): void {
 		const entries = [...selectedFiles];
+
 		if (entries.length === 1) {
 			downloadEntry(entries[0]!);
+
 			return;
 		}
 		if (!entries.length) return;
 
 		const picker = window as FilePickerWindow;
+
 		if (!picker.showDirectoryPicker) {
 			toast.error('This browser cannot save multiple streamed files to a folder.');
+
 			return;
 		}
 		try {
-			void picker.showDirectoryPicker({ mode: 'readwrite' }).then(async (directory) => {
-				const reserved = new Set<string>();
-				const targets: Array<{ entry: FileManagerEntry; name: string }> = [];
-				for (const entry of entries) {
-					const safeName = safeDownloadName(entry.name || 'download');
-					const extensionAt = safeName.lastIndexOf('.');
-					const stem = extensionAt > 0 ? safeName.slice(0, extensionAt) : safeName;
-					const extension = extensionAt > 0 ? safeName.slice(extensionAt) : '';
-					for (let suffix = 0; ; suffix++) {
-						const name = suffix ? `${stem} (${suffix})${extension}` : safeName;
-						const key = name.toLowerCase();
-						if (reserved.has(key)) continue;
-						try {
-							await directory.getFileHandle(name);
-							reserved.add(key);
-						} catch (error) {
-							if (!(error instanceof DOMException)) throw error;
-							if (error.name === 'TypeMismatchError') {
+			void picker
+				.showDirectoryPicker({ mode: 'readwrite' })
+				.then(async (directory) => {
+					const reserved = new Set<string>();
+					const targets: Array<{ entry: FileManagerEntry; name: string }> = [];
+
+					for (const entry of entries) {
+						const safeName = safeDownloadName(entry.name || 'download');
+						const extensionAt = safeName.lastIndexOf('.');
+						const stem = extensionAt > 0 ? safeName.slice(0, extensionAt) : safeName;
+						const extension = extensionAt > 0 ? safeName.slice(extensionAt) : '';
+
+						for (let suffix = 0; ; suffix++) {
+							const name = suffix ? `${stem} (${suffix})${extension}` : safeName;
+							const key = name.toLowerCase();
+
+							if (reserved.has(key)) continue;
+							try {
+								await directory.getFileHandle(name);
 								reserved.add(key);
-								continue;
+							} catch (error) {
+								if (!(error instanceof DOMException)) throw error;
+								if (error.name === 'TypeMismatchError') {
+									reserved.add(key);
+									continue;
+								}
+								if (error.name !== 'NotFoundError') throw error;
+								reserved.add(key);
+								targets.push({ entry, name });
+								break;
 							}
-							if (error.name !== 'NotFoundError') throw error;
-							reserved.add(key);
-							targets.push({ entry, name });
-							break;
 						}
 					}
-				}
-				for (const { entry, name } of targets) {
-					enqueueDownload(entry, name, () => directory.getFileHandle(name, { create: true }));
-				}
-			}).catch(showDownloadError);
+					for (const { entry, name } of targets) {
+						enqueueDownload(entry, name, () => directory.getFileHandle(name, { create: true }));
+					}
+				})
+				.catch(showDownloadError);
 		} catch (error) {
 			showDownloadError(error);
 		}
@@ -357,7 +451,9 @@
 		try {
 			await api.post('/api/entries/delete', {
 				fileIds: deleteTargets.filter((entry) => entry.kind === 'file').map((entry) => entry.id),
-				folderIds: deleteTargets.filter((entry) => entry.kind === 'folder').map((entry) => entry.id)
+				folderIds: deleteTargets
+					.filter((entry) => entry.kind === 'folder')
+					.map((entry) => entry.id),
 			});
 			selectedIds.clear();
 			deleteTargets = [];
@@ -365,7 +461,7 @@
 			toast.success('Items deleted.');
 			await Promise.all([
 				queryClient.invalidateQueries({ queryKey: ['folder-entries'] }),
-				queryClient.invalidateQueries({ queryKey: ['search'] })
+				queryClient.invalidateQueries({ queryKey: ['search'] }),
 			]);
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'Could not delete selected items.');
@@ -381,8 +477,10 @@
 	onMount(() => {
 		try {
 			const savedTileSize = localStorage.getItem('arkive.files.tile-size');
+
 			if (savedTileSize !== null) {
 				const parsedTileSize = Number(savedTileSize);
+
 				if (Number.isFinite(parsedTileSize)) {
 					const normalized = Math.min(260, Math.max(60, Math.round(parsedTileSize / 10) * 10));
 					// The old 150px default was persisted automatically; move that default to the roomier grid.
@@ -456,10 +554,10 @@
 	onCreateFolder={saveNewFolder}
 	onCancelNewFolder={cancelNewFolder}
 	onViewChange={changeView}
-	onTileSizeChange={(size) => tileSize = size}
-	onShowTypeChange={(show) => showType = show}
-	onShowSizeChange={(show) => showSize = show}
-	onShowDimensionsChange={(show) => showDimensions = show}
+	onTileSizeChange={(size) => (tileSize = size)}
+	onShowTypeChange={(show) => (showType = show)}
+	onShowSizeChange={(show) => (showSize = show)}
+	onShowDimensionsChange={(show) => (showDimensions = show)}
 />
 
 <svelte:window onkeydown={handleFileManagerKeydown} />
@@ -483,38 +581,63 @@
 	{deleteDialogOpen}
 	{deleting}
 	{deleteTargets}
-	onCloseImage={() => imagePreviewRequest = null}
+	onCloseImage={() => (imagePreviewRequest = null)}
 	onError={(message) => toast.error(message)}
-	onCloseMedia={() => mediaPreviewEntry = null}
-	onClosePdf={() => pdfPreviewEntry = null}
-	onCloseText={() => textEditorOpen = false}
-	onCloseContextMenu={() => { contextMenuEntry = null; contextMenuOpen = false; }}
+	onCloseMedia={() => (mediaPreviewEntry = null)}
+	onClosePdf={() => (pdfPreviewEntry = null)}
+	onCloseText={() => (textEditorOpen = false)}
+	onCloseContextMenu={() => {
+		contextMenuEntry = null;
+		contextMenuOpen = false;
+	}}
 	onOpenFolder={openFolder}
 	onDownload={downloadEntry}
 	onPreviewImage={previewImage}
 	onPreviewMedia={previewMedia}
 	onPreviewPdf={previewPdf}
 	onPreviewText={previewText}
-	onProperties={(entry) => propertiesEntry = entry}
+	onProperties={(entry) => (propertiesEntry = entry)}
 	onDeleteEntry={requestDelete}
 	onCreateFolder={createFolderFromContext}
-		onCreateTextFile={createTextFile}
+	onCreateTextFile={createTextFile}
 	onUploadFiles={chooseUploadFiles}
 	onUploadFolder={chooseUploadFolder}
-	onCloseProperties={() => propertiesEntry = null}
-	onCloseDelete={() => { if (!deleting) deleteDialogOpen = false; }}
-	onCancelDelete={() => deleteDialogOpen = false}
+	onCloseProperties={() => (propertiesEntry = null)}
+	onCloseDelete={() => {
+		if (!deleting) deleteDialogOpen = false;
+	}}
+	onCancelDelete={() => (deleteDialogOpen = false)}
 	onConfirmDelete={() => void deleteSelected()}
 />
 
 <input bind:this={filePicker} class="hidden" type="file" multiple onchange={handleUploadPicker} />
-<input bind:this={folderPicker} class="hidden" type="file" multiple webkitdirectory onchange={handleUploadPicker} />
+<input
+	bind:this={folderPicker}
+	class="hidden"
+	type="file"
+	multiple
+	webkitdirectory
+	onchange={handleUploadPicker}
+/>
 <p class="sr-only" role="status" aria-live="polite">{uploadStatus}</p>
 
-<Modal open={uploadConfirmOpen} label="Confirm upload" title="Start upload?" onClose={cancelUploadSelection}>
+<Modal
+	open={uploadConfirmOpen}
+	label="Confirm upload"
+	title="Start upload?"
+	onClose={cancelUploadSelection}
+>
 	<p class="m-0 text-sm text-(--muted)">{selectedUploadFiles.length} file(s) selected.</p>
 	{#snippet actions()}
-		<button class="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-(--border) bg-transparent px-4 text-sm font-semibold text-(--text) shadow-none transition-colors hover:bg-(--surface-highest)" type="button" onclick={cancelUploadSelection}>Cancel</button>
-		<button class="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-(--accent) bg-(--accent) px-4 text-sm font-semibold text-(--accent-ink) transition-colors hover:border-(--accent-strong) hover:bg-(--accent-strong)" type="button" onclick={startUpload}>Start upload</button>
+		<button
+			class="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-(--border) bg-transparent px-4 text-sm font-semibold text-(--text) shadow-none transition-colors hover:bg-(--surface-highest)"
+			type="button"
+			onclick={cancelUploadSelection}>Cancel</button
+		>
+		<button
+			class="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-(--accent) bg-(--accent) px-4 text-sm font-semibold text-(--accent-ink) transition-colors hover:border-(--accent-strong) hover:bg-(--accent-strong)"
+			type="button"
+			onclick={startUpload}>Start upload</button
+		>
 	{/snippet}
 </Modal>
