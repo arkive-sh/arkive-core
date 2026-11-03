@@ -100,7 +100,6 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 	}
 	{
 		api.GET("/me", middleware.RequireSessionJSON(authService), handlers.APIMe(authService))
-		api.GET("/dashboard", middleware.RequireSessionJSON(authService), handlers.APIDashboard(filesService, settingsService))
 		api.GET("/health", handlers.Health(db))
 		api.GET("/transfers/limits", handlers.APITransferLimits(settingsService))
 		api.GET("/public/shares/:token", handlers.APIPublicShareRecord(shareService, filesService, cfg.CookieSecret))

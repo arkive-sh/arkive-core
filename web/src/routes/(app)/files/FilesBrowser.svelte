@@ -4,6 +4,7 @@
 	import FilesGridView from './FilesGridView.svelte';
 	import FilesListView from './FilesListView.svelte';
 	import FilesViewOptions from './FilesViewOptions.svelte';
+	import FileUploader from '#lib/components/FileUploader.svelte';
 	import type { FileManagerEntry, FilesView } from './types';
 	import type { createFolderEntries } from './folder-entries.svelte';
 
@@ -12,6 +13,8 @@
 
 	let {
 		unlocked,
+		vaultId,
+		folderId,
 		folderName,
 		breadcrumbItems,
 		focusFileId,
@@ -54,6 +57,8 @@
 		onShowDimensionsChange
 	}: {
 		unlocked: boolean;
+		vaultId: string;
+		folderId: string | null;
 		folderName: string;
 		breadcrumbItems: BreadcrumbItem[];
 		focusFileId: string | null;
@@ -165,6 +170,7 @@
 		{:else if query.isError && !query.data}
 			<section class="rounded-md border border-(--border) bg-(--surface-raised) px-5 py-8 text-red-400" role="alert">{query.error instanceof Error ? query.error.message : 'Could not load files.'}</section>
 		{:else if query.data}
+			<FileUploader {vaultId} {folderId} {unlocked}>
 			<section class="overflow-hidden rounded-md border border-(--border) bg-(--surface-raised)" aria-label="Files and folders" oncontextmenu={onShowBackgroundContextMenu}>
 				{#if !entriesReady}
 					<div class="px-5 py-8 text-(--muted)" role="status">Decrypting file details…</div>
@@ -211,7 +217,7 @@
 				{/if}
 
 				{#if entriesReady && query.hasNextPage}
-					<div bind:this={sentinel} class="flex flex-col items-center gap-2 border-t border-(--border-soft) px-5 py-3 text-sm text-(--muted)">
+					<div bind:this={sentinel} data-upload-click-ignore class="flex flex-col items-center gap-2 border-t border-(--border-soft) px-5 py-3 text-sm text-(--muted)">
 						{#if query.isFetchNextPageError}<p class="m-0 text-red-400" role="alert">{query.error instanceof Error ? query.error.message : 'Could not load more files.'}</p>{/if}
 						<button class="cursor-pointer rounded border border-(--border) px-4 py-2 disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={query.isFetchingNextPage} onclick={() => void query.fetchNextPage()}>{query.isFetchingNextPage ? 'Loading more…' : 'Load more'}</button>
 					</div>
@@ -219,6 +225,7 @@
 					<footer class="border-t border-(--border-soft) px-5 py-3 text-sm text-(--muted)">{rows.length} {rows.length === 1 ? 'item' : 'items'}</footer>
 				{/if}
 			</section>
+			</FileUploader>
 		{/if}
 	</div>
 </div>

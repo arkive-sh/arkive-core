@@ -197,7 +197,7 @@
 						meta: 'Folder',
 						score: Number(folder.score || 0),
 						matchScore: rankName(query, opened.name?.name || opened.metadata?.name || 'Encrypted folder'),
-						url: `/files?folder_id=${encodeURIComponent(folder.id)}`,
+						url: `/?folder_id=${encodeURIComponent(folder.id)}`,
 						category: 'results'
 					};
 				} catch {

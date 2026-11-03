@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { FolderOpen, LayoutDashboard, Settings, Share2, Shield, Upload, X } from '@lucide/svelte';
+	import { FolderOpen, Settings, Share2, Shield, X } from '@lucide/svelte';
 	import Tooltip from '#lib/components/Tooltip.svelte';
 
 	type Props = {
@@ -13,8 +13,7 @@
 
 	let { currentPath, mobileView, mobileOpen, desktopCollapsed, onClose, onNavigate }: Props = $props();
 	const navigation = [
-		{ href: '/', label: 'Dashboard', icon: LayoutDashboard },
-		{ href: '/files', label: 'Files', icon: FolderOpen },
+		{ href: '/', label: 'Files', icon: FolderOpen },
 		{ href: '/shares', label: 'Shares', icon: Share2 },
 		{ href: '/settings', label: 'Settings', icon: Settings }
 	];
@@ -34,8 +33,8 @@
 ></button>
 
 <aside
-	id="dashboard-sidebar"
-	class={`fixed inset-y-0 left-0 z-20 grid w-[min(248px,86vw)] grid-rows-[auto_auto_1fr] gap-3 border-r border-(--border) bg-(--surface) pt-4 pb-4 transition-transform duration-240 ease-[ease] translate-x-[-110%] shadow-(--shadow) ${mobileView ? 'overflow-y-auto' : 'overflow-visible'} min-[961px]:w-16 min-[961px]:shadow-none ${desktopCollapsed ? 'min-[961px]:translate-x-[-110%]' : 'min-[961px]:translate-x-0'} ${mobileView && mobileOpen ? 'max-[960px]:translate-x-0' : ''}`}
+	id="app-sidebar"
+	class={`fixed inset-y-0 left-0 z-20 grid w-[min(248px,86vw)] grid-rows-[auto_1fr] gap-3 border-r border-(--border) bg-(--surface) pt-4 pb-4 transition-transform duration-240 ease-[ease] translate-x-[-110%] shadow-(--shadow) ${mobileView ? 'overflow-y-auto' : 'overflow-visible'} min-[961px]:w-16 min-[961px]:shadow-none ${desktopCollapsed ? 'min-[961px]:translate-x-[-110%]' : 'min-[961px]:translate-x-0'} ${mobileView && mobileOpen ? 'max-[960px]:translate-x-0' : ''}`}
 	aria-label="Primary navigation"
 	aria-hidden={mobileView ? !mobileOpen : desktopCollapsed}
 	inert={mobileView ? !mobileOpen : desktopCollapsed}
@@ -50,20 +49,6 @@
 		<button class="inline-flex size-9 cursor-pointer items-center justify-center rounded border border-(--border) bg-transparent p-0 text-(--muted) hover:bg-(--surface-raised) hover:text-(--text) min-[961px]:hidden" type="button" aria-label="Close menu" onclick={onClose}>
 			<X class="size-4.5 stroke-2" aria-hidden="true" />
 		</button>
-	</div>
-
-	<div class="flex justify-center border-b border-(--border-soft) px-2 pb-4">
-		<Tooltip label="Upload file" disabled={mobileView} className="w-full">
-			<a
-				class={`mx-auto inline-flex min-h-11 items-center justify-center rounded-md border border-(--accent) bg-(--accent) text-(--accent-ink) transition-[background-color,border-color,color] duration-200 hover:border-(--accent-strong) hover:bg-(--accent-strong) ${mobileView ? 'w-full gap-3 px-4' : 'size-11'}`}
-				href="/#upload-panel"
-				aria-label="Upload file"
-				onclick={onNavigate}
-			>
-				<Upload class="size-5 shrink-0 stroke-2" aria-hidden="true" />
-				{#if mobileView}<span class="text-sm font-semibold">Upload File</span>{/if}
-			</a>
-		</Tooltip>
 	</div>
 
 	<nav class="flex flex-col gap-1 px-1 pt-1" aria-label="Main navigation">
