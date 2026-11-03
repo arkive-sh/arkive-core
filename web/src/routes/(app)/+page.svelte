@@ -4,6 +4,7 @@
 	import { onMount } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { useQueryClient } from '@tanstack/svelte-query';
+	import Modal from '#lib/components/Modal.svelte';
 	import { api } from '#lib/api.ts';
 	import { toast } from '#lib/toast.ts';
 	import { isImageFile } from '#lib/utils/image.ts';
@@ -11,7 +12,7 @@
 	import { createFolderEntries } from './files/folder-entries.svelte';
 	import FilesBrowser from './files/FilesBrowser.svelte';
 	import FileManagerOverlays from './files/FileManagerOverlays.svelte';
-	import { useTransferManager } from '#lib/transfers/manager.ts';
+	import { useTransferManager, type UploadItem } from '#lib/transfers/manager.ts';
 	import { waitUntilReady } from '#lib/vault/session.ts';
 	import { vaultUnlocked } from '#lib/vault/state.ts';
 	import type { PageProps } from './$types';
@@ -23,6 +24,11 @@
 	};
 
 	let { data }: PageProps = $props();
+	let filePicker: HTMLInputElement | undefined;
+	let folderPicker: HTMLInputElement | undefined;
+	let selectedUploadFiles = $state<UploadItem[]>([]);
+	let uploadConfirmOpen = $state(false);
+	let uploadStatus = $state('');
 	let deleteDialogOpen = $state(false);
 	let deleting = $state(false);
 	let deleteTargets = $state<FileManagerEntry[]>([]);
@@ -92,6 +98,7 @@
 		contextMenuOpen = false;
 		propertiesEntry = null;
 		cancelNewFolder(true);
+		cancelUploadSelection();
 	});
 
 	function urlFor(folder: string | null, nextView: FilesView = viewMode): string {
@@ -104,6 +111,41 @@
 
 	function openFolder(id: string): void {
 		void goto(urlFor(id));
+	}
+
+	function stageUploadFiles(files: UploadItem[]): void {
+		if (!$vaultUnlocked || !files.length) return;
+		selectedUploadFiles = files;
+		uploadStatus = '';
+		uploadConfirmOpen = true;
+	}
+
+	function handleUploadPicker(event: Event): void {
+		const input = event.currentTarget;
+		if (!(input instanceof HTMLInputElement)) return;
+		stageUploadFiles(Array.from(input.files ?? [], (file) => ({ file, relativePath: file.webkitRelativePath })));
+		input.value = '';
+	}
+
+	function cancelUploadSelection(): void {
+		uploadConfirmOpen = false;
+		selectedUploadFiles = [];
+	}
+
+	function startUpload(): void {
+		if (!$vaultUnlocked || !selectedUploadFiles.length) return;
+		const count = transfers.enqueueUploads(selectedUploadFiles, data.user.id, folderId);
+		selectedUploadFiles = [];
+		uploadConfirmOpen = false;
+		uploadStatus = `Added ${count} ${count === 1 ? 'file' : 'files'} to transfers.`;
+	}
+
+	function chooseUploadFiles(): void {
+		if ($vaultUnlocked) filePicker?.click();
+	}
+
+	function chooseUploadFolder(): void {
+		if ($vaultUnlocked) folderPicker?.click();
 	}
 
 	function toggleSelection(entry: FileManagerEntry): void {
@@ -364,8 +406,7 @@
 
 <FilesBrowser
 	unlocked={$vaultUnlocked}
-	vaultId={data.user.id}
-	{folderId}
+	onFilesDropped={stageUploadFiles}
 	folderName={breadcrumbs.at(-1)?.name ?? 'Files'}
 	{breadcrumbItems}
 	{focusFileId}
@@ -438,8 +479,22 @@
 	onProperties={(entry) => propertiesEntry = entry}
 	onDeleteEntry={requestDelete}
 	onCreateFolder={createFolderFromContext}
+	onUploadFiles={chooseUploadFiles}
+	onUploadFolder={chooseUploadFolder}
 	onCloseProperties={() => propertiesEntry = null}
 	onCloseDelete={() => { if (!deleting) deleteDialogOpen = false; }}
 	onCancelDelete={() => deleteDialogOpen = false}
 	onConfirmDelete={() => void deleteSelected()}
 />
+
+<input bind:this={filePicker} class="hidden" type="file" multiple onchange={handleUploadPicker} />
+<input bind:this={folderPicker} class="hidden" type="file" multiple webkitdirectory onchange={handleUploadPicker} />
+<p class="sr-only" role="status" aria-live="polite">{uploadStatus}</p>
+
+<Modal open={uploadConfirmOpen} label="Confirm upload" title="Start upload?" onClose={cancelUploadSelection}>
+	<p class="m-0 text-sm text-(--muted)">{selectedUploadFiles.length} file(s) selected.</p>
+	{#snippet actions()}
+		<button class="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-(--border) bg-transparent px-4 text-sm font-semibold text-(--text) shadow-none transition-colors hover:bg-(--surface-highest)" type="button" onclick={cancelUploadSelection}>Cancel</button>
+		<button class="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-(--accent) bg-(--accent) px-4 text-sm font-semibold text-(--accent-ink) transition-colors hover:border-(--accent-strong) hover:bg-(--accent-strong)" type="button" onclick={startUpload}>Start upload</button>
+	{/snippet}
+</Modal>

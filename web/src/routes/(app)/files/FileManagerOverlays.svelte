@@ -33,6 +33,8 @@
 		onProperties,
 		onDeleteEntry,
 		onCreateFolder,
+		onUploadFiles,
+		onUploadFolder,
 		onCloseProperties,
 		onCloseDelete,
 		onCancelDelete,
@@ -65,6 +67,8 @@
 		onProperties: (entry: FileManagerEntry) => void;
 		onDeleteEntry: (entry: FileManagerEntry) => void;
 		onCreateFolder: (entry: FileManagerEntry | null) => void;
+		onUploadFiles: () => void;
+		onUploadFolder: () => void;
 		onCloseProperties: () => void;
 		onCloseDelete: () => void;
 		onCancelDelete: () => void;
@@ -96,6 +100,8 @@
 	{onProperties}
 	onDelete={onDeleteEntry}
 	{onCreateFolder}
+	{onUploadFiles}
+	{onUploadFolder}
 />
 
 <FilePropertiesModal entry={propertiesEntry} location={currentLocation} onClose={onCloseProperties} />

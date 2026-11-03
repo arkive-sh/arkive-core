@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { Download, Film, FileText, FolderOpen, FolderPlus, Image, Info, Trash2 } from '@lucide/svelte';
+	import { CloudUpload, Download, Film, FileText, FolderOpen, FolderPlus, Image, Info, Trash2 } from '@lucide/svelte';
 	import { isImageFile } from '#lib/utils/image.ts';
 	import { isPdfFile, type FileManagerEntry } from './types';
 
@@ -18,9 +18,11 @@
 		onProperties: (entry: FileManagerEntry) => void;
 		onDelete: (entry: FileManagerEntry) => void;
 		onCreateFolder: (entry: FileManagerEntry | null) => void;
+		onUploadFiles: () => void;
+		onUploadFolder: () => void;
 	};
 
-	let { open, entry, x, y, onClose, onOpenFolder, onDownload, onPreviewImage, onPreviewVideo, onPreviewPdf, onProperties, onDelete, onCreateFolder }: Props = $props();
+	let { open, entry, x, y, onClose, onOpenFolder, onDownload, onPreviewImage, onPreviewVideo, onPreviewPdf, onProperties, onDelete, onCreateFolder, onUploadFiles, onUploadFolder }: Props = $props();
 	let menu = $state<HTMLDivElement>();
 	let position = $state({ left: 8, top: 8 });
 
@@ -116,6 +118,16 @@
 		onClose();
 		onCreateFolder(entry);
 	}
+
+	function uploadFiles(): void {
+		onClose();
+		onUploadFiles();
+	}
+
+	function uploadFolder(): void {
+		onClose();
+		onUploadFolder();
+	}
 </script>
 
 <svelte:window onpointerdown={closeOutside} onkeydown={handleKeydown} />
@@ -126,8 +138,18 @@
 		class="fixed z-50 grid w-52 gap-1 rounded-md border border-(--border) bg-(--surface) p-1.5 shadow-xl"
 		style={`left: ${position.left}px; top: ${position.top}px`}
 		role="menu"
-		aria-label={entry ? `${entry.name} actions` : 'Folder actions'}
+		aria-label={entry ? `${entry.name} actions` : 'Files actions'}
 	>
+		{#if !entry}
+			<button class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)" type="button" role="menuitem" onclick={uploadFiles}>
+				<CloudUpload class="size-4 text-(--muted)" aria-hidden="true" />
+				<span>Upload files</span>
+			</button>
+			<button class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)" type="button" role="menuitem" onclick={uploadFolder}>
+				<FolderOpen class="size-4 text-(--muted)" aria-hidden="true" />
+				<span>Upload folder</span>
+			</button>
+		{/if}
 		{#if entry?.kind === 'folder'}
 			<button class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)" type="button" role="menuitem" onclick={openFolder}>
 				<FolderOpen class="size-4 text-(--muted)" aria-hidden="true" />
