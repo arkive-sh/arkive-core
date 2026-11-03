@@ -1,7 +1,7 @@
 export function initSidebar() {
   const body = document.body;
   const toggle = document.getElementById("sidebar-toggle");
-  const sidebar = document.getElementById("dashboard-sidebar");
+  const sidebar = document.getElementById("app-sidebar");
   const scrim = document.querySelector(".sidebar-scrim");
   const closeBtn = document.querySelector(".sidebar-close");
   const links = Array.from(document.querySelectorAll(".sidebar-link"));

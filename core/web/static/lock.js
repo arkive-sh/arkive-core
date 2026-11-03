@@ -11,10 +11,10 @@ import { getVaultState, persistSessionUnlock, unlockVault, waitUntilReady } from
   function lockRedirectTarget() {
     const raw = String(form.getAttribute("data-lock-next") || "").trim();
     if (!raw) {
-      return "/dashboard";
+      return "/files";
     }
     if (raw.charAt(0) !== "/" || raw.indexOf("//") === 0) {
-      return "/dashboard";
+      return "/files";
     }
     return raw;
   }

@@ -56,8 +56,8 @@ func forbiddenBody() g.Node {
 				h.Div(
 					h.Class("forbidden-actions"),
 					components.Button(components.ButtonProps{
-						Text:    "Dashboard",
-						Href:    "/dashboard",
+						Text:    "Files",
+						Href:    "/files",
 						Variant: "primary",
 						Class:   "forbidden-action-primary",
 						Icon:    "shield",

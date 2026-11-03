@@ -59,7 +59,6 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 	}
 	localStorageRoutes.PUT("/upload/:token", handlers.LocalStorageUpload(localStorage))
 	localStorageRoutes.GET("/download/:token", handlers.LocalStorageDownload(localStorage))
-	r.GET("/", handlers.WebRoot(authService, setupService))
 	r.GET("/s/:token", handlers.PublicShareView(shareService, filesService, settingsService, cfg.CookieSecret))
 	r.POST("/s/:token", handlers.PublicShareUnlock(shareService, filesService, settingsService, cfg.CookieSecret))
 
@@ -67,7 +66,6 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 	// Protected
 	protected := r.Group("/")
 	protected.Use(middleware.RequireSessionRedirect(authService))
-	protected.GET("/dashboard", handlers.WebDashboard(filesService, folderService, settingsService))
 	protected.GET("/files", handlers.WebFiles(filesService, folderService))
 	protected.GET("/folders/:id", handlers.WebFolder(filesService, folderService))
 	protected.GET("/files/:id/view", handlers.WebFileView(filesService, settingsService))

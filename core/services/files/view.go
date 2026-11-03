@@ -12,11 +12,6 @@ import (
 	"arkive/pkg/storage"
 )
 
-type FileList struct {
-	Files      []models.File
-	TotalFiles int
-}
-
 type EncryptedFileRecord struct {
 	FileID            string
 	VaultID           string
@@ -37,39 +32,6 @@ func (s *Service) CountArchivedFiles(ctx context.Context, userID string) (int64,
 		return 0, err
 	}
 	return s.fileRepo.CountArchivedFilesForUser(ctx, s.db, userID)
-}
-
-func (s *Service) ListCompletedUploads(ctx context.Context, userID string, page, pageSize int) (FileList, error) {
-	var err error
-	userID, err = validateUserID(userID)
-	if err != nil {
-		return FileList{}, err
-	}
-	totalFiles, err := s.fileRepo.CountCompletedForUser(ctx, s.db, userID)
-	if err != nil {
-		return FileList{}, err
-	}
-	if page < 1 {
-		page = 1
-	}
-	if pageSize <= 0 {
-		pageSize = 25
-	}
-	if totalFiles > 0 {
-		totalPages := (totalFiles + pageSize - 1) / pageSize
-		if page > totalPages {
-			page = totalPages
-		}
-	}
-	files, err := s.fileRepo.ListCompletedForUser(ctx, s.db, userID, page, pageSize)
-	if err != nil {
-		return FileList{}, err
-	}
-
-	return FileList{
-		Files:      files,
-		TotalFiles: totalFiles,
-	}, nil
 }
 
 func (s *Service) SearchCompletedUploadsByTokens(ctx context.Context, userID, vaultID string, tokenHashes [][]byte, minimumMatches, limit int) ([]models.File, error) {

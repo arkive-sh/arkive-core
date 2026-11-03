@@ -12,12 +12,12 @@ import (
 
 const SidebarCSS = "/web/components/sidebar.css"
 
-type DashboardSidebarProps struct {
+type AppSidebarProps struct {
 	User      *models.User
 	ActiveNav string
 }
 
-func DashboardSidebar(props DashboardSidebarProps) g.Node {
+func AppSidebar(props AppSidebarProps) g.Node {
 	nodeLabel := "Self-hosted core"
 	if props.User != nil && strings.TrimSpace(props.User.Username) != "" {
 		nodeLabel = "@" + strings.TrimSpace(props.User.Username)
@@ -26,8 +26,8 @@ func DashboardSidebar(props DashboardSidebarProps) g.Node {
 	return g.Group([]g.Node{
 		InlineStyle(SidebarCSS),
 		h.Aside(
-			h.Class("dashboard-sidebar"),
-			h.ID("dashboard-sidebar"),
+			h.Class("app-sidebar"),
+			h.ID("app-sidebar"),
 			g.Attr("aria-hidden", "true"),
 			h.Div(
 				h.Class("sidebar-top"),
@@ -44,7 +44,7 @@ func DashboardSidebar(props DashboardSidebarProps) g.Node {
 						h.Class("sidebar-brand-copy"),
 						h.A(
 							h.Class("sidebar-brand"),
-							h.Href("/dashboard"),
+							h.Href("/files"),
 							g.Text("Arkive Core"),
 						),
 						h.Span(h.Class("sidebar-node"), g.Text(nodeLabel)),
@@ -60,17 +60,8 @@ func DashboardSidebar(props DashboardSidebarProps) g.Node {
 					),
 				),
 			),
-			h.Div(
-				h.Class("sidebar-cta"),
-				h.A(
-					h.Class("button primary sidebar-upload"),
-					h.Href("/dashboard#upload-panel"),
-					g.Text("Upload File"),
-				),
-			),
 			h.Nav(
 				h.Class("sidebar-links"),
-				sidebarLink("/dashboard", "dashboard", props.ActiveNav, "Dashboard", lucide.LayoutDashboard),
 				sidebarLink("/files", "files", props.ActiveNav, "Files", lucide.FolderOpen),
 				sidebarLink("/shares", "shares", props.ActiveNav, "Shares", lucide.Share2),
 				sidebarLink("/settings", "settings", props.ActiveNav, "Settings", lucide.Settings),

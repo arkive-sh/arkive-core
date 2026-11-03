@@ -42,7 +42,7 @@ func AuthLayout(data LayoutData, content ...g.Node) g.Node {
 			h.Div(
 				h.Class("app-shell"),
 				authHeader(data.User, data.SearchPlaceholder, data.RequireVaultUnlock),
-				components.DashboardSidebar(components.DashboardSidebarProps{
+				components.AppSidebar(components.AppSidebarProps{
 					User:      data.User,
 					ActiveNav: data.ActiveNav,
 				}),
@@ -69,7 +69,7 @@ func authHeader(user *models.User, placeholder string, showLockButton bool) g.No
 					h.Class("button secondary icon-button sidebar-toggle"),
 					h.Type("button"),
 					h.ID("sidebar-toggle"),
-					g.Attr("aria-controls", "dashboard-sidebar"),
+					g.Attr("aria-controls", "app-sidebar"),
 					g.Attr("aria-expanded", "false"),
 					g.Attr("aria-label", "Open menu"),
 					lucide.Menu(
@@ -105,15 +105,6 @@ func authHeader(user *models.User, placeholder string, showLockButton bool) g.No
 							h.Class("app-header-lucide"),
 							g.Attr("aria-hidden", "true"),
 						),
-					),
-				),
-				h.A(
-					h.Class("app-header-action"),
-					h.Href("/dashboard#recent-activity"),
-					g.Attr("aria-label", "Jump to recent activity"),
-					lucide.Bell(
-						h.Class("app-header-lucide"),
-						g.Attr("aria-hidden", "true"),
 					),
 				),
 				renderUserMenu(user),
