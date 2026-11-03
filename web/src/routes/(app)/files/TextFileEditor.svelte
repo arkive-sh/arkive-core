@@ -2,8 +2,9 @@
 	import { onDestroy, onMount, tick } from 'svelte';
 	import { get } from 'svelte/store';
 	import { createVirtualizer } from '@tanstack/svelte-virtual';
-	import { FileText, Pencil, X } from '@lucide/svelte';
+	import { Pencil, X } from '@lucide/svelte';
 	import Modal from '#lib/components/Modal.svelte';
+	import FileTypeIcon from '#lib/components/FileTypeIcon.svelte';
 	import { useTransferManager, type UploadItem, type UploadSource } from '#lib/transfers/manager.ts';
 	import { DecryptedFileReader } from '#lib/vault/read-file.ts';
 	import { formatBytes } from '#lib/utils/format.ts';
@@ -101,31 +102,39 @@
 		return true;
 	}
 
+	function replaceSelectedLines(event: KeyboardEvent): boolean {
+		if (!allLinesSelected || !editing) return false;
+		if ((event.ctrlKey || event.metaKey) && ['c', 'x', 'v'].includes(event.key.toLowerCase())) return true;
+
+		let replacement: string[];
+		let focusIndex = 0;
+		let focusOffset = 0;
+		if (event.key === 'Backspace' || event.key === 'Delete') {
+			replacement = [''];
+		} else if (event.key === 'Enter') {
+			replacement = ['', ''];
+			focusIndex = 1;
+		} else if (
+			!event.ctrlKey && !event.metaKey && !event.altKey &&
+			[...event.key].length === 1 && !['Dead', 'Process', 'Unidentified'].includes(event.key)
+		) {
+			replacement = [event.key];
+			focusOffset = event.key.length;
+		} else {
+			allLinesSelected = false;
+			return false;
+		}
+
+		event.preventDefault();
+		if (replaceLines(0, lines.length, replacement)) focusLine(focusIndex, focusOffset);
+		allLinesSelected = false;
+		return true;
+	}
+
 	function handleDocumentKeydown(event: KeyboardEvent): void {
 		if (selectAllLines(event)) return;
 		if ((event.ctrlKey || event.metaKey) && ['c', 'x', 'v'].includes(event.key.toLowerCase())) return;
-		if (allLinesSelected && editing && showHiddenCharacters) {
-			if (event.key === 'Backspace' || event.key === 'Delete') {
-				event.preventDefault();
-				if (replaceLines(0, lines.length, [''])) focusLine(0, 0);
-				allLinesSelected = false;
-				return;
-			}
-			if (event.key === 'Enter') {
-				event.preventDefault();
-				if (replaceLines(0, lines.length, ['', ''])) focusLine(1, 0);
-				allLinesSelected = false;
-				return;
-			}
-			const keyIsText = !event.ctrlKey && !event.metaKey && !event.altKey &&
-				([...event.key].length === 1 && !['Dead', 'Process', 'Unidentified'].includes(event.key));
-			if (keyIsText) {
-				event.preventDefault();
-				if (replaceLines(0, lines.length, [event.key])) focusLine(0, event.key.length);
-				allLinesSelected = false;
-				return;
-			}
-		}
+		if (showHiddenCharacters && replaceSelectedLines(event)) return;
 		if (event.key === 'Escape' || allLinesSelected) allLinesSelected = false;
 	}
 
@@ -150,11 +159,14 @@
 		allLinesSelected = false;
 	}
 
+	function pastedLines(event: ClipboardEvent): string[] {
+		return (event.clipboardData?.getData('text/plain') ?? '').replace(/\r\n?/g, '\n').split('\n');
+	}
+
 	function handleDocumentPaste(event: ClipboardEvent): void {
 		if (!allLinesSelected || !editing || !showHiddenCharacters) return;
 		event.preventDefault();
-		const pasted = (event.clipboardData?.getData('text/plain') ?? '').replace(/\r\n?/g, '\n');
-		const parts = pasted.split('\n');
+		const parts = pastedLines(event);
 		if (replaceLines(0, lines.length, parts)) focusLine(parts.length - 1, parts.at(-1)!.length);
 		allLinesSelected = false;
 	}
@@ -301,13 +313,13 @@
 		return true;
 	}
 
-	function updateLine(index: number, value: string): boolean {
-		return replaceLines(index, 1, [value]);
-	}
-
 	function focusLine(index: number, offset: number): void {
 		if (index < 0 || index >= lines.length) return;
 		pendingFocus = { index, offset };
+	}
+
+	function updateLine(index: number, value: string): boolean {
+		return replaceLines(index, 1, [value]);
 	}
 
 	function handleLineKeydown(index: number, event: KeyboardEvent): void {
@@ -318,30 +330,7 @@
 		const end = input.selectionEnd ?? start;
 
 		if (selectAllLines(event)) return;
-		if (allLinesSelected) {
-			if ((event.ctrlKey || event.metaKey) && ['c', 'x', 'v'].includes(event.key.toLowerCase())) return;
-			if (event.key === 'Backspace' || event.key === 'Delete') {
-				event.preventDefault();
-				if (replaceLines(0, lines.length, [''])) focusLine(0, 0);
-				allLinesSelected = false;
-				return;
-			}
-			if (event.key === 'Enter') {
-				event.preventDefault();
-				if (replaceLines(0, lines.length, ['', ''])) focusLine(1, 0);
-				allLinesSelected = false;
-				return;
-			}
-			const keyIsText = !event.ctrlKey && !event.metaKey && !event.altKey &&
-				([...event.key].length === 1 && !['Dead', 'Process', 'Unidentified'].includes(event.key));
-			if (keyIsText) {
-				event.preventDefault();
-				if (replaceLines(0, lines.length, [event.key])) focusLine(0, event.key.length);
-				allLinesSelected = false;
-				return;
-			}
-			allLinesSelected = false;
-		}
+		if (replaceSelectedLines(event)) return;
 
 		if (event.key === 'Enter') {
 			event.preventDefault();
@@ -375,8 +364,7 @@
 		const value = input.value;
 		const start = input.selectionStart ?? value.length;
 		const end = input.selectionEnd ?? start;
-		const pasted = (event.clipboardData?.getData('text/plain') ?? '').replace(/\r\n?/g, '\n');
-		const parts = pasted.split('\n');
+		const parts = pastedLines(event);
 		if (allLinesSelected) {
 			if (replaceLines(0, lines.length, parts)) focusLine(parts.length - 1, parts.at(-1)!.length);
 			allLinesSelected = false;
@@ -515,7 +503,7 @@
 >
 	{#snippet header()}
 		<header class="flex min-w-0 items-center gap-3 border-b border-(--border) px-5 py-3">
-			<FileText class="size-5 shrink-0 text-(--accent)" aria-hidden="true" />
+			<FileTypeIcon name={entry?.name ?? filename} mime={entry?.type ?? 'text/plain'} className="size-5 shrink-0" />
 			<div class="min-w-0 flex-1">
 				<h2 class="m-0 truncate text-base font-semibold">{entry ? entry.name : 'New text file'}</h2>
 				<p class="m-0 text-xs text-(--muted)">{loading ? (totalPlaintextSize === null ? 'Loading…' : `${formatBytes(loadedPlaintextBytes)} of ${formatBytes(totalPlaintextSize)} loaded`) : `${formatBytes(textSize)} · ${lines.length.toLocaleString()} lines`}</p>
@@ -573,7 +561,6 @@
 									<TextEditorLine
 										index={row.index}
 										bytes={lines[row.index]!}
-										editable={editing}
 										{wrapLines}
 										onChange={updateLine}
 										onKeydown={handleLineKeydown}

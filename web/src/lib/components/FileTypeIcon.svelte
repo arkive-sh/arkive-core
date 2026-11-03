@@ -11,7 +11,8 @@
 		FileText,
 		FileType,
 		FileVideoCamera,
-		Presentation
+		Presentation,
+		ScrollText
 	} from '@lucide/svelte';
 	import { isImageFile } from '#lib/utils/image.ts';
 
@@ -56,6 +57,7 @@
 		if (isImageFile(fileName, type)) return { component: FileImage, color: 'text-cyan-400' };
 		if (type.startsWith('video/')) return { component: FileVideoCamera, color: 'text-pink-400' };
 		if (type.startsWith('audio/')) return { component: AudioLines, color: 'text-indigo-400' };
+		if (extension === '.log') return { component: ScrollText, color: 'text-amber-300' };
 		if (
 			['.c', '.cc', '.cpp', '.cs', '.css', '.go', '.h', '.hpp', '.html', '.java', '.js', '.jsx', '.json', '.kt', '.md', '.php', '.py', '.rs', '.sql', '.swift', '.toml', '.ts', '.tsx', '.xml', '.yaml', '.yml'].includes(extension) ||
 			['application/json', 'application/xml', 'text/html', 'text/markdown', 'text/x-python'].includes(type)

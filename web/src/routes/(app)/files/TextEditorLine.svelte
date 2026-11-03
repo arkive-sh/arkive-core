@@ -3,7 +3,6 @@
 	let {
 		index,
 		bytes,
-		editable,
 		wrapLines,
 		onChange,
 		onKeydown,
@@ -11,7 +10,6 @@
 	}: {
 		index: number;
 		bytes: Uint8Array;
-		editable: boolean;
 		wrapLines: boolean;
 		onChange: (index: number, value: string) => boolean;
 		onKeydown: (index: number, event: KeyboardEvent) => void;
@@ -65,7 +63,6 @@
 	autocomplete="off"
 	autocapitalize="off"
 	spellcheck="false"
-	readonly={!editable}
 	bind:this={editor}
 	bind:value
 	oninput={(event) => {
