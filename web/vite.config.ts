@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 const repositoryRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
 	plugins: [
 		tailwindcss(),
 		sveltekit({
@@ -23,7 +23,7 @@ export default defineConfig({
 					'form-action': ['self'],
 					'script-src': ['self', 'wasm-unsafe-eval'],
 					'script-src-attr': ['none'],
-					'worker-src': ['self'],
+					'worker-src': command === 'serve' ? ['self', 'blob:'] : ['self'],
 					'style-src': ['self', 'unsafe-inline', 'https://fonts.googleapis.com'],
 					'font-src': ['self', 'https://fonts.gstatic.com', 'data:'],
 					'img-src': ['self', 'data:', 'blob:', 'https:', 'http:'],
@@ -34,4 +34,4 @@ export default defineConfig({
 		})
 	],
 	server: { fs: { allow: [repositoryRoot] } }
-});
+}));
