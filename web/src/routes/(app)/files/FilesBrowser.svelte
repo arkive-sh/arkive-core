@@ -5,6 +5,7 @@
 	import FilesListView from './FilesListView.svelte';
 	import FilesViewOptions from './FilesViewOptions.svelte';
 	import FileUploader from '#lib/components/FileUploader.svelte';
+	import type { UploadItem } from '#lib/transfers/manager.ts';
 	import type { FileManagerEntry, FilesView } from './types';
 	import type { createFolderEntries } from './folder-entries.svelte';
 
@@ -13,8 +14,7 @@
 
 	let {
 		unlocked,
-		vaultId,
-		folderId,
+		onFilesDropped,
 		folderName,
 		breadcrumbItems,
 		focusFileId,
@@ -57,8 +57,7 @@
 		onShowDimensionsChange
 	}: {
 		unlocked: boolean;
-		vaultId: string;
-		folderId: string | null;
+		onFilesDropped: (files: UploadItem[]) => void;
 		folderName: string;
 		breadcrumbItems: BreadcrumbItem[];
 		focusFileId: string | null;
@@ -170,7 +169,7 @@
 		{:else if query.isError && !query.data}
 			<section class="rounded-md border border-(--border) bg-(--surface-raised) px-5 py-8 text-red-400" role="alert">{query.error instanceof Error ? query.error.message : 'Could not load files.'}</section>
 		{:else if query.data}
-			<FileUploader {vaultId} {folderId} {unlocked}>
+			<FileUploader {unlocked} {onFilesDropped}>
 			<section class="overflow-hidden rounded-md border border-(--border) bg-(--surface-raised)" aria-label="Files and folders" oncontextmenu={onShowBackgroundContextMenu}>
 				{#if !entriesReady}
 					<div class="px-5 py-8 text-(--muted)" role="status">Decrypting file details…</div>
