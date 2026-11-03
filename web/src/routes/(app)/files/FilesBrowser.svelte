@@ -46,7 +46,7 @@
 		onShowContextMenu,
 		onShowBackgroundContextMenu,
 		onPreviewImage,
-		onPreviewVideo,
+		onPreviewMedia,
 		onPreviewPdf,
 		onCreateFolder,
 		onCancelNewFolder,
@@ -89,7 +89,7 @@
 		onShowContextMenu: (entry: FileManagerEntry | null, x: number, y: number) => void;
 		onShowBackgroundContextMenu: (event: MouseEvent) => void;
 		onPreviewImage: (entry: FileManagerEntry, trigger: HTMLElement) => void;
-		onPreviewVideo: (entry: FileManagerEntry) => void;
+		onPreviewMedia: (entry: FileManagerEntry) => void;
 		onPreviewPdf: (entry: FileManagerEntry) => void;
 		onCreateFolder: () => void | Promise<void>;
 		onCancelNewFolder: () => void;
@@ -190,7 +190,7 @@
 						onOpenFolder={onOpenFolder}
 						onShowContextMenu={onShowContextMenu}
 						onPreviewImage={onPreviewImage}
-						onPreviewVideo={onPreviewVideo}
+						onPreviewMedia={onPreviewMedia}
 						onPreviewPdf={onPreviewPdf}
 					/>
 				{:else}
@@ -210,7 +210,7 @@
 						onOpenFolder={onOpenFolder}
 						onShowContextMenu={onShowContextMenu}
 						onPreviewImage={onPreviewImage}
-						onPreviewVideo={onPreviewVideo}
+						onPreviewMedia={onPreviewMedia}
 						onPreviewPdf={onPreviewPdf}
 					/>
 				{/if}
