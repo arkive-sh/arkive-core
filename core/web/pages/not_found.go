@@ -65,17 +65,10 @@ func NotFoundPage(props NotFoundPageProps) web.Page {
 					h.Div(
 						h.Class("not-found-actions"),
 						components.Button(components.ButtonProps{
-							Text:    "Return to Dashboard",
-							Href:    "/dashboard",
+							Text:    "Return to Files",
+							Href:    "/files",
 							Variant: "primary",
 							Class:   "not-found-action-primary",
-						}),
-						components.Button(components.ButtonProps{
-							Text:    "Open Files",
-							Href:    "/files",
-							Variant: "secondary",
-							Class:   "not-found-action-secondary",
-							Icon:    "search",
 						}),
 					),
 					h.Div(

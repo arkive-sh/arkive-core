@@ -75,7 +75,7 @@ import { clearSessionUnlock, persistSessionUnlock, unlockVault } from "./feature
             if (passwordInput) {
               passwordInput.value = "";
             }
-            window.location.href = "/dashboard";
+            window.location.href = "/files";
           })
           .catch(function(error) {
             clearSessionUnlock();

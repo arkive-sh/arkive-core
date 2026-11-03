@@ -123,7 +123,7 @@ function initSubmitButtonStates() {
 
 function buildLockURL() {
   const next = window.location.pathname + window.location.search + window.location.hash;
-  return "/lock?next=" + encodeURIComponent(next || "/dashboard");
+  return "/lock?next=" + encodeURIComponent(next || "/files");
 }
 
 function initVaultAccessGuard() {

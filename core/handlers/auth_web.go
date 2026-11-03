@@ -24,7 +24,7 @@ func WebLoginGet(svc *auth.Service, setupSvc *setup.Service) gin.HandlerFunc {
 			c.Status(http.StatusInternalServerError)
 			return
 		} else if ok {
-			c.Redirect(http.StatusSeeOther, "/dashboard")
+			c.Redirect(http.StatusSeeOther, "/")
 			return
 		}
 		ok, err := hasRecoveryPending(c, setupSvc)
@@ -55,7 +55,7 @@ func WebForgotPasswordGet(svc *auth.Service, setupSvc *setup.Service) gin.Handle
 			c.Status(http.StatusInternalServerError)
 			return
 		} else if ok {
-			c.Redirect(http.StatusSeeOther, "/dashboard")
+			c.Redirect(http.StatusSeeOther, "/")
 			return
 		}
 		web.Render(c, pages.ForgotPasswordPage(pages.ForgotPasswordPageProps{
@@ -74,7 +74,7 @@ func WebResetPasswordGet(svc *auth.Service, setupSvc *setup.Service) gin.Handler
 			c.Status(http.StatusInternalServerError)
 			return
 		} else if ok {
-			c.Redirect(http.StatusSeeOther, "/dashboard")
+			c.Redirect(http.StatusSeeOther, "/")
 			return
 		}
 		web.Render(c, pages.ResetPasswordPage(pages.ResetPasswordPageProps{

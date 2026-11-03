@@ -381,9 +381,9 @@ func entriesBaseURL(currentFolder *string) string {
 
 func uploadHref(currentFolder *string) string {
 	if currentFolder == nil || strings.TrimSpace(*currentFolder) == "" {
-		return "/dashboard"
+		return "/"
 	}
-	return "/dashboard?folder=" + url.QueryEscape(strings.TrimSpace(*currentFolder))
+	return "/?folder_id=" + url.QueryEscape(strings.TrimSpace(*currentFolder))
 }
 
 func uploadActionLabel(currentFolder *string) string {
