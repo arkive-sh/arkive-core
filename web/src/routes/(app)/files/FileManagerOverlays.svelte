@@ -8,8 +8,8 @@
 	let {
 		imageEntries,
 		imagePreviewRequest,
-		VideoViewer,
-		videoPreviewEntry,
+		MediaViewer,
+		mediaPreviewEntry,
 		PdfViewer,
 		pdfPreviewEntry,
 		contextMenuOpen,
@@ -22,13 +22,13 @@
 		deleteTargets,
 		onCloseImage,
 		onError,
-		onCloseVideo,
+		onCloseMedia,
 		onClosePdf,
 		onCloseContextMenu,
 		onOpenFolder,
 		onDownload,
 		onPreviewImage,
-		onPreviewVideo,
+		onPreviewMedia,
 		onPreviewPdf,
 		onProperties,
 		onDeleteEntry,
@@ -42,8 +42,8 @@
 	}: {
 		imageEntries: FileManagerEntry[];
 		imagePreviewRequest: { fileId: string; trigger?: HTMLElement } | null;
-		VideoViewer?: typeof import('./VideoViewer.svelte').default;
-		videoPreviewEntry: FileManagerEntry | null;
+		MediaViewer?: typeof import('./MediaViewer.svelte').default;
+		mediaPreviewEntry: FileManagerEntry | null;
 		PdfViewer?: typeof import('./PdfViewer.svelte').default;
 		pdfPreviewEntry: FileManagerEntry | null;
 		contextMenuOpen: boolean;
@@ -56,13 +56,13 @@
 		deleteTargets: FileManagerEntry[];
 		onCloseImage: () => void;
 		onError: (message: string) => void;
-		onCloseVideo: () => void;
+		onCloseMedia: () => void;
 		onClosePdf: () => void;
 		onCloseContextMenu: () => void;
 		onOpenFolder: (id: string) => void;
 		onDownload: (entry: FileManagerEntry) => void;
 		onPreviewImage: (entry: FileManagerEntry) => void;
-		onPreviewVideo: (entry: FileManagerEntry) => void;
+		onPreviewMedia: (entry: FileManagerEntry) => void;
 		onPreviewPdf: (entry: FileManagerEntry) => void;
 		onProperties: (entry: FileManagerEntry) => void;
 		onDeleteEntry: (entry: FileManagerEntry) => void;
@@ -78,8 +78,8 @@
 
 <ImageViewer entries={imageEntries} request={imagePreviewRequest} onClose={onCloseImage} onError={onError} />
 
-{#if VideoViewer}
-	<VideoViewer entry={videoPreviewEntry} onClose={onCloseVideo} />
+{#if MediaViewer}
+	<MediaViewer entry={mediaPreviewEntry} onClose={onCloseMedia} />
 {/if}
 
 {#if PdfViewer && pdfPreviewEntry}
@@ -95,7 +95,7 @@
 	{onOpenFolder}
 	{onDownload}
 	{onPreviewImage}
-	{onPreviewVideo}
+	{onPreviewMedia}
 	{onPreviewPdf}
 	{onProperties}
 	onDelete={onDeleteEntry}

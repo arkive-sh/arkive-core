@@ -8,6 +8,7 @@
 	import FileTypeIcon from '#lib/components/FileTypeIcon.svelte';
 	import InlineNewFolder from './InlineNewFolder.svelte';
 	import { isImageFile } from '#lib/utils/image.ts';
+	import { isMediaMimeType } from '#lib/utils/media.ts';
 	import { readDecryptedThumbnail } from '#lib/vault/thumbnail.ts';
 	import { fileManagerEntryKey, isPdfFile, NEW_FOLDER_DRAFT_ID, type FileManagerEntry } from './types';
 
@@ -28,7 +29,7 @@
 		onOpenFolder,
 		onShowContextMenu,
 		onPreviewImage,
-		onPreviewVideo,
+		onPreviewMedia,
 		onPreviewPdf
 	}: {
 		rows: FileManagerEntry[];
@@ -46,7 +47,7 @@
 		onOpenFolder: (id: string) => void;
 		onShowContextMenu: (entry: FileManagerEntry | null, x: number, y: number) => void;
 		onPreviewImage: (entry: FileManagerEntry, trigger: HTMLElement) => void;
-		onPreviewVideo: (entry: FileManagerEntry) => void;
+		onPreviewMedia: (entry: FileManagerEntry) => void;
 		onPreviewPdf: (entry: FileManagerEntry) => void;
 	} = $props();
 	let gridLayout = $state<HTMLDivElement>();
@@ -151,13 +152,13 @@
 	function entryActionLabel(entry: FileManagerEntry): string | undefined {
 		if (entry.kind === 'folder') return `Open folder ${entry.name}`;
 		if (isImageFile(entry.name, entry.type) || isPdfFile(entry)) return `Preview ${entry.name}`;
-		if (entry.type.startsWith('video/')) return `Play ${entry.name}`;
+		if (isMediaMimeType(entry.type)) return `Play ${entry.name}`;
 	}
 
 	function openEntry(entry: FileManagerEntry, trigger: HTMLElement): void {
 		if (entry.kind === 'folder') onOpenFolder(entry.id);
 		else if (isImageFile(entry.name, entry.type)) onPreviewImage(entry, trigger);
-		else if (entry.type.startsWith('video/')) onPreviewVideo(entry);
+		else if (isMediaMimeType(entry.type)) onPreviewMedia(entry);
 		else if (isPdfFile(entry)) onPreviewPdf(entry);
 	}
 
@@ -289,7 +290,7 @@
 										<FileTypeIcon name={entry.name} mime={entry.type} style={`width: ${iconSize}px; height: ${iconSize}px`} />
 									{/if}
 								</div>
-							{:else if entry.kind === 'file' && entry.type.startsWith('video/')}
+			{:else if entry.kind === 'file' && entry.type.startsWith('video/')}
 								<div class="grid aspect-4/3 w-full place-items-center overflow-hidden bg-(--surface-highest)" aria-hidden="true">
 									{#if thumbnails.get(entry.id)}
 										<img class="size-full object-cover" src={thumbnails.get(entry.id)} alt="" loading="lazy" decoding="async" />

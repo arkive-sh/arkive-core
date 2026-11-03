@@ -38,8 +38,8 @@
 	let creatingFolder = $state(false);
 	let propertiesEntry = $state<FileManagerEntry | null>(null);
 	let imagePreviewRequest = $state<{ fileId: string; trigger?: HTMLElement } | null>(null);
-	let videoPreviewEntry = $state<FileManagerEntry | null>(null);
-	let VideoViewer = $state<typeof import('./files/VideoViewer.svelte').default>();
+	let mediaPreviewEntry = $state<FileManagerEntry | null>(null);
+	let MediaViewer = $state<typeof import('./files/MediaViewer.svelte').default>();
 	let pdfPreviewEntry = $state<FileManagerEntry | null>(null);
 	let PdfViewer = $state<typeof import('./files/PdfViewer.svelte').default>();
 	let contextMenuEntry = $state<FileManagerEntry | null>(null);
@@ -213,7 +213,7 @@
 		const target = event.target;
 		if (event.defaultPrevented || event.repeat || !(target instanceof HTMLElement)) return;
 		if (target.isContentEditable || target.closest('input:not([type="checkbox"]):not([type="radio"]), textarea, select, [contenteditable="true"]')) return;
-		if (contextMenuOpen || imagePreviewRequest || videoPreviewEntry || pdfPreviewEntry || document.querySelector('[data-modal-open="true"]')) return;
+		if (contextMenuOpen || imagePreviewRequest || mediaPreviewEntry || pdfPreviewEntry || document.querySelector('[data-modal-open="true"]')) return;
 		if ((event.ctrlKey || event.metaKey) && event.altKey && !event.shiftKey && event.key.toLowerCase() === 'n') {
 			event.preventDefault();
 			beginNewFolder(folderId);
@@ -236,9 +236,9 @@
 		imagePreviewRequest = { fileId: entry.id, trigger };
 	}
 
-	function previewVideo(entry: FileManagerEntry): void {
-		videoPreviewEntry = entry;
-		if (!VideoViewer) void import('./files/VideoViewer.svelte').then(({ default: component }) => VideoViewer = component);
+	function previewMedia(entry: FileManagerEntry): void {
+		mediaPreviewEntry = entry;
+		if (!MediaViewer) void import('./files/MediaViewer.svelte').then(({ default: component }) => MediaViewer = component);
 	}
 
 	function previewPdf(entry: FileManagerEntry): void {
@@ -438,7 +438,7 @@
 	onShowContextMenu={showContextMenu}
 	onShowBackgroundContextMenu={showBackgroundContextMenu}
 	onPreviewImage={previewImage}
-	onPreviewVideo={previewVideo}
+	onPreviewMedia={previewMedia}
 	onPreviewPdf={previewPdf}
 	onCreateFolder={saveNewFolder}
 	onCancelNewFolder={cancelNewFolder}
@@ -454,8 +454,8 @@
 <FileManagerOverlays
 	{imageEntries}
 	{imagePreviewRequest}
-	{VideoViewer}
-	{videoPreviewEntry}
+	{MediaViewer}
+	{mediaPreviewEntry}
 	{PdfViewer}
 	{pdfPreviewEntry}
 	{contextMenuOpen}
@@ -468,13 +468,13 @@
 	{deleteTargets}
 	onCloseImage={() => imagePreviewRequest = null}
 	onError={(message) => toast.error(message)}
-	onCloseVideo={() => videoPreviewEntry = null}
+	onCloseMedia={() => mediaPreviewEntry = null}
 	onClosePdf={() => pdfPreviewEntry = null}
 	onCloseContextMenu={() => { contextMenuEntry = null; contextMenuOpen = false; }}
 	onOpenFolder={openFolder}
 	onDownload={downloadEntry}
 	onPreviewImage={previewImage}
-	onPreviewVideo={previewVideo}
+	onPreviewMedia={previewMedia}
 	onPreviewPdf={previewPdf}
 	onProperties={(entry) => propertiesEntry = entry}
 	onDeleteEntry={requestDelete}

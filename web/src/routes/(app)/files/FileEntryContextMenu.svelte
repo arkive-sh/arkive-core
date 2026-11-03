@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { CloudUpload, Download, Film, FileText, FolderOpen, FolderPlus, Image, Info, Trash2 } from '@lucide/svelte';
+	import { AudioLines, CloudUpload, Download, Film, FileText, FolderOpen, FolderPlus, Image, Info, Trash2 } from '@lucide/svelte';
 	import { isImageFile } from '#lib/utils/image.ts';
+	import { isAudioMimeType, isMediaMimeType } from '#lib/utils/media.ts';
 	import { isPdfFile, type FileManagerEntry } from './types';
 
 	type Props = {
@@ -13,7 +14,7 @@
 		onOpenFolder: (id: string) => void;
 		onDownload: (entry: FileManagerEntry) => void;
 		onPreviewImage: (entry: FileManagerEntry) => void;
-		onPreviewVideo: (entry: FileManagerEntry) => void;
+		onPreviewMedia: (entry: FileManagerEntry) => void;
 		onPreviewPdf: (entry: FileManagerEntry) => void;
 		onProperties: (entry: FileManagerEntry) => void;
 		onDelete: (entry: FileManagerEntry) => void;
@@ -22,7 +23,7 @@
 		onUploadFolder: () => void;
 	};
 
-	let { open, entry, x, y, onClose, onOpenFolder, onDownload, onPreviewImage, onPreviewVideo, onPreviewPdf, onProperties, onDelete, onCreateFolder, onUploadFiles, onUploadFolder }: Props = $props();
+	let { open, entry, x, y, onClose, onOpenFolder, onDownload, onPreviewImage, onPreviewMedia, onPreviewPdf, onProperties, onDelete, onCreateFolder, onUploadFiles, onUploadFolder }: Props = $props();
 	let menu = $state<HTMLDivElement>();
 	let position = $state({ left: 8, top: 8 });
 
@@ -100,11 +101,11 @@
 		onPreviewImage(selected);
 	}
 
-	function previewVideo(): void {
-		if (!entry || entry.kind !== 'file' || !entry.type.startsWith('video/')) return;
+	function previewMedia(): void {
+		if (!entry || entry.kind !== 'file' || !isMediaMimeType(entry.type)) return;
 		const selected = entry;
 		onClose();
-		onPreviewVideo(selected);
+		onPreviewMedia(selected);
 	}
 
 	function confirmDelete(): void {
@@ -162,9 +163,9 @@
 					<Image class="size-4 text-(--muted)" aria-hidden="true" />
 					<span>Preview</span>
 				</button>
-			{:else if entry.type.startsWith('video/')}
-				<button class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)" type="button" role="menuitem" onclick={previewVideo}>
-					<Film class="size-4 text-(--muted)" aria-hidden="true" />
+			{:else if isMediaMimeType(entry.type)}
+				<button class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)" type="button" role="menuitem" onclick={previewMedia}>
+					{#if isAudioMimeType(entry.type)}<AudioLines class="size-4 text-(--muted)" aria-hidden="true" />{:else}<Film class="size-4 text-(--muted)" aria-hidden="true" />{/if}
 					<span>Preview</span>
 				</button>
 			{:else if isPdfFile(entry)}
