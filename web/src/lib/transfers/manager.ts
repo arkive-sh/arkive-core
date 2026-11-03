@@ -20,8 +20,17 @@ export interface TransferState {
 }
 
 export interface UploadItem {
-	file: File;
+	file: UploadSource;
 	relativePath: string;
+}
+
+export interface UploadSource {
+	name: string;
+	type: string;
+	size: number;
+	lastModified: number;
+	slice(start: number, end: number): Pick<Blob, 'arrayBuffer'>;
+	dispose?(): void;
 }
 
 export type TransferRunner = (signal: AbortSignal, onProgress: (transferredBytes: number) => void, concurrency: number) => Promise<void>;
@@ -59,6 +68,7 @@ export function createTransferManager(): TransferManager {
 	// shortcut: transfers live for this tab, persist task data and server checkpoints before adding reload recovery.
 	const state = writable<TransferState>({ jobs: [], open: false });
 	const runners = new Map<string, TransferRunner>();
+	const uploadSources = new Map<string, UploadSource>();
 	const controllers = new Map<string, AbortController>();
 	const runningTasks = new Map<string, Promise<void>>();
 	let concurrency = DEFAULT_TRANSFER_CONCURRENCY;
@@ -106,6 +116,8 @@ export function createTransferManager(): TransferManager {
 			}), concurrency);
 			updateJob(job.id, { status: 'completed', transferredBytes: job.totalBytes });
 			runners.delete(job.id);
+			uploadSources.get(job.id)?.dispose?.();
+			uploadSources.delete(job.id);
 			if (job.kind === 'upload') uploadsChanged = true;
 
 		} catch (error) {
@@ -193,7 +205,11 @@ export function createTransferManager(): TransferManager {
 		cancelMany(jobs.filter((job) => job.kind === 'upload' && (job.status === 'queued' || job.status === 'running')).map((job) => job.id));
 		await Promise.all(jobs.filter((job) => job.kind === 'upload').map((job) => runningTasks.get(job.id)).filter((task): task is Promise<void> => !!task));
 		for (const job of get(state).jobs) {
-			if (job.kind === 'upload') runners.delete(job.id);
+			if (job.kind === 'upload') {
+				runners.delete(job.id);
+				uploadSources.get(job.id)?.dispose?.();
+				uploadSources.delete(job.id);
+			}
 		}
 		state.update((current) => ({ ...current, jobs: current.jobs.filter((job) => job.kind !== 'upload') }));
 		notifyUploadsChangedIfIdle();
@@ -225,7 +241,11 @@ export function createTransferManager(): TransferManager {
 				return !removable;
 			})
 		}));
-		for (const id of removed) runners.delete(id);
+		for (const id of removed) {
+			runners.delete(id);
+			uploadSources.get(id)?.dispose?.();
+			uploadSources.delete(id);
+		}
 	}
 
 	return {
@@ -257,6 +277,7 @@ export function createTransferManager(): TransferManager {
 
 			const jobs = files.map((file): Transfer => {
 				const id = crypto.randomUUID();
+				uploadSources.set(id, file.file);
 				runners.set(id, async (signal, onProgress, concurrency) => {
 					const { uploadFile } = await import('#lib/uploads/upload-file.ts');
 					await uploadFile(file.file, signal, onProgress, await getFolderId(file, signal), concurrency);

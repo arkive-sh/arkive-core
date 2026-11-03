@@ -3,7 +3,7 @@
 	import { AudioLines, CloudUpload, Download, Film, FileText, FolderOpen, FolderPlus, Image, Info, Trash2 } from '@lucide/svelte';
 	import { isImageFile } from '#lib/utils/image.ts';
 	import { isAudioMimeType, isMediaMimeType } from '#lib/utils/media.ts';
-	import { isPdfFile, type FileManagerEntry } from './types';
+	import { isPdfFile, isTextFile, type FileManagerEntry } from './types';
 
 	type Props = {
 		open: boolean;
@@ -16,14 +16,16 @@
 		onPreviewImage: (entry: FileManagerEntry) => void;
 		onPreviewMedia: (entry: FileManagerEntry) => void;
 		onPreviewPdf: (entry: FileManagerEntry) => void;
+		onPreviewText: (entry: FileManagerEntry) => void;
 		onProperties: (entry: FileManagerEntry) => void;
 		onDelete: (entry: FileManagerEntry) => void;
 		onCreateFolder: (entry: FileManagerEntry | null) => void;
+		onCreateTextFile: () => void;
 		onUploadFiles: () => void;
 		onUploadFolder: () => void;
 	};
 
-	let { open, entry, x, y, onClose, onOpenFolder, onDownload, onPreviewImage, onPreviewMedia, onPreviewPdf, onProperties, onDelete, onCreateFolder, onUploadFiles, onUploadFolder }: Props = $props();
+let { open, entry, x, y, onClose, onOpenFolder, onDownload, onPreviewImage, onPreviewMedia, onPreviewPdf, onPreviewText, onProperties, onDelete, onCreateFolder, onCreateTextFile, onUploadFiles, onUploadFolder }: Props = $props();
 	let menu = $state<HTMLDivElement>();
 	let position = $state({ left: 8, top: 8 });
 
@@ -108,6 +110,13 @@
 		onPreviewMedia(selected);
 	}
 
+	function previewText(): void {
+		if (!entry || entry.kind !== 'file' || !isTextFile(entry)) return;
+		const selected = entry;
+		onClose();
+		onPreviewText(selected);
+	}
+
 	function confirmDelete(): void {
 		if (!entry) return;
 		const selected = entry;
@@ -118,6 +127,11 @@
 	function createFolder(): void {
 		onClose();
 		onCreateFolder(entry);
+	}
+
+	function createTextFile(): void {
+		onClose();
+		onCreateTextFile();
 	}
 
 	function uploadFiles(): void {
@@ -173,6 +187,11 @@
 					<FileText class="size-4 text-(--muted)" aria-hidden="true" />
 					<span>Preview</span>
 				</button>
+			{:else if isTextFile(entry)}
+				<button class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)" type="button" role="menuitem" onclick={previewText}>
+					<FileText class="size-4 text-(--muted)" aria-hidden="true" />
+					<span>Open</span>
+				</button>
 			{/if}
 			<button class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)" type="button" role="menuitem" onclick={downloadFile}>
 				<Download class="size-4 text-(--muted)" aria-hidden="true" />
@@ -180,6 +199,10 @@
 			</button>
 		{/if}
 		{#if entry?.kind !== 'folder'}
+			<button class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)" type="button" role="menuitem" onclick={createTextFile}>
+				<FileText class="size-4 text-(--muted)" aria-hidden="true" />
+				<span>New text file</span>
+			</button>
 			<button class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)" type="button" role="menuitem" onclick={createFolder}>
 				<FolderPlus class="size-4 text-(--muted)" aria-hidden="true" />
 				<span>New folder here</span>

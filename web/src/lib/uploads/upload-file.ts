@@ -6,6 +6,7 @@ import { encryptFolderMetadata, encryptFolderName } from '../vault/files';
 import { ENCRYPTED_ENVELOPE_OVERHEAD_BYTES, ENCRYPTION_VERSION } from '../vault/crypto-format';
 import type { SearchTokenEntry } from '../vault/types';
 import { createAndUploadThumbnail, type UploadedThumbnail } from './thumbnail';
+import type { UploadSource } from '#lib/transfers/manager.ts';
 import { imageMimeType } from '#lib/utils/image.ts';
 import {
 	clearUploadContext,
@@ -107,7 +108,7 @@ export async function createUploadFolder(
 }
 
 export async function uploadFile(
-	file: File,
+	file: UploadSource,
 	signal?: AbortSignal,
 	onProgress?: (uploadedBytes: number) => void,
 	folderId: string | null = null,
@@ -157,14 +158,14 @@ export async function uploadFile(
 		const abortParts = () => partController.abort();
 		signal?.addEventListener('abort', abortParts, { once: true });
 		if (signal?.aborted) abortParts();
-		const thumbnailPromise = createAndUploadThumbnail({
+		const thumbnailPromise = file instanceof File ? createAndUploadThumbnail({
 			file,
 			uploadToken,
 			uploadSessionId: started.uploadSessionId,
 			vaultId: started.vaultId,
 			fileId: started.fileId,
 			signal: partController.signal
-		});
+		}) : Promise.resolve(null);
 		const getURL = createPartURLGetter(started, partController.signal);
 
 		async function uploadPart(partNumber: number): Promise<void> {
