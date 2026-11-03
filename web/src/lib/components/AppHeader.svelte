@@ -56,7 +56,7 @@
 			<button
 				class="inline-flex size-9 shrink-0 cursor-pointer items-center justify-center rounded border border-(--border) bg-transparent p-0 text-(--muted) hover:bg-(--surface-raised) hover:text-(--text)"
 				type="button"
-				aria-controls="dashboard-sidebar"
+				aria-controls="app-sidebar"
 				aria-expanded={mobileView ? mobileOpen : !desktopCollapsed}
 				aria-label={(mobileView ? mobileOpen : !desktopCollapsed) ? 'Close menu' : 'Open menu'}
 				onclick={onToggleSidebar}

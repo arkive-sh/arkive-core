@@ -28,7 +28,7 @@ export type TransferRunner = (signal: AbortSignal, onProgress: (transferredBytes
 
 export interface TransferManager {
 	state: Readable<TransferState>;
-	enqueueUploads(files: UploadItem[], vaultId: string): number;
+	enqueueUploads(files: UploadItem[], vaultId: string, parentFolderId: string | null): number;
 	enqueueDownload(fileName: string, totalBytes: number, run: TransferRunner): string;
 	setLimits(limits: { concurrency: number; maxInProgressUploads: number }): void;
 	setOpen(open: boolean): void;
@@ -231,11 +231,11 @@ export function createTransferManager(): TransferManager {
 	return {
 		state,
 		setLimits,
-		enqueueUploads(files, vaultId) {
+		enqueueUploads(files, vaultId, baseFolderId) {
 			if (typeof window === 'undefined' || files.length === 0) return 0;
 			const folderIds = new Map<string, Promise<string>>();
 			async function getFolderId(file: UploadItem, signal: AbortSignal): Promise<string | null> {
-				let parentFolderId: string | null = null;
+				let parentFolderId = baseFolderId;
 				let path = '';
 				for (const name of file.relativePath.split('/').filter(Boolean).slice(0, -1)) {
 					path = path ? `${path}/${name}` : name;

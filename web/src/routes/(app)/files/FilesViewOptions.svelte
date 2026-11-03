@@ -49,7 +49,7 @@
 
 			const margin = 8;
 			const width = Math.min(288, window.innerWidth - margin * 2);
-			const sidebarRight = document.getElementById('dashboard-sidebar')?.getBoundingClientRect().right ?? 0;
+			const sidebarRight = document.getElementById('app-sidebar')?.getBoundingClientRect().right ?? 0;
 			const canAvoidSidebar = sidebarRight > 0 && sidebarRight + width + margin * 2 <= window.innerWidth;
 			const minLeft = canAvoidSidebar ? sidebarRight + margin : margin;
 			const left = Math.max(minLeft, Math.min(anchor.right - width, window.innerWidth - width - margin));

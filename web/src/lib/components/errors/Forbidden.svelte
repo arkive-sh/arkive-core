@@ -21,7 +21,7 @@
 			<div class="my-4 h-px w-12 bg-[#3e484f]"></div>
 			<p class="m-0 max-w-80 text-sm leading-5 text-[#bdc8d1]">You do not have permission to access this resource.</p>
 			<div class="mt-6 grid w-full max-w-70 gap-2">
-				<Button text="Dashboard" href="/" class="min-h-12 rounded-lg text-[11px] leading-4 font-semibold tracking-wider text-[#001e2c] uppercase shadow-none border-[#38bdf8] bg-[#38bdf8] hover:border-[#69cffb] hover:bg-[#69cffb]">
+				<Button text="Files" href="/" class="min-h-12 rounded-lg text-[11px] leading-4 font-semibold tracking-wider text-[#001e2c] uppercase shadow-none border-[#38bdf8] bg-[#38bdf8] hover:border-[#69cffb] hover:bg-[#69cffb]">
 					{#snippet icon()}<Shield size="18" aria-hidden="true" />{/snippet}
 				</Button>
 				<Button text="Login" href="/login" class="min-h-12 rounded-lg text-[11px] leading-4 font-semibold tracking-wider text-[#bdc8d1] uppercase shadow-none border-[#3e484f] bg-transparent hover:bg-[#252b2e] hover:text-[#dee3e8]">

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { BadgeCheck, Search, Unlink } from '@lucide/svelte';
+	import { BadgeCheck, Unlink } from '@lucide/svelte';
 	import Button from '#lib/components/Button.svelte';
 
 	let { status }: { status: number } = $props();
@@ -27,13 +27,10 @@
 			<p class="m-0 max-w-105 text-sm leading-[1.6] text-[#bdc8d1]">
 				{notFound
 					? 'The requested resource does not exist on this node or has been moved. The address may be invalid or no longer available.'
-					: 'The request could not be completed. Please try again or return to the dashboard.'}
+					: 'The request could not be completed. Please try again or return to your files.'}
 			</p>
 			<div class="mt-8 flex w-full max-w-130 justify-center gap-6 max-[760px]:mt-6 max-[640px]:flex-col max-[640px]:gap-3">
-				<Button text="Return to Dashboard" href="/" class="min-h-13 min-w-45 rounded-lg px-5 text-[11px] leading-4 font-semibold tracking-wider text-[#001e2c] uppercase shadow-none border-[#38bdf8] bg-[#38bdf8] hover:border-[#69cffb] hover:bg-[#69cffb] max-[640px]:w-full max-[640px]:min-w-0" />
-				<Button text="Open Files" href="/files" class="min-h-13 min-w-45 rounded-lg px-5 text-[11px] leading-4 font-semibold tracking-wider text-[#bdc8d1] uppercase shadow-none border-[#3e484f] bg-transparent hover:bg-[#252b2e] hover:text-[#dee3e8] max-[640px]:w-full max-[640px]:min-w-0">
-					{#snippet icon()}<Search size="18" aria-hidden="true" />{/snippet}
-				</Button>
+				<Button text="Return to Files" href="/" class="min-h-13 min-w-45 rounded-lg px-5 text-[11px] leading-4 font-semibold tracking-wider text-[#001e2c] uppercase shadow-none border-[#38bdf8] bg-[#38bdf8] hover:border-[#69cffb] hover:bg-[#69cffb] max-[640px]:w-full max-[640px]:min-w-0" />
 			</div>
 			<div class="mt-7 flex items-center justify-center gap-1.5 max-[760px]:mt-5">
 				<p class="m-0 text-[13px] leading-4.5 text-[#87929a]">Powered by <span class="font-semibold text-[#dee3e8]">Arkive Core</span></p>
