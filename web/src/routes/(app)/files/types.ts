@@ -1,5 +1,7 @@
 import type { MediaDimensions } from '#lib/vault/types';
 
+export const NEW_FOLDER_DRAFT_ID = '__new-folder-draft__';
+
 export interface ThumbnailSource {
 	version: number;
 	size: number;

@@ -6,8 +6,9 @@
 	import { get } from 'svelte/store';
 	import { formatBytes, formatDate } from '#lib/utils/format.ts';
 	import FileTypeIcon from '#lib/components/FileTypeIcon.svelte';
+	import InlineNewFolder from './InlineNewFolder.svelte';
 	import { isImageFile } from '#lib/utils/image.ts';
-	import { fileManagerEntryKey, isPdfFile, type FileManagerEntry } from './types';
+	import { fileManagerEntryKey, isPdfFile, NEW_FOLDER_DRAFT_ID, type FileManagerEntry } from './types';
 
 	const GRID_COLUMNS = '3rem minmax(220px, 2fr) minmax(160px, 1.2fr) minmax(90px, 0.75fr) minmax(150px, 1fr)';
 	const GRID_COLUMNS_WITH_DIMENSIONS = `${GRID_COLUMNS} minmax(120px, 0.8fr)`;
@@ -19,6 +20,10 @@
 		selectedCount,
 		loadedCount,
 		showDimensions,
+		newFolderName = $bindable(''),
+		creatingFolder,
+		onCreateFolder,
+		onCancelNewFolder,
 		onToggleSelection,
 		onToggleAll,
 		onOpenFolder,
@@ -33,10 +38,14 @@
 		selectedCount: number;
 		loadedCount: number;
 		showDimensions: boolean;
+		newFolderName?: string;
+		creatingFolder: boolean;
+		onCreateFolder: () => void | Promise<void>;
+		onCancelNewFolder: () => void;
 		onToggleSelection: (entry: FileManagerEntry) => void;
 		onToggleAll: () => void;
 		onOpenFolder: (id: string) => void;
-		onShowContextMenu: (entry: FileManagerEntry, x: number, y: number) => void;
+		onShowContextMenu: (entry: FileManagerEntry | null, x: number, y: number) => void;
 		onPreviewImage: (entry: FileManagerEntry, trigger: HTMLElement) => void;
 		onPreviewVideo: (entry: FileManagerEntry) => void;
 		onPreviewPdf: (entry: FileManagerEntry) => void;
@@ -117,8 +126,8 @@
 </script>
 
 <div class="overflow-x-auto">
-	<table class="grid w-full border-collapse text-left" style={`min-width: ${showDimensions ? '900px' : '760px'}`}>
-		<thead class="grid bg-(--surface-highest) text-xs font-semibold tracking-wide text-(--muted)">
+	<table class="grid w-full border-collapse text-left" style={`min-width: ${showDimensions ? '940px' : '800px'}`}>
+		<thead class="grid border-b border-(--border) bg-(--surface-highest) text-xs font-semibold tracking-wide text-(--muted)">
 			{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
 				<tr class="grid w-full" style={`grid-template-columns: ${activeGridColumns}`}>
 					<th class="flex items-center px-4 py-3 first:pl-5" scope="col">
@@ -126,7 +135,7 @@
 							bind:this={selectAllCheckbox}
 							class="size-4 cursor-pointer accent-(--accent)"
 							type="checkbox"
-							disabled={!rows.length}
+							disabled={!loadedCount}
 							checked={allSelected}
 							aria-label="Select all loaded entries"
 							onchange={onToggleAll}
@@ -148,34 +157,40 @@
 			{:else}
 				{#each virtualRows as virtualRow (virtualRow.key)}
 					{@const row = tableRows[virtualRow.index]}
+					{@const isDraftFolder = row.original.id === NEW_FOLDER_DRAFT_ID}
 					<tr
 						data-index={virtualRow.index}
+						data-file-entry
 						class={`absolute top-0 left-0 grid h-11.25 w-full transition-colors hover:bg-(--surface-highest) ${selectedIds.has(fileManagerEntryKey(row.original)) ? 'bg-(--surface-highest)' : 'bg-(--surface-raised)'} ${focusFileId === row.original.id ? 'ring-2 ring-inset ring-(--accent)' : ''}`}
 						style={`grid-template-columns: ${activeGridColumns}; transform: translateY(${virtualRow.start - rowScrollMargin}px)`}
-						oncontextmenu={(event) => {
+						oncontextmenu={isDraftFolder ? undefined : (event) => {
 							event.preventDefault();
 							onShowContextMenu(row.original, event.clientX, event.clientY);
 						}}
 					>
-						<td class="flex items-center px-4 py-3 first:pl-5">
-							<input
+						<td class="flex items-center px-4 py-1.5 first:pl-5">
+							{#if !isDraftFolder}<input
 								class="size-4 cursor-pointer accent-(--accent)"
 								type="checkbox"
 								checked={selectedIds.has(fileManagerEntryKey(row.original))}
 								aria-label={`Select ${row.original.name}`}
 								onchange={() => onToggleSelection(row.original)}
-							/>
+							/>{/if}
 						</td>
 						{#each row.getAllCells() as cell (cell.id)}
 							{#if cell.column.id !== 'dimensions' || showDimensions}
-							<td class="flex min-w-0 items-center whitespace-nowrap px-4 py-3 first:pl-5 last:pr-5">
-								{#if cell.column.id === 'name' && row.original.kind === 'folder'}
+							<td class="flex min-w-0 items-center whitespace-nowrap px-4 py-1.5 first:pl-5 last:pr-5">
+								{#if isDraftFolder && cell.column.id === 'name'}
+									<InlineNewFolder variant="list" bind:name={newFolderName} busy={creatingFolder} onCreate={onCreateFolder} onCancel={onCancelNewFolder} />
+								{:else if isDraftFolder}
+									<span></span>
+								{:else if cell.column.id === 'name' && row.original.kind === 'folder'}
 									<button class="inline-flex min-w-0 max-w-full cursor-pointer items-center gap-2 text-left font-medium text-(--text) hover:text-(--accent)" type="button" onclick={() => onOpenFolder(row.original.id)}>
 										<Folder class="size-4 shrink-0 text-(--accent)" aria-hidden="true" />
 										<span class="min-w-0 truncate" title={row.original.name}><FlexRender {cell} /></span>
 									</button>
 								{:else if cell.column.id === 'name' && isImageFile(row.original.name, row.original.type)}
-									<button class="inline-flex min-w-0 max-w-full cursor-zoom-in items-center gap-2 text-left font-medium" type="button" onclick={(event) => onPreviewImage(row.original, event.currentTarget)}>
+									<button class="inline-flex min-w-0 max-w-full cursor-pointer items-center gap-2 text-left font-medium hover:text-(--accent)" type="button" onclick={(event) => onPreviewImage(row.original, event.currentTarget)}>
 										<FileTypeIcon name={row.original.name} mime={row.original.type} className="size-4 shrink-0" />
 										<span class="min-w-0 truncate" title={row.original.name}><FlexRender {cell} /></span>
 									</button>

@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { Download, Trash2, X } from '@lucide/svelte';
+	import { Download, FolderOpen, FolderPlus, Trash2, X } from '@lucide/svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { createInfiniteQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { api } from '#lib/api.ts';
@@ -16,7 +16,7 @@
 	import FilesViewOptions from './FilesViewOptions.svelte';
 	import ImageViewer from './ImageViewer.svelte';
 	import { imageMimeType, isImageFile } from '#lib/utils/image.ts';
-	import { fileManagerEntryKey, type FileManagerEntry, type FilesView } from './types';
+	import { fileManagerEntryKey, NEW_FOLDER_DRAFT_ID, type FileManagerEntry, type FilesView } from './types';
 	import { useTransferManager } from '#lib/transfers/manager.ts';
 	import { decryptSearchFile, decryptSearchFolder } from '#lib/vault/search.ts';
 	import { waitUntilReady } from '#lib/vault/session.ts';
@@ -65,15 +65,20 @@
 	let deleteDialogOpen = $state(false);
 	let deleting = $state(false);
 	let deleteTargets = $state<FileManagerEntry[]>([]);
+	let newFolderActive = $state(false);
+	let newFolderParentId = $state<string | null>(null);
+	let newFolderName = $state('');
+	let creatingFolder = $state(false);
 	let propertiesEntry = $state<FileManagerEntry | null>(null);
-	let imagePreviewRequest = $state<{ fileId: string; trigger: HTMLElement } | null>(null);
+	let imagePreviewRequest = $state<{ fileId: string; trigger?: HTMLElement } | null>(null);
 	let videoPreviewEntry = $state<FileManagerEntry | null>(null);
 	let VideoViewer = $state<typeof import('./VideoViewer.svelte').default>();
 	let pdfPreviewEntry = $state<FileManagerEntry | null>(null);
 	let PdfViewer = $state<typeof import('./PdfViewer.svelte').default>();
 	let contextMenuEntry = $state<FileManagerEntry | null>(null);
+	let contextMenuOpen = $state(false);
 	let contextMenuPosition = $state({ x: 0, y: 0 });
-	let tileSize = $state(150);
+	let tileSize = $state(200);
 	let showType = $state(false);
 	let showSize = $state(true);
 	let showDimensions = $state(false);
@@ -123,6 +128,8 @@
 	].map((entry) => [fileManagerEntryKey(entry), entry] as const)).values()]);
 	const selectedEntries = $derived(loadedEntries.filter((entry) => selectedIds.has(fileManagerEntryKey(entry))));
 	const selectedFiles = $derived(selectedEntries.filter((entry) => entry.kind === 'file'));
+	const showNewFolder = $derived(newFolderActive && entriesReady && newFolderParentId === folderId);
+	const displayedRows = $derived(showNewFolder ? [{ id: NEW_FOLDER_DRAFT_ID, kind: 'folder' as const, name: '', type: 'Folder', size: null, updatedAt: '' }, ...rows] : rows);
 	// shortcut: PhotoSwipe navigates loaded rows; add paged image lookup if full-folder navigation is needed.
 	const imageEntries = $derived(rows.filter((entry) => entry.kind === 'file' && isImageFile(entry.name, entry.type)));
 	const allRowsSelected = $derived(loadedEntries.length > 0 && selectedEntries.length === loadedEntries.length);
@@ -239,6 +246,7 @@
 			rows = [];
 			breadcrumbs = [{ id: null, name: 'Root' }];
 			contextMenuEntry = null;
+			contextMenuOpen = false;
 			propertiesEntry = null;
 			entriesReady = false;
 			selectedIds.clear();
@@ -248,9 +256,11 @@
 			decryptGeneration += 1;
 			hydratedPageCount = 0;
 			hydrationQueue = Promise.resolve();
+			cancelNewFolder(true);
 			rows = [];
 			breadcrumbs = [{ id: null, name: 'Root' }];
 			contextMenuEntry = null;
+			contextMenuOpen = false;
 			propertiesEntry = null;
 			entriesReady = false;
 			return;
@@ -343,12 +353,72 @@
 		selectedIds.clear();
 	}
 
-	function showContextMenu(entry: FileManagerEntry, x: number, y: number): void {
-		contextMenuEntry = entry;
-		contextMenuPosition = { x, y };
+	function beginNewFolder(parentFolderId: string | null = folderId): void {
+		if (!$vaultUnlocked || creatingFolder) return;
+		newFolderParentId = parentFolderId;
+		newFolderName = '';
+		newFolderActive = true;
+		contextMenuEntry = null;
+		contextMenuOpen = false;
+		if (parentFolderId !== folderId) void goto(urlFor(parentFolderId));
 	}
 
-	function previewImage(entry: FileManagerEntry, trigger: HTMLElement): void {
+	function createFolderFromContext(entry: FileManagerEntry | null): void {
+		beginNewFolder(entry?.kind === 'folder' ? entry.id : folderId);
+	}
+
+	function cancelNewFolder(force = false): void {
+		if (creatingFolder && !force) return;
+		newFolderActive = false;
+		newFolderName = '';
+		newFolderParentId = null;
+	}
+
+	async function saveNewFolder(): Promise<void> {
+		const name = newFolderName.trim();
+		if (creatingFolder || !name || !showNewFolder || !$vaultUnlocked) return;
+		const parentFolderId = newFolderParentId;
+		const vaultId = data.user.id;
+		creatingFolder = true;
+		try {
+			const { createUploadFolder } = await import('#lib/uploads/upload-file.ts');
+			await createUploadFolder(name, parentFolderId, vaultId);
+			newFolderActive = false;
+			newFolderName = '';
+			newFolderParentId = null;
+			toast.success('Folder created.');
+			await queryClient.invalidateQueries({ queryKey: ['folder-entries', parentFolderId] });
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : 'Could not create folder.');
+		} finally {
+			creatingFolder = false;
+		}
+	}
+
+	function handleFileManagerKeydown(event: KeyboardEvent): void {
+		const target = event.target;
+		if (event.defaultPrevented || event.repeat || !(target instanceof HTMLElement)) return;
+		if (target.isContentEditable || target.closest('input:not([type="checkbox"]):not([type="radio"]), textarea, select, [contenteditable="true"]')) return;
+		if (contextMenuOpen || imagePreviewRequest || videoPreviewEntry || pdfPreviewEntry || document.querySelector('[data-modal-open="true"]')) return;
+		if ((event.ctrlKey || event.metaKey) && event.altKey && !event.shiftKey && event.key.toLowerCase() === 'n') {
+			event.preventDefault();
+			beginNewFolder(folderId);
+		}
+	}
+
+	function showContextMenu(entry: FileManagerEntry | null, x: number, y: number): void {
+		contextMenuEntry = entry;
+		contextMenuPosition = { x, y };
+		contextMenuOpen = true;
+	}
+
+	function showBackgroundContextMenu(event: MouseEvent): void {
+		if (!(event.target instanceof Element) || event.target.closest('[data-file-entry], button, input, a, [role="menu"]')) return;
+		event.preventDefault();
+		showContextMenu(null, event.clientX, event.clientY);
+	}
+
+	function previewImage(entry: FileManagerEntry, trigger?: HTMLElement): void {
 		imagePreviewRequest = { fileId: entry.id, trigger };
 	}
 
@@ -488,7 +558,9 @@
 			if (savedTileSize !== null) {
 				const parsedTileSize = Number(savedTileSize);
 				if (Number.isFinite(parsedTileSize)) {
-					tileSize = Math.min(260, Math.max(60, Math.round(parsedTileSize / 10) * 10));
+					const normalized = Math.min(260, Math.max(60, Math.round(parsedTileSize / 10) * 10));
+					// The old 150px default was persisted automatically; move that default to the roomier grid.
+					tileSize = normalized === 150 ? 200 : normalized;
 				}
 			}
 			showType = localStorage.getItem('arkive.files.show-type') === 'true';
@@ -520,48 +592,55 @@
 
 <div class="min-h-full bg-(--bg) py-6 pb-8">
 	<div class="mx-auto grid w-[min(1440px,calc(100%-40px))] gap-5 max-[960px]:w-[calc(100%-24px)]">
-		<header class="flex items-start justify-between gap-4 max-[640px]:flex-col">
+		<header class="flex items-center justify-between gap-4 rounded-md border border-(--border) bg-(--surface-raised) px-3 py-2.5 max-[640px]:flex-col max-[640px]:items-stretch">
 			<h1 class="sr-only">{breadcrumbs.at(-1)?.name ?? 'Files'}</h1>
-			<div class="flex min-w-0 flex-1 items-center gap-4 max-[640px]:w-full max-[640px]:flex-col max-[640px]:items-stretch">
+			<div class="flex min-w-0 flex-1 items-center gap-2 max-[640px]:w-full">
+				<FolderOpen class="size-4 shrink-0 text-(--muted)" aria-hidden="true" />
 				<div class="min-w-0 flex-1"><Breadcrumbs items={breadcrumbItems} label="Folder path" /></div>
-				<div class="flex shrink-0 items-center justify-between gap-3">
-					{#if (rows.length && viewMode === 'grid') || selectedEntries.length}
-						<div class="inline-flex flex-wrap items-center gap-1 rounded-md border border-(--border) bg-(--surface-raised) p-1">
-							{#if rows.length && viewMode === 'grid' && !allRowsSelected}
-								<button class="inline-flex h-8 cursor-pointer items-center rounded px-2 text-sm text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)" type="button" onclick={toggleAllLoaded}>
-									Select all
+			</div>
+			<div class="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2 max-[640px]:w-full max-[640px]:justify-between max-[640px]:pt-2">
+				{#if $vaultUnlocked}
+					<button class="inline-flex h-9 shrink-0 cursor-pointer items-center gap-2 rounded-md border border-(--border) bg-(--surface) px-3 text-sm text-(--text) hover:bg-(--surface-highest) disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={newFolderActive || creatingFolder} aria-keyshortcuts="Control+Alt+n Meta+Alt+n" onclick={() => beginNewFolder(folderId)}>
+						<FolderPlus class="size-4" aria-hidden="true" />
+						<span>New folder</span>
+					</button>
+				{/if}
+				{#if (rows.length && viewMode === 'grid') || selectedEntries.length}
+					<div class="inline-flex max-w-full flex-wrap items-center gap-1 rounded-md border border-(--border) bg-(--surface) p-1">
+						{#if rows.length && viewMode === 'grid' && !allRowsSelected}
+							<button class="inline-flex h-8 cursor-pointer items-center rounded px-2 text-sm text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)" type="button" onclick={toggleAllLoaded}>
+								Select all
+							</button>
+						{/if}
+						{#if selectedEntries.length}
+							<span class="px-2 text-sm text-(--muted)">{selectedEntries.length} selected</span>
+							{#if selectedFiles.length}
+								<button class="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded px-2 text-sm text-(--text) hover:bg-(--surface-highest)" type="button" aria-label={`Download ${selectedFiles.length} selected ${selectedFiles.length === 1 ? 'file' : 'files'}`} onclick={downloadSelected}>
+									<Download class="size-4" aria-hidden="true" />
+									<span>Download</span>
 								</button>
 							{/if}
-							{#if selectedEntries.length}
-								<span class="px-2 text-sm text-(--muted)">{selectedEntries.length} selected</span>
-								{#if selectedFiles.length}
-									<button class="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded px-2 text-sm text-(--text) hover:bg-(--surface-highest)" type="button" aria-label={`Download ${selectedFiles.length} selected ${selectedFiles.length === 1 ? 'file' : 'files'}`} onclick={downloadSelected}>
-										<Download class="size-4" aria-hidden="true" />
-										<span>Download</span>
-									</button>
-								{/if}
-								<button class="inline-flex size-8 cursor-pointer items-center justify-center rounded text-red-400 hover:bg-red-500/10 hover:text-red-300" type="button" aria-label="Delete selected items" onclick={() => requestDelete()}>
-									<Trash2 class="size-4" aria-hidden="true" />
-								</button>
-								<button class="inline-flex size-8 cursor-pointer items-center justify-center rounded text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)" type="button" aria-label="Clear selection" onclick={clearSelection}>
-									<X class="size-4" aria-hidden="true" />
-								</button>
-							{/if}
-						</div>
-					{/if}
-					<FilesViewOptions
-						view={viewMode}
-						{tileSize}
-						{showType}
-						{showSize}
-						{showDimensions}
-						onViewChange={changeView}
-						onTileSizeChange={(size) => tileSize = size}
-						onShowTypeChange={(show) => showType = show}
-						onShowSizeChange={(show) => showSize = show}
-						onShowDimensionsChange={(show) => showDimensions = show}
-					/>
-				</div>
+							<button class="inline-flex size-8 cursor-pointer items-center justify-center rounded text-red-400 hover:bg-red-500/10 hover:text-red-300" type="button" aria-label="Delete selected items" onclick={() => requestDelete()}>
+								<Trash2 class="size-4" aria-hidden="true" />
+							</button>
+							<button class="inline-flex size-8 cursor-pointer items-center justify-center rounded text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)" type="button" aria-label="Clear selection" onclick={clearSelection}>
+								<X class="size-4" aria-hidden="true" />
+							</button>
+						{/if}
+					</div>
+				{/if}
+				<FilesViewOptions
+					view={viewMode}
+					{tileSize}
+					{showType}
+					{showSize}
+					{showDimensions}
+					onViewChange={changeView}
+					onTileSizeChange={(size) => tileSize = size}
+					onShowTypeChange={(show) => showType = show}
+					onShowSizeChange={(show) => showSize = show}
+					onShowDimensionsChange={(show) => showDimensions = show}
+				/>
 			</div>
 		</header>
 		{#if !$vaultUnlocked}
@@ -577,18 +656,22 @@
 				{entriesQuery.error instanceof Error ? entriesQuery.error.message : 'Could not load files.'}
 			</section>
 		{:else if entriesQuery.data}
-			<section class="overflow-hidden rounded-md border border-(--border) bg-(--surface-raised)" aria-label="Files and folders">
+			<section class="overflow-hidden rounded-md border border-(--border) bg-(--surface-raised)" aria-label="Files and folders" oncontextmenu={showBackgroundContextMenu}>
 				{#if !entriesReady}
 					<div class="px-5 py-8 text-(--muted)" role="status">Decrypting file details…</div>
 				{:else if viewMode === 'grid'}
 					<FilesGridView
-						{rows}
+						rows={displayedRows}
 						{focusFileId}
 						{selectedIds}
 						{tileSize}
 						{showType}
 						{showSize}
 						{showDimensions}
+						bind:newFolderName
+						{creatingFolder}
+						onCreateFolder={saveNewFolder}
+						onCancelNewFolder={cancelNewFolder}
 						onToggleSelection={toggleSelection}
 						onOpenFolder={openFolder}
 						onShowContextMenu={showContextMenu}
@@ -598,10 +681,14 @@
 					/>
 				{:else}
 					<FilesListView
-						{rows}
+						rows={displayedRows}
 						{focusFileId}
 						{selectedIds}
 						{showDimensions}
+						bind:newFolderName
+						{creatingFolder}
+						onCreateFolder={saveNewFolder}
+						onCancelNewFolder={cancelNewFolder}
 						selectedCount={selectedEntries.length}
 						loadedCount={loadedEntries.length}
 						onToggleSelection={toggleSelection}
@@ -633,6 +720,8 @@
 	</div>
 </div>
 
+<svelte:window onkeydown={handleFileManagerKeydown} />
+
 <ImageViewer
 	entries={imageEntries}
 	request={imagePreviewRequest}
@@ -649,15 +738,19 @@
 {/if}
 
 <FileEntryContextMenu
+	open={contextMenuOpen}
 	entry={contextMenuEntry}
 	x={contextMenuPosition.x}
 	y={contextMenuPosition.y}
-	onClose={() => contextMenuEntry = null}
+	onClose={() => { contextMenuEntry = null; contextMenuOpen = false; }}
 	onOpenFolder={openFolder}
 	onDownload={downloadEntry}
+	onPreviewImage={previewImage}
+	onPreviewVideo={previewVideo}
 	onPreviewPdf={previewPdf}
 	onProperties={(entry) => propertiesEntry = entry}
 	onDelete={requestDelete}
+	onCreateFolder={createFolderFromContext}
 />
 
 <FilePropertiesModal entry={propertiesEntry} location={currentLocation} onClose={() => propertiesEntry = null} />

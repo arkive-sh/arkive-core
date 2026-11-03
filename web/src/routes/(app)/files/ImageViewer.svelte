@@ -8,7 +8,7 @@
 	import { isHeicImage } from '#lib/utils/image.ts';
 	import { decodeHeicImage } from '#lib/utils/heic.ts';
 
-	type PreviewRequest = { fileId: string; trigger: HTMLElement };
+	type PreviewRequest = { fileId: string; trigger?: HTMLElement };
 	type Props = {
 		entries: FileManagerEntry[];
 		request: PreviewRequest | null;
@@ -252,7 +252,7 @@
 					onClose();
 					return;
 				}
-				const thumbnail = pending.trigger.querySelector('img') ?? pending.trigger;
+				const thumbnail = pending.trigger?.querySelector('img') ?? pending.trigger;
 				const dataSource = availableEntries.map((entry) => {
 					const thumbnailWidth = entry.thumbnail?.thumbnailWidth ?? 0;
 					const thumbnailHeight = entry.thumbnail?.thumbnailHeight ?? 0;
@@ -272,8 +272,10 @@
 						msrc: entry.id === pending.fileId && thumbnail instanceof HTMLImageElement ? thumbnail.currentSrc : undefined
 					};
 				});
-				const bounds = thumbnail.getBoundingClientRect();
-				instance.loadAndOpen(index, dataSource, { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 });
+				const bounds = thumbnail?.getBoundingClientRect();
+				instance.loadAndOpen(index, dataSource, bounds
+					? { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 }
+					: { x: window.innerWidth / 2, y: window.innerHeight / 2 });
 			} catch (error) {
 				onError(error instanceof Error ? error.message : 'Could not open image preview.');
 				onClose();

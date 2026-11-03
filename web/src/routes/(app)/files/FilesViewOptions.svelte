@@ -93,19 +93,17 @@
 </script>
 
 <div class="relative shrink-0" bind:this={root}>
-	<Tooltip label="View options" side="left">
-		<button
-			bind:this={trigger}
-			class={`inline-flex size-9 cursor-pointer items-center justify-center rounded-md border p-1 transition-colors ${open ? 'border-(--border) bg-(--surface-highest) text-(--text)' : 'border-(--border) bg-(--surface-raised) text-(--muted) hover:text-(--text)'}`}
-			type="button"
-			aria-label="View options"
-			aria-expanded={open}
-			aria-controls="files-view-options"
-			onclick={() => open = !open}
-		>
-			<SlidersHorizontal class="size-4.5" aria-hidden="true" />
-		</button>
-	</Tooltip>
+	<button
+		bind:this={trigger}
+		class={`inline-flex size-9 cursor-pointer items-center justify-center rounded-md border p-1 transition-colors ${open ? 'border-(--border) bg-(--surface-highest) text-(--text)' : 'border-(--border) bg-(--surface-raised) text-(--muted) hover:text-(--text)'}`}
+		type="button"
+		aria-label="View options"
+		aria-expanded={open}
+		aria-controls="files-view-options"
+		onclick={() => open = !open}
+	>
+		<SlidersHorizontal class="size-4.5" aria-hidden="true" />
+	</button>
 	{#if open}
 		<section
 			bind:this={panel}
