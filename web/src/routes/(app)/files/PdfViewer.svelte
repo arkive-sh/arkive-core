@@ -2,6 +2,7 @@
 	import { asset } from '$app/paths';
 	import { onMount } from 'svelte';
 	import { ChevronLeft, ChevronRight, Maximize2, Minimize2, Search, X, ZoomIn, ZoomOut } from '@lucide/svelte';
+	import ExternalLinkWarning from './ExternalLinkWarning.svelte';
 	import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 	import 'pdfjs-dist/web/pdf_viewer.css';
 	import { DecryptedFileReader } from '#lib/vault/read-file.ts';
@@ -27,6 +28,7 @@
 	let matchCount = $state(0);
 	let currentMatch = $state(0);
 	let isFullscreen = $state(false);
+	let externalLink = $state('');
 	let pdfViewer = $state<PDFViewerInstance>();
 	let eventBus: EventBus | undefined;
 	let findController: PDFFindController | undefined;
@@ -102,6 +104,30 @@
 		else void overlay.requestFullscreen().catch(() => {});
 	}
 
+	function confirmExternalLink(event: MouseEvent): void {
+		if (!(event.target instanceof Element)) return;
+		const link = event.target.closest<HTMLAnchorElement>('.annotationLayer a[href]');
+		if (!link || link.closest('[data-internal-link]')) return;
+
+		try {
+			const destination = new URL(link.href);
+			if (!['http:', 'https:', 'ftp:', 'mailto:', 'tel:'].includes(destination.protocol)) return;
+			destination.username = '';
+			destination.password = '';
+			event.preventDefault();
+			event.stopPropagation();
+			externalLink = destination.href;
+		} catch {
+			// Ignore malformed destinations from untrusted PDFs.
+		}
+	}
+
+	function openExternalLink(): void {
+		const destination = externalLink;
+		externalLink = '';
+		if (destination) window.open(destination, '_blank', 'noopener,noreferrer');
+	}
+
 	onMount(() => {
 		const controller = new AbortController();
 		const reader = new DecryptedFileReader(entry.id, controller.signal);
@@ -111,6 +137,7 @@
 		overlay?.focus();
 		const updateFullscreen = () => isFullscreen = document.fullscreenElement === overlay;
 		document.addEventListener('fullscreenchange', updateFullscreen);
+		scrollContainer?.addEventListener('click', confirmExternalLink, { capture: true, signal: controller.signal });
 
 		async function openPdf(): Promise<void> {
 			try {
@@ -129,17 +156,20 @@
 				const transportModule = await import('#lib/pdf/range-transport.ts');
 				pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 				eventBus = new viewerModule.EventBus();
-				linkService = new viewerModule.PDFLinkService({ eventBus });
-				linkService.externalLinkEnabled = false;
+				linkService = new viewerModule.PDFLinkService({
+					eventBus,
+					externalLinkTarget: viewerModule.LinkTarget.BLANK,
+					externalLinkRel: 'noopener noreferrer nofollow'
+				});
 				findController = new viewerModule.PDFFindController({ linkService, eventBus });
-				// Treat PDF content as untrusted: no annotation layer, forms, or action scripting manager.
+				// Render safe link annotations while keeping interactive forms and PDF scripting disabled.
 				pdfViewer = new viewerModule.PDFViewer({
 					container: scrollContainer!,
 					viewer: pageElement!,
 					eventBus,
 					linkService,
 					findController,
-					annotationMode: pdfjs.AnnotationMode.DISABLE,
+					annotationMode: pdfjs.AnnotationMode.ENABLE,
 					maxCanvasPixels: 8 * 1024 * 1024,
 					enableDetailCanvas: false,
 					imagesRightClickMinSize: -1,
@@ -247,6 +277,7 @@
 		{#if status}<div class="absolute inset-0 grid place-items-center bg-(--bg) text-(--muted)" role="status">{status}</div>{/if}
 		{#if error}<div class="absolute inset-0 grid place-items-center bg-(--bg) p-6 text-center text-red-400" role="alert">{error}</div>{/if}
 	</div>
+	<ExternalLinkWarning url={externalLink} onClose={() => externalLink = ''} onContinue={openExternalLink} />
 </div>
 
 <style>
