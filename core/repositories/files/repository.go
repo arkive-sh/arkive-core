@@ -484,18 +484,39 @@ func (r *Repository) DeleteFileForUser(ctx context.Context, db database.PgExecut
 	return tag.RowsAffected() > 0, nil
 }
 
-func (r *Repository) ListDeletedPendingPurge(ctx context.Context, db database.PgExecutor, limit int) ([]models.File, error) {
+func (r *Repository) ListDeletedPendingPurge(ctx context.Context, db database.PgExecutor, cutoff time.Time, limit int) ([]models.File, error) {
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := db.Query(ctx, `SELECT
-		id,
-		user_id
-	FROM files
-	WHERE deleted_at IS NOT NULL
-		AND purged_at IS NULL
-	ORDER BY deleted_at ASC, id ASC
-	LIMIT $1`, limit)
+	rows, err := db.Query(ctx, `WITH RECURSIVE expired_folders(id, user_id) AS (
+		SELECT id, user_id
+		FROM folders
+		WHERE deleted_at IS NOT NULL
+			AND purged_at IS NULL
+			AND (deleted_at <= $1 OR purge_requested_at IS NOT NULL)
+		UNION
+		SELECT child.id, child.user_id
+		FROM folders child
+		JOIN expired_folders parent ON parent.id = child.parent_folder_id AND parent.user_id = child.user_id
+		WHERE child.deleted_at IS NOT NULL AND child.purged_at IS NULL
+	), eligible_files(id) AS (
+		SELECT id FROM files
+		WHERE upload_status = 'complete'
+			AND deleted_at IS NOT NULL
+			AND purged_at IS NULL
+			AND (deleted_at <= $1 OR purge_requested_at IS NOT NULL)
+		UNION
+		SELECT file.id
+		FROM files file
+		JOIN expired_folders folder ON folder.id = file.folder_id AND folder.user_id = file.user_id
+		WHERE file.upload_status = 'complete' AND file.deleted_at IS NOT NULL AND file.purged_at IS NULL
+	)
+	SELECT file.id, file.user_id, file.actual_encrypted_size, file.thumbnail_size_bytes
+	FROM files file
+	JOIN eligible_files eligible ON eligible.id = file.id
+	ORDER BY file.deleted_at ASC, file.id ASC
+	LIMIT $2
+	FOR UPDATE OF file SKIP LOCKED`, cutoff, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -507,6 +528,8 @@ func (r *Repository) ListDeletedPendingPurge(ctx context.Context, db database.Pg
 		if err := rows.Scan(
 			&file.ID,
 			&file.UserID,
+			&file.ActualEncryptedSize,
+			&file.ThumbnailSizeBytes,
 		); err != nil {
 			return nil, err
 		}
@@ -518,21 +541,35 @@ func (r *Repository) ListDeletedPendingPurge(ctx context.Context, db database.Pg
 	return files, nil
 }
 
-func (r *Repository) MarkFilesPurged(ctx context.Context, db database.PgExecutor, fileIDs []string) (int64, error) {
+func (r *Repository) MarkFilesPurged(ctx context.Context, db database.PgExecutor, fileIDs []string) ([]models.File, error) {
 	if len(fileIDs) == 0 {
-		return 0, nil
+		return nil, nil
 	}
-	query := `UPDATE files
+	rows, err := db.Query(ctx, `UPDATE files
 	SET
 		purged_at = now(),
+		purge_requested_at = NULL,
 		updated_at = now()
 	WHERE
 		id = ANY($1::uuid[])
 		AND deleted_at IS NOT NULL
-		AND purged_at IS NULL`
-	tag, err := db.Exec(ctx, query, fileIDs)
+		AND purged_at IS NULL
+	RETURNING id, user_id, actual_encrypted_size, thumbnail_size_bytes`, fileIDs)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return tag.RowsAffected(), nil
+	defer rows.Close()
+
+	files := make([]models.File, 0, len(fileIDs))
+	for rows.Next() {
+		var file models.File
+		if err := rows.Scan(&file.ID, &file.UserID, &file.ActualEncryptedSize, &file.ThumbnailSizeBytes); err != nil {
+			return nil, err
+		}
+		files = append(files, file)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return files, nil
 }

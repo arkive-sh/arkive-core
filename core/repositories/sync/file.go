@@ -58,7 +58,7 @@ func (r *Repository) ListEntriesPage(ctx context.Context, db database.PgExecutor
 			encrypted_name,
 			updated_at,
 			deleted_at,
-			NULL::timestamptz AS purged_at
+			purged_at
 		FROM folders
 		WHERE user_id = $1
 			AND (

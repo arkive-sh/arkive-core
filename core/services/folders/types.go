@@ -89,3 +89,37 @@ type DeleteEntriesResult struct {
 	DeletedFiles   int
 	DeletedFolders int
 }
+
+type ListTrashInput struct {
+	UserID string
+	Cursor string
+	Limit  int
+}
+
+type ListTrashResult struct {
+	Entries    []models.TrashEntry
+	NextCursor *string
+	HasMore    bool
+}
+
+type RestoreTrashInput struct {
+	UserID    string
+	FileIDs   []string
+	FolderIDs []string
+}
+
+type RestoreTrashResult struct {
+	RestoredFiles   int `json:"restoredFiles"`
+	RestoredFolders int `json:"restoredFolders"`
+}
+
+type PermanentlyDeleteTrashInput struct {
+	UserID    string
+	FileIDs   []string
+	FolderIDs []string
+}
+
+type PermanentlyDeleteTrashResult struct {
+	QueuedFiles   int `json:"queuedFiles"`
+	QueuedFolders int `json:"queuedFolders"`
+}

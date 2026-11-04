@@ -14,6 +14,7 @@ import (
 	"arkive/core/models"
 	filerepo "arkive/core/repositories/files"
 	foldersrepo "arkive/core/repositories/folders"
+	trashrepo "arkive/core/repositories/trash"
 	filessvc "arkive/core/services/files"
 	"arkive/pkg/validation"
 )
@@ -29,6 +30,7 @@ type Service struct {
 	db         database.PgPool
 	folderRepo *foldersrepo.Repository
 	fileRepo   *filerepo.Repository
+	trashRepo  *trashrepo.Repository
 	filesSvc   *filessvc.Service
 }
 
@@ -37,6 +39,7 @@ func NewService(db database.PgPool, folderRepo *foldersrepo.Repository, fileRepo
 		db:         db,
 		folderRepo: folderRepo,
 		fileRepo:   fileRepo,
+		trashRepo:  trashrepo.New(),
 		filesSvc:   filesSvc,
 	}
 }

@@ -75,6 +75,21 @@ func (p *Provider) DeleteObject(ctx context.Context, key string) error {
 	return client.DeleteObject(ctx, key)
 }
 
+func (p *Provider) DeleteObjects(ctx context.Context, keys []string) (map[string]error, error) {
+	settings, err := p.load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if settings.Provider == "local" {
+		return p.local.DeleteObjects(ctx, keys)
+	}
+	client, err := p.s3(ctx, settings)
+	if err != nil {
+		return nil, err
+	}
+	return client.DeleteObjects(ctx, keys)
+}
+
 func (p *Provider) ObjectSize(ctx context.Context, key string) (int64, error) {
 	settings, err := p.load(ctx)
 	if err != nil {

@@ -68,7 +68,8 @@ func main() {
 			ShareDownloadExpire: 30 * time.Minute,
 		},
 	)
-	deletedFileCleanupCron, err := jobs.StartDeletedFileCleanup(filesService)
+	folderService := folderssvc.NewService(db, folderRepo, fileRepo, filesService)
+	deletedFileCleanupCron, err := jobs.StartDeletedFileCleanup(filesService, folderService)
 	if err != nil {
 		log.Fatalf("deleted file cleanup cron failed: %v", err)
 	}
@@ -93,8 +94,6 @@ func main() {
 		log.Fatalf("stale upload cleanup cron failed: %v", err)
 	}
 	defer staleUploadCleanupCron.Stop()
-	folderService := folderssvc.NewService(db, folderRepo, fileRepo, filesService)
-
 	if strings.EqualFold(cfg.Env, "dev") {
 		gin.SetMode(gin.DebugMode)
 	} else {
