@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { Key, Lock, Shield } from '@lucide/svelte';
 	import { loginAndUnlock } from '#lib/auth.ts';
@@ -27,7 +28,7 @@
 			queryClient.clear();
 			if (password === null) throw new Error('Password is unavailable.');
 			await loginAndUnlock(email, password);
-			await goto('/', { replace: true });
+			await goto(resolve('/(app)'), { replace: true });
 		} catch (cause) {
 			generalError = cause instanceof Error ? cause.message : 'Unlock failed. Try again.';
 		} finally {
@@ -109,8 +110,9 @@
 					<p
 						class="m-0 rounded bg-[rgba(107,209,230,0.12)] px-3.5 py-3 text-[13px] leading-4.5 text-(--accent-cool)"
 					>
-						<a href="/forgot-password" class="underline decoration-current underline-offset-2"
-							>Forgot password?</a
+						<a
+							href={resolve('/forgot-password')}
+							class="underline decoration-current underline-offset-2">Forgot password?</a
 						>
 					</p>
 				</form>

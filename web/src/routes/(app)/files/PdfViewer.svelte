@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { asset } from '$app/paths';
+	import { SvelteURL } from 'svelte/reactivity';
 	import { onMount } from 'svelte';
 	import {
 		ChevronLeft,
@@ -124,7 +125,7 @@
 		if (!link || link.closest('[data-internal-link]')) return;
 
 		try {
-			const destination = new URL(link.href);
+			const destination = new SvelteURL(link.href);
 
 			if (!['http:', 'https:', 'ftp:', 'mailto:', 'tel:'].includes(destination.protocol)) return;
 			destination.username = '';

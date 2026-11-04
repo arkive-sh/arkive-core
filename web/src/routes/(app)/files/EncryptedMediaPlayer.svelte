@@ -20,6 +20,7 @@
 		const element = media;
 
 		if (!element) return;
+		const player = element as HTMLMediaElement;
 		const controller = new AbortController();
 		const reader = new DecryptedFileReader(fileId, controller.signal);
 		let file: Awaited<ReturnType<typeof reader.load>> | undefined;
@@ -32,15 +33,15 @@
 			stream = nextStream;
 			if (resumeTime > 0) {
 				const restoreTime = () => {
-					element.removeEventListener('loadedmetadata', restoreTime);
+					player.removeEventListener('loadedmetadata', restoreTime);
 					try {
-						element.currentTime = resumeTime;
+						player.currentTime = resumeTime;
 					} catch {}
 				};
-				element.addEventListener('loadedmetadata', restoreTime);
+				player.addEventListener('loadedmetadata', restoreTime);
 			}
-			element.src = nextStream.url;
-			element.load();
+			player.src = nextStream.url;
+			player.load();
 		}
 
 		async function recoverPlayback(): Promise<void> {
@@ -53,8 +54,8 @@
 			recovering = true;
 			recoveryAttempts += 1;
 			status = 'Reconnecting…';
-			const resumeTime = element.currentTime;
-			const wasPlaying = !element.paused;
+			const resumeTime = player.currentTime;
+			const wasPlaying = !player.paused;
 			const previousStream = stream;
 
 			try {
@@ -73,7 +74,7 @@
 				previousStream?.close();
 				errorMessage = '';
 				attach(nextStream, resumeTime);
-				if (wasPlaying) void element.play().catch(() => {});
+				if (wasPlaying) void player.play().catch(() => {});
 			} catch (error) {
 				status = '';
 				errorMessage =
@@ -90,8 +91,8 @@
 		const onPlaybackResumed = () => {
 			recoveryAttempts = 0;
 		};
-		element.addEventListener('error', onMediaError);
-		element.addEventListener('playing', onPlaybackResumed);
+		player.addEventListener('error', onMediaError);
+		player.addEventListener('playing', onPlaybackResumed);
 
 		void (async () => {
 			try {
@@ -128,12 +129,12 @@
 		return () => {
 			disposed = true;
 			controller.abort();
-			element.removeEventListener('error', onMediaError);
-			element.removeEventListener('playing', onPlaybackResumed);
+			player.removeEventListener('error', onMediaError);
+			player.removeEventListener('playing', onPlaybackResumed);
 			stream?.close();
-			element.pause();
-			element.removeAttribute('src');
-			element.load();
+			player.pause();
+			player.removeAttribute('src');
+			player.load();
 			void reader.dispose();
 		};
 	});

@@ -131,7 +131,6 @@ export async function uploadFile(
 	folderId: string | null = null,
 	partConcurrency = 3,
 ): Promise<void> {
-	if (!file.size) throw new Error('Empty files cannot be uploaded.');
 	if (!(await waitUntilReady()).unlocked)
 		throw new Error('Unlock the vault before uploading files.');
 	checkAborted(signal);
@@ -141,7 +140,7 @@ export async function uploadFile(
 
 	if (!Number.isSafeInteger(encryptedSize)) throw new Error('File is too large to upload.');
 	const chunksPerPart = Math.floor(UPLOAD_PART_SIZE / FILE_CHUNK_SIZE);
-	const uploadPartCount = Math.ceil(totalChunks / chunksPerPart);
+	const uploadPartCount = Math.max(1, Math.ceil(totalChunks / chunksPerPart));
 	const uploadToken = crypto.randomUUID();
 	const { data: started } = await api.post<UploadStart>(
 		'/api/uploads/start',
@@ -153,7 +152,7 @@ export async function uploadFile(
 			uploadPartCount,
 			encryptionVersion: ENCRYPTION_VERSION,
 			folderId,
-			singlePart: totalChunks === 1,
+			singlePart: totalChunks <= 1,
 		},
 		{ signal },
 	);
@@ -180,7 +179,7 @@ export async function uploadFile(
 		signal?.addEventListener('abort', abortParts, { once: true });
 		if (signal?.aborted) abortParts();
 		const thumbnailPromise =
-			file instanceof File
+			file instanceof File && file.size > 0
 				? createAndUploadThumbnail({
 						file,
 						uploadToken,

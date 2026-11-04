@@ -1,6 +1,7 @@
 <script lang="ts">
 	import axios from 'axios';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { api, type APIErrorResponse } from '#lib/api.ts';
 	import Button from '#lib/components/Button.svelte';
 	import Card from '#lib/components/Card.svelte';
@@ -26,7 +27,7 @@
 
 			if (!token)
 				throw new Error('No recovery link was generated. Check that a recovery key was set up.');
-			await goto(`/reset-password?token=${encodeURIComponent(token)}`);
+			await goto(resolve(`/reset-password?token=${encodeURIComponent(token)}`));
 		} catch (cause) {
 			error = axios.isAxiosError<APIErrorResponse>(cause)
 				? (cause.response?.data?.error?.message ?? cause.message)
@@ -73,7 +74,9 @@
 					busyText="Checking account..."
 					class="w-full!"
 				/>
-				<a href="/login" class="text-center text-sm text-(--muted) underline">Back to login</a>
+				<a href={resolve('/login')} class="text-center text-sm text-(--muted) underline"
+					>Back to login</a
+				>
 			</form>
 		</Card>
 	</div>

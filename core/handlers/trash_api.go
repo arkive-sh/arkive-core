@@ -21,8 +21,9 @@ type trashEntriesResponse struct {
 }
 
 type trashSelectionRequest struct {
-	FileIDs   []string `json:"fileIds"`
-	FolderIDs []string `json:"folderIds"`
+	FileIDs            []string `json:"fileIds"`
+	FolderIDs          []string `json:"folderIds"`
+	ContainerFolderIDs []string `json:"containerFolderIds"`
 }
 
 func APIListTrash(folderService *folderssvc.Service) gin.HandlerFunc {
@@ -42,9 +43,10 @@ func APIListTrash(folderService *folderssvc.Service) gin.HandlerFunc {
 			limit = parsed
 		}
 		result, err := folderService.ListTrash(c.Request.Context(), folderssvc.ListTrashInput{
-			UserID: userID.(string),
-			Cursor: c.Query("cursor"),
-			Limit:  limit,
+			UserID:         userID.(string),
+			ParentFolderID: c.Query("parentFolderId"),
+			Cursor:         c.Query("cursor"),
+			Limit:          limit,
 		})
 		if err != nil {
 			if errors.Is(err, folderssvc.ErrInvalidInput) {
@@ -76,9 +78,10 @@ func APIRestoreTrash(folderService *folderssvc.Service) gin.HandlerFunc {
 			return
 		}
 		result, err := folderService.RestoreTrash(c.Request.Context(), folderssvc.RestoreTrashInput{
-			UserID:    userID.(string),
-			FileIDs:   req.FileIDs,
-			FolderIDs: req.FolderIDs,
+			UserID:             userID.(string),
+			FileIDs:            req.FileIDs,
+			FolderIDs:          req.FolderIDs,
+			ContainerFolderIDs: req.ContainerFolderIDs,
 		})
 		if err != nil {
 			switch {

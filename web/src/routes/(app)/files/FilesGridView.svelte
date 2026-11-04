@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onDestroy, tick } from 'svelte';
-	import { SvelteMap } from 'svelte/reactivity';
+	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { Folder } from '@lucide/svelte';
 	import { createWindowVirtualizer } from '@tanstack/svelte-virtual';
 	import { get } from 'svelte/store';
@@ -23,6 +23,8 @@
 		rows,
 		focusFileId,
 		selectedIds,
+		selectionEnabled = true,
+		previewEnabled = true,
 		tileSize,
 		showType,
 		showSize,
@@ -42,6 +44,8 @@
 		rows: FileManagerEntry[];
 		focusFileId: string | null;
 		selectedIds: ReadonlySet<string>;
+		selectionEnabled?: boolean;
+		previewEnabled?: boolean;
 		tileSize: number;
 		showType: boolean;
 		showSize: boolean;
@@ -70,12 +74,12 @@
 	const checkboxSize = $derived(Math.min(16, Math.max(12, Math.round(tileSize * 0.1))));
 	const checkboxInset = $derived(Math.min(8, Math.max(3, Math.round(tileSize * 0.05))));
 	const thumbnails = new SvelteMap<string, string>();
-	const objectUrls = new Map<string, string>();
-	const pendingIds = new Set<string>();
-	const attemptedIds = new Set<string>();
+	const objectUrls = new SvelteMap<string, string>();
+	const pendingIds = new SvelteSet<string>();
+	const attemptedIds = new SvelteSet<string>();
 	const controller = new AbortController();
 	let measuredLayout = '';
-	let visibleIds = new Set<string>();
+	let visibleIds = new SvelteSet<string>();
 	let queue: FileManagerEntry[] = [];
 	let activeLoads = 0;
 	const rowVirtualizer = createWindowVirtualizer({
@@ -93,7 +97,7 @@
 				2
 			);
 		},
-		gap: cardGap,
+		gap: 0,
 		overscan: 2,
 		getItemKey: (index) => {
 			const entry = rows[index * columnCount];
@@ -182,6 +186,7 @@
 
 	function entryActionLabel(entry: FileManagerEntry): string | undefined {
 		if (entry.kind === 'folder') return `Open folder ${entry.name}`;
+		if (!previewEnabled) return;
 		if (isImageFile(entry.name, entry.type) || isPdfFile(entry)) return `Preview ${entry.name}`;
 		if (isMediaMimeType(entry.type)) return `Play ${entry.name}`;
 		if (isTextFile(entry)) return `Open ${entry.name}`;
@@ -189,6 +194,7 @@
 
 	function openEntry(entry: FileManagerEntry, trigger: HTMLElement): void {
 		if (entry.kind === 'folder') onOpenFolder(entry.id);
+		else if (!previewEnabled) return;
 		else if (isImageFile(entry.name, entry.type)) onPreviewImage(entry, trigger);
 		else if (isMediaMimeType(entry.type)) onPreviewMedia(entry);
 		else if (isPdfFile(entry)) onPreviewPdf(entry);
@@ -237,7 +243,7 @@
 	}
 
 	$effect(() => {
-		visibleIds = new Set(renderedEntries.map((entry) => entry.id));
+		visibleIds = new SvelteSet(renderedEntries.map((entry) => entry.id));
 		for (const id of attemptedIds) {
 			if (!visibleIds.has(id)) attemptedIds.delete(id);
 		}
@@ -338,14 +344,14 @@
 										onclick={(event) => openEntry(entry, event.currentTarget)}
 									></button>
 								{/if}
-								<input
-									class="absolute z-10 cursor-pointer"
-									style={`top: ${checkboxInset}px; right: ${checkboxInset}px; width: ${checkboxSize}px; height: ${checkboxSize}px`}
-									type="checkbox"
-									checked={selectedIds.has(fileManagerEntryKey(entry))}
-									aria-label={`Select ${entry.name}`}
-									onchange={() => onToggleSelection(entry)}
-								/>
+								{#if selectionEnabled && entry.selectable !== false}<input
+										class="absolute z-10 cursor-pointer"
+										style={`top: ${checkboxInset}px; right: ${checkboxInset}px; width: ${checkboxSize}px; height: ${checkboxSize}px`}
+										type="checkbox"
+										checked={selectedIds.has(fileManagerEntryKey(entry))}
+										aria-label={`Select ${entry.name}`}
+										onchange={() => onToggleSelection(entry)}
+									/>{/if}
 								{#if entry.kind === 'file' && isImageFile(entry.name, entry.type)}
 									<div
 										class="grid aspect-4/3 w-full place-items-center overflow-hidden bg-(--surface-highest)"

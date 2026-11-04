@@ -211,7 +211,7 @@ func (c *Client) ServeUpload(w http.ResponseWriter, r *http.Request, token strin
 		http.NotFound(w, r)
 		return
 	}
-	if entry.ContentLength <= 0 || r.ContentLength != entry.ContentLength {
+	if entry.ContentLength < 0 || r.ContentLength != entry.ContentLength {
 		http.Error(w, "invalid upload length", http.StatusBadRequest)
 		return
 	}

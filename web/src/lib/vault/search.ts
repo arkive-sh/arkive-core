@@ -6,7 +6,6 @@ import type {
 	SearchPreview,
 	VaultBytes,
 	VaultMetadata,
-	VaultWorkerCalls,
 } from './types';
 import { callVaultWorker } from './worker-client';
 

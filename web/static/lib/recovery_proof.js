@@ -46,8 +46,8 @@ async function derivePrivateKey(recoveryKey, userID, extractable) {
 	try {
 		try {
 			return await subtle.importKey('pkcs8', pkcs8, { name: 'Ed25519' }, extractable, ['sign']);
-		} catch (_) {
-			throw new Error('This browser does not support Ed25519 recovery proofs');
+		} catch (cause) {
+			throw new Error('This browser does not support Ed25519 recovery proofs', { cause });
 		}
 	} finally {
 		seed.fill(0);

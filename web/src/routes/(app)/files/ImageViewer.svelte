@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
+	import { SvelteMap } from 'svelte/reactivity';
 	import 'photoswipe/style.css';
 	import type { Content } from 'photoswipe/lightbox';
 	import { readDecryptedThumbnail } from '#lib/vault/thumbnail.ts';
@@ -29,7 +30,7 @@
 	let openGeneration = 0;
 	let destroyed = false;
 	let originalButton: HTMLButtonElement | undefined;
-	const contentResources = new Map<Content, ContentResource>();
+	const contentResources = new SvelteMap<Content, ContentResource>();
 
 	function updateOriginalButton(): void {
 		const content = lightbox?.pswp?.currSlide?.content;

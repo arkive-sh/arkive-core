@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import type { PathnameWithSearchOrHash } from '$app/types';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import { get } from 'svelte/store';
 	import { Bell, CircleUser, Lock, Menu, Search, Unlock } from '@lucide/svelte';
@@ -52,7 +54,7 @@
 		queryClient.clear();
 		try {
 			await logoutMutation.mutateAsync();
-			await goto('/login', { replace: true });
+			await goto(resolve('/login'), { replace: true });
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'Logout failed. Please try again.');
 		}
@@ -113,7 +115,7 @@
 			</button>
 			<a
 				class="inline-flex size-9 items-center justify-center rounded text-(--muted) transition-colors hover:bg-(--surface-raised) hover:text-(--text)"
-				href="/#recent-activity"
+				href={resolve('/(app)#recent-activity')}
 				aria-label="Jump to recent activity"
 			>
 				<Bell class="size-5 stroke-2" aria-hidden="true" />
@@ -137,7 +139,7 @@
 				<div class="my-1.5 h-px bg-(--border)"></div>
 				<a
 					class="flex w-full items-center rounded-[10px] border border-transparent px-2.5 py-2 text-[13px] leading-4.5 text-(--text) transition-[background,border-color] duration-200 hover:border-(--border) hover:bg-(--bg-soft)"
-					href="/settings"
+					href={resolve('settings' as PathnameWithSearchOrHash)}
 					role="menuitem">Settings</a
 				>
 				<button

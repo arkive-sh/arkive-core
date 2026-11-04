@@ -10,6 +10,7 @@
 		FolderPlus,
 		Image,
 		Info,
+		RotateCcw,
 		Trash2,
 	} from '@lucide/svelte';
 	import { isImageFile } from '#lib/utils/image.ts';
@@ -17,6 +18,8 @@
 	import { isPdfFile, isTextFile, type FileManagerEntry } from './types';
 
 	type Props = {
+		mode?: 'files' | 'trash';
+		canMutateEntry?: boolean;
 		open: boolean;
 		entry: FileManagerEntry | null;
 		x: number;
@@ -34,9 +37,14 @@
 		onCreateTextFile: () => void;
 		onUploadFiles: () => void;
 		onUploadFolder: () => void;
+		onRestore?: (entry: FileManagerEntry) => void;
+		onRestoreContents?: (entry: FileManagerEntry) => void;
+		onPermanentDelete?: (entry: FileManagerEntry) => void;
 	};
 
 	let {
+		mode = 'files',
+		canMutateEntry = true,
 		open,
 		entry,
 		x,
@@ -54,6 +62,9 @@
 		onCreateTextFile,
 		onUploadFiles,
 		onUploadFolder,
+		onRestore,
+		onRestoreContents,
+		onPermanentDelete,
 	}: Props = $props();
 	let menu = $state<HTMLDivElement>();
 	let position = $state({ left: 8, top: 8 });
@@ -156,6 +167,27 @@
 		onDelete(selected);
 	}
 
+	function restoreTrashEntry(): void {
+		if (!entry) return;
+		const selected = entry;
+		onClose();
+		onRestore?.(selected);
+	}
+
+	function restoreTrashContainerContents(): void {
+		if (!entry) return;
+		const selected = entry;
+		onClose();
+		onRestoreContents?.(selected);
+	}
+
+	function permanentlyDeleteTrashEntry(): void {
+		if (!entry) return;
+		const selected = entry;
+		onClose();
+		onPermanentDelete?.(selected);
+	}
+
 	function createFolder(): void {
 		onClose();
 		onCreateFolder(entry);
@@ -187,131 +219,176 @@
 		role="menu"
 		aria-label={entry ? `${entry.name} actions` : 'Files actions'}
 	>
-		{#if !entry}
-			<button
-				class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
-				type="button"
-				role="menuitem"
-				onclick={uploadFiles}
-			>
-				<CloudUpload class="size-4 text-(--muted)" aria-hidden="true" />
-				<span>Upload files</span>
-			</button>
-			<button
-				class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
-				type="button"
-				role="menuitem"
-				onclick={uploadFolder}
-			>
-				<FolderOpen class="size-4 text-(--muted)" aria-hidden="true" />
-				<span>Upload folder</span>
-			</button>
-		{/if}
-		{#if entry?.kind === 'folder'}
-			<button
-				class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
-				type="button"
-				role="menuitem"
-				onclick={openFolder}
-			>
-				<FolderOpen class="size-4 text-(--muted)" aria-hidden="true" />
-				<span>Open folder</span>
-			</button>
-		{/if}
-		{#if entry?.kind === 'file'}
-			{#if isImageFile(entry.name, entry.type)}
+		{#if mode === 'trash'}
+			{#if entry?.kind === 'folder'}
 				<button
 					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
 					type="button"
 					role="menuitem"
-					onclick={previewImage}
+					onclick={openFolder}
 				>
-					<Image class="size-4 text-(--muted)" aria-hidden="true" />
-					<span>Preview</span>
-				</button>
-			{:else if isMediaMimeType(entry.type)}
-				<button
-					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
-					type="button"
-					role="menuitem"
-					onclick={previewMedia}
-				>
-					{#if isAudioMimeType(entry.type)}<AudioLines
-							class="size-4 text-(--muted)"
-							aria-hidden="true"
-						/>{:else}<Film class="size-4 text-(--muted)" aria-hidden="true" />{/if}
-					<span>Preview</span>
-				</button>
-			{:else if isPdfFile(entry)}
-				<button
-					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
-					type="button"
-					role="menuitem"
-					onclick={previewPdf}
-				>
-					<FileText class="size-4 text-(--muted)" aria-hidden="true" />
-					<span>Preview</span>
-				</button>
-			{:else if isTextFile(entry)}
-				<button
-					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
-					type="button"
-					role="menuitem"
-					onclick={previewText}
-				>
-					<FileText class="size-4 text-(--muted)" aria-hidden="true" />
-					<span>Open</span>
+					<FolderOpen class="size-4 text-(--muted)" aria-hidden="true" />
+					<span>Open folder</span>
 				</button>
 			{/if}
-			<button
-				class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
-				type="button"
-				role="menuitem"
-				onclick={downloadFile}
-			>
-				<Download class="size-4 text-(--muted)" aria-hidden="true" />
-				<span>Download</span>
-			</button>
-		{/if}
-		{#if entry?.kind !== 'folder'}
-			<button
-				class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
-				type="button"
-				role="menuitem"
-				onclick={createTextFile}
-			>
-				<FileText class="size-4 text-(--muted)" aria-hidden="true" />
-				<span>New text file</span>
-			</button>
-			<button
-				class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
-				type="button"
-				role="menuitem"
-				onclick={createFolder}
-			>
-				<FolderPlus class="size-4 text-(--muted)" aria-hidden="true" />
-				<span>New folder here</span>
-			</button>
-		{/if}
-		{#if entry}
-			<button
-				class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
-				type="button"
-				role="menuitem"
-				onclick={showProperties}
-			>
-				<Info class="size-4 text-(--muted)" aria-hidden="true" />
-				<span>Properties</span>
-			</button>
-			<button
-				class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm text-red-400 hover:bg-red-500/10"
-				type="button"
-				role="menuitem"
-				onclick={confirmDelete}
-			>
-				<Trash2 class="size-4" aria-hidden="true" />
-				<span>Delete</span>
-			</button>
+			{#if entry && canMutateEntry}
+				<button
+					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
+					type="button"
+					role="menuitem"
+					onclick={restoreTrashEntry}
+				>
+					<RotateCcw class="size-4 text-(--muted)" aria-hidden="true" />
+					<span>Restore</span>
+				</button>
+				<button
+					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm text-red-400 hover:bg-red-500/10"
+					type="button"
+					role="menuitem"
+					onclick={permanentlyDeleteTrashEntry}
+				>
+					<Trash2 class="size-4" aria-hidden="true" />
+					<span>Delete permanently</span>
+				</button>
+			{/if}
+			{#if entry?.isTrashContainer}
+				<button
+					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
+					type="button"
+					role="menuitem"
+					onclick={restoreTrashContainerContents}
+				>
+					<RotateCcw class="size-4 text-(--muted)" aria-hidden="true" />
+					<span>Restore remaining items</span>
+				</button>
+			{/if}
+		{:else}
+			{#if !entry}
+				<button
+					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
+					type="button"
+					role="menuitem"
+					onclick={uploadFiles}
+				>
+					<CloudUpload class="size-4 text-(--muted)" aria-hidden="true" />
+					<span>Upload files</span>
+				</button>
+				<button
+					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
+					type="button"
+					role="menuitem"
+					onclick={uploadFolder}
+				>
+					<FolderOpen class="size-4 text-(--muted)" aria-hidden="true" />
+					<span>Upload folder</span>
+				</button>
+			{/if}
+			{#if entry?.kind === 'folder'}
+				<button
+					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
+					type="button"
+					role="menuitem"
+					onclick={openFolder}
+				>
+					<FolderOpen class="size-4 text-(--muted)" aria-hidden="true" />
+					<span>Open folder</span>
+				</button>
+			{/if}
+			{#if entry?.kind === 'file'}
+				{#if isImageFile(entry.name, entry.type)}
+					<button
+						class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
+						type="button"
+						role="menuitem"
+						onclick={previewImage}
+					>
+						<Image class="size-4 text-(--muted)" aria-hidden="true" />
+						<span>Preview</span>
+					</button>
+				{:else if isMediaMimeType(entry.type)}
+					<button
+						class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
+						type="button"
+						role="menuitem"
+						onclick={previewMedia}
+					>
+						{#if isAudioMimeType(entry.type)}<AudioLines
+								class="size-4 text-(--muted)"
+								aria-hidden="true"
+							/>{:else}<Film class="size-4 text-(--muted)" aria-hidden="true" />{/if}
+						<span>Preview</span>
+					</button>
+				{:else if isPdfFile(entry)}
+					<button
+						class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
+						type="button"
+						role="menuitem"
+						onclick={previewPdf}
+					>
+						<FileText class="size-4 text-(--muted)" aria-hidden="true" />
+						<span>Preview</span>
+					</button>
+				{:else if isTextFile(entry)}
+					<button
+						class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
+						type="button"
+						role="menuitem"
+						onclick={previewText}
+					>
+						<FileText class="size-4 text-(--muted)" aria-hidden="true" />
+						<span>Open</span>
+					</button>
+				{/if}
+				<button
+					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
+					type="button"
+					role="menuitem"
+					onclick={downloadFile}
+				>
+					<Download class="size-4 text-(--muted)" aria-hidden="true" />
+					<span>Download</span>
+				</button>
+			{/if}
+			{#if entry?.kind !== 'folder'}
+				<button
+					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
+					type="button"
+					role="menuitem"
+					onclick={createTextFile}
+				>
+					<FileText class="size-4 text-(--muted)" aria-hidden="true" />
+					<span>New text file</span>
+				</button>
+				<button
+					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
+					type="button"
+					role="menuitem"
+					onclick={createFolder}
+				>
+					<FolderPlus class="size-4 text-(--muted)" aria-hidden="true" />
+					<span>New folder here</span>
+				</button>
+			{/if}
+			{#if entry}
+				<button
+					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
+					type="button"
+					role="menuitem"
+					onclick={showProperties}
+				>
+					<Info class="size-4 text-(--muted)" aria-hidden="true" />
+					<span>Properties</span>
+				</button>
+				<button
+					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm text-red-400 hover:bg-red-500/10"
+					type="button"
+					role="menuitem"
+					onclick={confirmDelete}
+				>
+					<Trash2 class="size-4" aria-hidden="true" />
+					<span>Move to Trash</span>
+				</button>
+			{/if}
 		{/if}
 	</div>
 {/if}

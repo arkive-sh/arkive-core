@@ -89,14 +89,18 @@ func (s *Service) StartMultipartUploadSession(ctx context.Context, userID string
 	if input.EncryptionVersion != 1 {
 		validationErrors.Add("encryptionVersion", "unsupported encryption version")
 	}
-	if input.EncryptedSize <= 0 {
-		validationErrors.Add("encryptedSize", ErrFileSizeRequired.Error())
+	if input.EncryptedSize < 0 {
+		validationErrors.Add("encryptedSize", "encrypted size is invalid")
 	}
 	if input.FileChunkSize <= 0 {
 		validationErrors.Add("fileChunkSize", "file chunk size is required")
 	}
-	if input.TotalChunks <= 0 {
-		validationErrors.Add("totalChunks", "total chunks is required")
+	if input.TotalChunks < 0 {
+		validationErrors.Add("totalChunks", "total chunks is invalid")
+	}
+	// Empty content is stored as a zero-byte object and has no encrypted chunks.
+	if (input.EncryptedSize == 0 && input.TotalChunks != 0) || (input.EncryptedSize > 0 && input.TotalChunks == 0) {
+		validationErrors.Add("encryptedSize", "encrypted size and chunk count are invalid")
 	}
 	if input.UploadPartSize <= 0 {
 		validationErrors.Add("uploadPartSize", "upload part size is required")
@@ -104,8 +108,11 @@ func (s *Service) StartMultipartUploadSession(ctx context.Context, userID string
 	if input.UploadPartCount <= 0 {
 		validationErrors.Add("uploadPartCount", "upload part count is required")
 	}
-	if input.SinglePart && (input.TotalChunks != 1 || input.UploadPartCount != 1) {
-		validationErrors.Add("singlePart", "single-part uploads require one chunk")
+	if input.SinglePart && (input.TotalChunks > 1 || input.UploadPartCount != 1) {
+		validationErrors.Add("singlePart", "single-part uploads require at most one chunk")
+	}
+	if input.TotalChunks == 0 && !input.SinglePart {
+		validationErrors.Add("singlePart", "empty files must use a single-part upload")
 	}
 	if !input.SinglePart && input.UploadPartCount > 1 {
 		provider, providerErr := s.storage.ActiveProvider(ctx)
@@ -125,11 +132,10 @@ func (s *Service) StartMultipartUploadSession(ctx context.Context, userID string
 		return models.UploadStartResponse{}, validationErrors, nil
 	}
 	plaintextSize := plaintextFileSize(input.EncryptedSize, input.TotalChunks)
-	if plaintextSize <= 0 {
-		validationErrors.Add("encryptedSize", "encrypted size is invalid")
-		return models.UploadStartResponse{}, validationErrors, nil
+	expectedChunks := int64(0)
+	if plaintextSize > 0 {
+		expectedChunks = int64(1) + (plaintextSize-1)/input.FileChunkSize
 	}
-	expectedChunks := int64(1) + (plaintextSize-1)/input.FileChunkSize
 	if expectedChunks != int64(input.TotalChunks) {
 		validationErrors.Add("totalChunks", "total chunks do not match encrypted size")
 		return models.UploadStartResponse{}, validationErrors, nil
@@ -139,7 +145,10 @@ func (s *Service) StartMultipartUploadSession(ctx context.Context, userID string
 		validationErrors.Add("uploadPartSize", "upload part size must be greater than or equal to file chunk size")
 		return models.UploadStartResponse{}, validationErrors, nil
 	}
-	expectedUploadParts := (input.TotalChunks + chunksPerUploadPart - 1) / chunksPerUploadPart
+	expectedUploadParts := 1
+	if input.TotalChunks > 0 {
+		expectedUploadParts = (input.TotalChunks + chunksPerUploadPart - 1) / chunksPerUploadPart
+	}
 	if expectedUploadParts != input.UploadPartCount {
 		validationErrors.Add("uploadPartCount", "upload part count does not match encrypted size")
 		return models.UploadStartResponse{}, validationErrors, nil

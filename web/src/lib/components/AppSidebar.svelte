@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { FolderOpen, Settings, Share2, Shield, X } from '@lucide/svelte';
+	import { resolve } from '$app/paths';
+	import { FolderOpen, Settings, Share2, Shield, Trash2, X } from '@lucide/svelte';
 	import Tooltip from '#lib/components/Tooltip.svelte';
 
 	type Props = {
@@ -14,13 +15,14 @@
 	let { currentPath, mobileView, mobileOpen, desktopCollapsed, onClose, onNavigate }: Props =
 		$props();
 	const navigation = [
-		{ href: '/', label: 'Files', icon: FolderOpen },
+		{ href: resolve('/(app)'), label: 'Files', icon: FolderOpen },
+		{ href: resolve('/(app)/trash'), label: 'Trash', icon: Trash2 },
 		{ href: '/shares', label: 'Shares', icon: Share2 },
 		{ href: '/settings', label: 'Settings', icon: Settings },
-	];
+	] as const;
 
-	function isActive(href: string) {
-		return currentPath === href || (href !== '/' && currentPath.startsWith(`${href}/`));
+	function isActive(path: string) {
+		return currentPath === path || (path !== '/' && currentPath.startsWith(`${path}/`));
 	}
 </script>
 
@@ -68,6 +70,7 @@
 		{#each navigation as item (item.href)}
 			{@const Icon = item.icon}
 			<Tooltip label={item.label} disabled={mobileView} className="w-full">
+				<!-- eslint-disable svelte/no-navigation-without-resolve -->
 				<a
 					class={`flex min-h-11 w-full items-center border-l-2 text-(--muted) transition-[background-color,color,border-color] duration-200 hover:bg-(--surface-raised) hover:text-(--text) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--accent) ${mobileView ? 'gap-3 px-4 font-mono text-sm leading-5' : 'justify-center px-0'} ${isActive(item.href) ? 'border-(--accent) bg-[rgba(57,72,90,0.45)] text-(--accent)' : 'border-transparent'}`}
 					href={item.href}
@@ -78,6 +81,7 @@
 					<Icon class="size-5 shrink-0 stroke-2" aria-hidden="true" />
 					{#if mobileView}<span>{item.label}</span>{/if}
 				</a>
+				<!-- eslint-enable svelte/no-navigation-without-resolve -->
 			</Tooltip>
 		{/each}
 	</nav>

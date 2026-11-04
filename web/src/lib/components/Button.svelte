@@ -1,6 +1,8 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { HTMLButtonAttributes } from 'svelte/elements';
+	import { resolve } from '$app/paths';
+	import type { PathnameWithSearchOrHash } from '$app/types';
 
 	type Props = Omit<HTMLButtonAttributes, 'class' | 'type' | 'disabled' | 'onclick'> & {
 		text: string;
@@ -52,7 +54,7 @@
 </script>
 
 {#if href}
-	<a {...buttonProps} class={classes} {href} {id}>
+	<a class={classes} href={resolve(href.replace(/^\/+/, '') as PathnameWithSearchOrHash)} {id}>
 		{#if icon}<span class="inline-flex items-center justify-center">{@render icon()}</span>{/if}
 		<span>{text}</span>
 	</a>

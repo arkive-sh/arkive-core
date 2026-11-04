@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import type { PathnameWithSearchOrHash } from '$app/types';
 	import { onMount } from 'svelte';
-	import { SvelteSet } from 'svelte/reactivity';
+	import { SvelteSet, SvelteURLSearchParams } from 'svelte/reactivity';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import Modal from '#lib/components/Modal.svelte';
 	import { api } from '#lib/api.ts';
@@ -140,7 +142,7 @@
 	});
 
 	function urlFor(folder: string | null, nextView: FilesView = viewMode): string {
-		const params = new URLSearchParams();
+		const params = new SvelteURLSearchParams();
 
 		if (folder) params.set('folder_id', folder);
 		if (nextView === 'grid') params.set('view', 'grid');
@@ -150,7 +152,7 @@
 	}
 
 	function openFolder(id: string): void {
-		void goto(urlFor(id));
+		void goto(resolve(urlFor(id).replace(/^\/+/, '') as PathnameWithSearchOrHash));
 	}
 
 	function stageUploadFiles(files: UploadItem[]): void {
@@ -219,7 +221,8 @@
 		newFolderActive = true;
 		contextMenuEntry = null;
 		contextMenuOpen = false;
-		if (parentFolderId !== folderId) void goto(urlFor(parentFolderId));
+		if (parentFolderId !== folderId)
+			void goto(resolve(urlFor(parentFolderId).replace(/^\/+/, '') as PathnameWithSearchOrHash));
 	}
 
 	function createFolderFromContext(entry: FileManagerEntry | null): void {
@@ -352,7 +355,7 @@
 	}
 
 	function safeDownloadName(name: string): string {
-		return name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').replace(/[. ]+$/g, '') || 'download';
+		return name.replace(/[<>:"/\\|?*\p{Cc}]/gu, '_').replace(/[. ]+$/g, '') || 'download';
 	}
 
 	function downloadEntry(entry: FileManagerEntry): void {
@@ -395,7 +398,7 @@
 			void picker
 				.showDirectoryPicker({ mode: 'readwrite' })
 				.then(async (directory) => {
-					const reserved = new Set<string>();
+					const reserved = new SvelteSet<string>();
 					const targets: Array<{ entry: FileManagerEntry; name: string }> = [];
 
 					for (const entry of entries) {
@@ -458,8 +461,9 @@
 			selectedIds.clear();
 			deleteTargets = [];
 			deleteDialogOpen = false;
-			toast.success('Items deleted.');
+			toast.success('Items moved to Trash.');
 			await Promise.all([
+				queryClient.invalidateQueries({ queryKey: ['trash'] }),
 				queryClient.invalidateQueries({ queryKey: ['folder-entries'] }),
 				queryClient.invalidateQueries({ queryKey: ['search'] }),
 			]);
@@ -471,7 +475,7 @@
 	}
 
 	function changeView(view: FilesView): void {
-		void goto(urlFor(folderId, view));
+		void goto(resolve(urlFor(folderId, view).replace(/^\/+/, '') as PathnameWithSearchOrHash));
 	}
 
 	onMount(() => {
@@ -526,7 +530,6 @@
 	{displayedRows}
 	{entriesReady}
 	{newFolderActive}
-	{showNewFolder}
 	{selectedIds}
 	{selectedEntries}
 	{selectedFiles}

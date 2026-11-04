@@ -8,5 +8,7 @@ type TrashEntry struct {
 	ParentFolderID    *string   `json:"parentFolderId,omitempty"`
 	EncryptedName     []byte    `json:"encryptedName,omitempty"`
 	EncryptedMetadata []byte    `json:"encryptedMetadata,omitempty"`
+	EncryptedFileKey  []byte    `json:"encryptedFileKey,omitempty"`
 	DeletedAt         time.Time `json:"deletedAt"`
+	IsContainer       bool      `json:"isContainer,omitempty"`
 }

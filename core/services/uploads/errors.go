@@ -16,10 +16,7 @@ var (
 	ErrPartsRequired        = errors.New("all upload parts are required")
 )
 
-var (
-	ErrFilenameRequired = errors.New("filename is required")
-	ErrFileSizeRequired = errors.New("file size is required")
-)
+var ErrFilenameRequired = errors.New("filename is required")
 
 type StorageLimitExceededError struct {
 	MaxBytes       int64
