@@ -16,10 +16,7 @@ import (
 
 	"arkive/core/models"
 	filessvc "arkive/core/services/files"
-	settingssvc "arkive/core/services/settings"
 	"arkive/core/services/shares"
-	"arkive/core/web"
-	"arkive/core/web/pages"
 	"arkive/pkg/apierror"
 	"arkive/pkg/cookies"
 	"arkive/pkg/errs"
@@ -30,128 +27,56 @@ const (
 	shareAccessTTL        = 15 * time.Minute
 )
 
-func PublicShareView(shareService *shares.Service, filesService *filessvc.Service, settingsService *settingssvc.Service, cookieSecret string) gin.HandlerFunc {
+func APIPublicShareUnlock(shareService *shares.Service, cookieSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := strings.TrimSpace(c.Param("token"))
 		if token == "" {
-			c.AbortWithStatus(http.StatusNotFound)
+			apierror.Write(c, http.StatusNotFound, "share_not_found", "Share not found", nil)
+			return
+		}
+
+		var input struct {
+			Password string `json:"password"`
+		}
+		if err := c.ShouldBindJSON(&input); err != nil {
+			apierror.InvalidPayload(c)
 			return
 		}
 
 		share, err := shareService.GetShareByToken(c.Request.Context(), token)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				c.AbortWithStatus(http.StatusNotFound)
+				apierror.Write(c, http.StatusNotFound, "share_not_found", "Share not found", nil)
 				return
 			}
 			_ = c.Error(errs.WithStack(err))
-			c.AbortWithStatus(http.StatusInternalServerError)
+			apierror.Internal(c, "Share lookup failed")
 			return
 		}
-
-		if share.Status != shares.ShareStatusActive {
-			c.AbortWithStatus(http.StatusNotFound)
+		if share.Status == "burned" {
+			apierror.Write(c, http.StatusGone, "share_consumed", "Share has already been used", nil)
 			return
 		}
-		if share.ExpiresAt != nil && !share.ExpiresAt.After(time.Now()) {
-			c.AbortWithStatus(http.StatusNotFound)
+		if share.Status != shares.ShareStatusActive || (share.ExpiresAt != nil && !share.ExpiresAt.After(time.Now())) {
+			apierror.Write(c, http.StatusNotFound, "share_not_found", "Share not found", nil)
 			return
 		}
-
-		file, err := filesService.GetFileForShare(c.Request.Context(), share.FileID)
-		if err != nil {
-			switch err {
-			case filessvc.ErrNotFound, filessvc.ErrUploadCancelled:
-				c.AbortWithStatus(http.StatusNotFound)
-			case filessvc.ErrInvalidInput:
-				c.AbortWithStatus(http.StatusBadRequest)
-			default:
-				_ = c.Error(errs.WithStack(err))
-				c.AbortWithStatus(http.StatusInternalServerError)
-			}
+		if !share.AllowPreview && !share.AllowDownload {
+			apierror.Write(c, http.StatusForbidden, "forbidden", "Share access denied", nil)
 			return
 		}
-
-		if share.PasswordHash != nil && !hasShareAccess(c, share, cookieSecret) {
-			web.Render(c, pages.PublicSharePassword(pages.PublicSharePasswordProps{
-				Token: token,
-				File:  file,
-			}))
-			return
-		}
-
-		renderShareLanding(c, filesService, settingsService, token, share, file)
-	}
-}
-
-func PublicShareUnlock(shareService *shares.Service, filesService *filessvc.Service, settingsService *settingssvc.Service, cookieSecret string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		token := strings.TrimSpace(c.Param("token"))
-		if token == "" {
-			c.AbortWithStatus(http.StatusNotFound)
-			return
-		}
-
-		share, err := shareService.GetShareByToken(c.Request.Context(), token)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				c.AbortWithStatus(http.StatusNotFound)
-				return
-			}
-			_ = c.Error(errs.WithStack(err))
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
-		}
-
-		if share.Status != shares.ShareStatusActive {
-			c.AbortWithStatus(http.StatusNotFound)
-			return
-		}
-		if share.ExpiresAt != nil && !share.ExpiresAt.After(time.Now()) {
-			c.AbortWithStatus(http.StatusNotFound)
-			return
-		}
-
-		file, err := filesService.GetFileForShare(c.Request.Context(), share.FileID)
-		if err != nil {
-			switch err {
-			case filessvc.ErrNotFound, filessvc.ErrUploadCancelled:
-				c.AbortWithStatus(http.StatusNotFound)
-			case filessvc.ErrInvalidInput:
-				c.AbortWithStatus(http.StatusBadRequest)
-			default:
-				_ = c.Error(errs.WithStack(err))
-				c.AbortWithStatus(http.StatusInternalServerError)
-			}
-			return
-		}
-
 		if share.PasswordHash == nil || hasShareAccess(c, share, cookieSecret) {
-			renderShareLanding(c, filesService, settingsService, token, share, file)
+			c.Status(http.StatusNoContent)
 			return
 		}
 
-		password := strings.TrimSpace(c.PostForm("password"))
-		if password == "" || bcrypt.CompareHashAndPassword([]byte(*share.PasswordHash), []byte(password)) != nil {
-			if isJSONShareRequest(c) {
-				apierror.Write(c, http.StatusUnauthorized, "invalid_share_password", "Password is incorrect.", nil)
-				return
-			}
-			c.Status(http.StatusUnauthorized)
-			web.Render(c, pages.PublicSharePassword(pages.PublicSharePasswordProps{
-				Token:   token,
-				File:    file,
-				Message: "Password is incorrect.",
-			}))
+		if input.Password == "" || bcrypt.CompareHashAndPassword([]byte(*share.PasswordHash), []byte(input.Password)) != nil {
+			apierror.Write(c, http.StatusUnauthorized, "invalid_share_password", "Password is incorrect.", nil)
 			return
 		}
 
 		setShareAccess(c, share, cookieSecret)
-		if isJSONShareRequest(c) {
-			c.Status(http.StatusNoContent)
-			return
-		}
-		renderShareLanding(c, filesService, settingsService, token, share, file)
+		c.Status(http.StatusNoContent)
 	}
 }
 
@@ -366,41 +291,6 @@ func APIPublicShareConsume(shareService *shares.Service, filesService *filessvc.
 	}
 }
 
-func renderShareLanding(c *gin.Context, filesService *filessvc.Service, settingsService *settingssvc.Service, token string, share models.Share, file models.File) {
-	viewURL := ""
-	isImage := false
-	isVideo := false
-	viewable := false
-	downloadURL, err := filesService.PresignShareDownloadForFile(c.Request.Context(), file)
-	if err != nil {
-		_ = c.Error(errs.WithStack(err))
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-	if !share.AllowDownload {
-		downloadURL = "#"
-	}
-
-	shareURL := buildShareURL(c, token)
-	previewSettings, settingsErr := settingsService.PreviewSettings(c.Request.Context())
-	if settingsErr != nil {
-		previewSettings = settingssvc.DefaultPreviewSettings()
-	}
-	web.Render(c, pages.PublicShareViewPage(pages.PublicShareViewProps{
-		Token:           token,
-		BurnAfterRead:   share.BurnAfterRead,
-		File:            file,
-		ViewURL:         viewURL,
-		DownloadURL:     downloadURL,
-		IsImage:         isImage,
-		IsVideo:         isVideo,
-		Viewable:        viewable && viewURL != "",
-		ShareURL:        shareURL,
-		SharedAt:        share.CreatedAt,
-		PreviewSettings: previewSettings,
-	}))
-}
-
 func hasShareAccess(c *gin.Context, share models.Share, cookieSecret string) bool {
 	if share.PasswordHash == nil {
 		return true
@@ -447,20 +337,4 @@ func signShareAccessPayload(payload, secret string) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(payload))
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-}
-
-func isJSONShareRequest(c *gin.Context) bool {
-	return strings.EqualFold(strings.TrimSpace(c.GetHeader("X-Requested-With")), "XMLHttpRequest")
-}
-
-func buildShareURL(c *gin.Context, token string) string {
-	scheme := "http"
-	if c.Request.TLS != nil {
-		scheme = "https"
-	}
-	if forwarded := c.GetHeader("X-Forwarded-Proto"); forwarded != "" {
-		scheme = strings.ToLower(strings.TrimSpace(strings.Split(forwarded, ",")[0]))
-	}
-	host := c.Request.Host
-	return scheme + "://" + host + "/s/" + token
 }

@@ -22,7 +22,6 @@ import (
 	"arkive/core/services/shares"
 	syncsvc "arkive/core/services/sync"
 	"arkive/core/services/uploads"
-	"arkive/core/web"
 	"arkive/pkg/storage/localclient"
 )
 
@@ -45,13 +44,6 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 	shareService := shares.NewService(db, filerepo.New(), sharerepo.New())
 	syncService := syncsvc.NewService(db, syncrepo.New())
 
-	// Static assets or page: public
-	r.StaticFS("/static", web.StaticFS("static"))
-	r.StaticFS("/web/pages", web.StaticFS("pages"))
-	r.GET("/sw.js", handlers.ServiceWorkerJS())
-	r.GET("/favicon.ico", handlers.FaviconICO())
-	r.GET("/robots.txt", handlers.RobotsTxt())
-	r.GET("/sitemap.xml", handlers.SitemapXML())
 	localStorageRoutes := r.Group("/local-storage")
 	if corsMiddleware != nil {
 		localStorageRoutes.Use(corsMiddleware)
@@ -59,27 +51,13 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 	}
 	localStorageRoutes.PUT("/upload/:token", handlers.LocalStorageUpload(localStorage))
 	localStorageRoutes.GET("/download/:token", handlers.LocalStorageDownload(localStorage))
-	r.GET("/s/:token", handlers.PublicShareView(shareService, filesService, settingsService, cfg.CookieSecret))
-	r.POST("/s/:token", handlers.PublicShareUnlock(shareService, filesService, settingsService, cfg.CookieSecret))
-
-	// Auth pages live in SvelteKit; the legacy Go forms submit plaintext passwords.
-	// Protected
-	protected := r.Group("/")
-	protected.Use(middleware.RequireSessionRedirect(authService))
-	protected.GET("/files", handlers.WebFiles(filesService, folderService))
-	protected.GET("/folders/:id", handlers.WebFolder(filesService, folderService))
-	protected.GET("/files/:id/view", handlers.WebFileView(filesService, settingsService))
-	protected.GET("/shares", handlers.WebShares(shareService))
-	protected.GET("/settings", handlers.WebSettings(settingsService))
-	protected.POST("/settings/storage", handlers.WebSettingsStoragePost(settingsService))
-	protected.POST("/settings/uploads", handlers.WebSettingsUploadPost(settingsService))
-	protected.POST("/settings/previews", handlers.WebSettingsPreviewPost(settingsService))
-	// Public api endpoints
+	// Public API endpoints
 	api := r.Group("/api")
 	if corsMiddleware != nil {
 		api.Use(corsMiddleware)
 		r.OPTIONS("/api/*path", corsMiddleware)
 	}
+	api.POST("/public/shares/:token/unlock", middleware.LimitBody(16<<10), handlers.APIPublicShareUnlock(shareService, cfg.CookieSecret))
 	publicAuth := api.Group("")
 	// Bound auth and setup JSON before ShouldBindJSON reads it; uploads have their own larger limit.
 	publicAuth.Use(middleware.LimitBody(16 << 10))
@@ -158,8 +136,6 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 	{
 		apiSync.GET("/entries", handlers.APIListSyncEntries(syncService))
 	}
-
-	r.NoRoute(handlers.WebNotFound())
 
 	return r
 }
