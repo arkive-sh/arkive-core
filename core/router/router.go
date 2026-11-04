@@ -131,6 +131,15 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 		apiFolders.POST("/entries/rename", handlers.APIRenameEntry(folderService, filesService))
 	}
 
+	apiTrash := api.Group("/trash")
+	apiTrash.Use(middleware.RequireSessionJSON(authService))
+	apiTrash.Use(middleware.LimitBody(64 << 10))
+	{
+		apiTrash.GET("/entries", handlers.APIListTrash(folderService))
+		apiTrash.POST("/restore", handlers.APIRestoreTrash(folderService))
+		apiTrash.POST("/permanent-delete", handlers.APIPermanentlyDeleteTrash(folderService))
+	}
+
 	apiSync := api.Group("/sync")
 	apiSync.Use(middleware.RequireSessionJSON(authService))
 	{

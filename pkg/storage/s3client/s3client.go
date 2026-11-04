@@ -3,6 +3,7 @@ package s3client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -121,6 +122,29 @@ func (c *Client) DeleteObject(ctx context.Context, key string) error {
 		Key:    aws.String(key),
 	})
 	return err
+}
+
+func (c *Client) DeleteObjects(ctx context.Context, keys []string) (map[string]error, error) {
+	failed := make(map[string]error)
+	for start := 0; start < len(keys); start += 1000 {
+		end := min(start+1000, len(keys))
+		objects := make([]types.ObjectIdentifier, 0, end-start)
+		for _, key := range keys[start:end] {
+			objects = append(objects, types.ObjectIdentifier{Key: aws.String(key)})
+		}
+		out, err := c.s3.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: aws.String(c.bucket),
+			Delete: &types.Delete{Objects: objects},
+		})
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range out.Errors {
+			key := aws.ToString(item.Key)
+			failed[key] = fmt.Errorf("S3 delete failed (%s): %s", aws.ToString(item.Code), aws.ToString(item.Message))
+		}
+	}
+	return failed, nil
 }
 
 func (c *Client) ObjectSize(ctx context.Context, key string) (int64, error) {

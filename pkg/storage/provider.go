@@ -20,4 +20,5 @@ type Provider interface {
 	CompleteMultipartUpload(ctx context.Context, key, uploadID string, parts []CompletedPart) error
 	AbortMultipartUpload(ctx context.Context, key, uploadID string) error
 	DeleteObject(ctx context.Context, key string) error
+	DeleteObjects(ctx context.Context, keys []string) (map[string]error, error)
 }

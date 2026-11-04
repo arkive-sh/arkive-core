@@ -38,9 +38,7 @@ func (s *Service) deleteFilesWithinTx(ctx context.Context, tx pgx.Tx, userID str
 
 		switch file.UploadStatus {
 		case "complete":
-			if err := s.storageRepo.DecreaseUsedStorage(ctx, tx, userID, totalStoredSize(file)); err != nil {
-				return nil, err
-			}
+			// Trash keeps the encrypted objects in storage, so quota is released on purge.
 		case "pending", "uploading":
 			return nil, ErrUploadCancelled
 		default:

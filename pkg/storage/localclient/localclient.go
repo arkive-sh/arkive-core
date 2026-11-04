@@ -92,6 +92,16 @@ func (c *Client) DeleteObject(ctx context.Context, key string) error {
 	return nil
 }
 
+func (c *Client) DeleteObjects(ctx context.Context, keys []string) (map[string]error, error) {
+	failed := make(map[string]error)
+	for _, key := range keys {
+		if err := c.DeleteObject(ctx, key); err != nil {
+			failed[key] = err
+		}
+	}
+	return failed, nil
+}
+
 func (c *Client) ObjectSize(ctx context.Context, key string) (int64, error) {
 	path, err := c.objectPath(ctx, key)
 	if err != nil {
