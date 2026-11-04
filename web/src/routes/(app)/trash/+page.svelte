@@ -64,6 +64,7 @@
 	let hydrationGeneration = 0;
 	let hydrationQueue = Promise.resolve();
 	let selectedTargets = $state<FileManagerEntry[]>([]);
+	let permanentDeleteContainer = $state<FileManagerEntry | null>(null);
 	let permanentDeleteOpen = $state(false);
 	let mutating = $state(false);
 	let contextMenuOpen = $state(false);
@@ -179,6 +180,7 @@
 			entriesReady = false;
 			selectedIds.clear();
 			selectedTargets = [];
+			permanentDeleteContainer = null;
 			permanentDeleteOpen = false;
 			closeContextMenu();
 
@@ -285,6 +287,16 @@
 		if (mutating || !targets.length) return;
 
 		selectedTargets = targets;
+		permanentDeleteContainer = null;
+		permanentDeleteOpen = true;
+		closeContextMenu();
+	}
+
+	function requestPermanentDeleteContents(entry: FileManagerEntry): void {
+		if (mutating || !entry.isTrashContainer) return;
+
+		selectedTargets = [];
+		permanentDeleteContainer = entry;
 		permanentDeleteOpen = true;
 		closeContextMenu();
 	}
@@ -339,14 +351,23 @@
 	}
 
 	async function permanentlyDelete(): Promise<void> {
-		if (mutating || !selectedTargets.length) return;
+		if (mutating || (!selectedTargets.length && !permanentDeleteContainer)) return;
+		const container = permanentDeleteContainer;
 		mutating = true;
 		try {
-			await api.post('/api/trash/permanent-delete', selectionPayload(selectedTargets));
+			await api.post(
+				'/api/trash/permanent-delete',
+				container ? { containerFolderIds: [container.id] } : selectionPayload(selectedTargets),
+			);
 			selectedIds.clear();
 			selectedTargets = [];
+			permanentDeleteContainer = null;
 			permanentDeleteOpen = false;
-			toast.success('Permanently deleted. Storage cleanup is queued.');
+			toast.success(
+				container
+					? 'Remaining Trash items permanently deleted. Storage cleanup is queued.'
+					: 'Permanently deleted. Storage cleanup is queued.',
+			);
 			await queryClient.invalidateQueries({ queryKey: ['trash'] });
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'Could not permanently delete items.');
@@ -359,6 +380,7 @@
 		if (mutating) return;
 		permanentDeleteOpen = false;
 		selectedTargets = [];
+		permanentDeleteContainer = null;
 	}
 </script>
 
@@ -388,7 +410,7 @@
 							<button
 								class="inline-flex h-8 cursor-pointer items-center rounded px-2 text-sm text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)"
 								type="button"
-									onclick={toggleAll}>Select loaded</button
+								onclick={toggleAll}>Select loaded</button
 							>
 						{/if}
 						{#if selectedEntries.length}
@@ -563,17 +585,25 @@
 	onRestore={(entry) => void restore(contextTargets(entry))}
 	onRestoreContents={(entry) => void restoreContainerContents(entry)}
 	onPermanentDelete={(entry) => requestPermanentDelete(contextTargets(entry))}
+	onPermanentDeleteContents={requestPermanentDeleteContents}
 />
 
 <Modal
 	open={permanentDeleteOpen}
 	label="Confirm permanent deletion"
-	title={`Permanently delete ${selectedTargets.length} ${selectedTargets.length === 1 ? 'item' : 'items'}?`}
+	title={permanentDeleteContainer
+		? `Permanently delete remaining items in ${permanentDeleteContainer.name}?`
+		: `Permanently delete ${selectedTargets.length} ${selectedTargets.length === 1 ? 'item' : 'items'}?`}
 	onClose={closePermanentDelete}
 >
 	<p class="m-0 text-sm text-(--muted)">
-		This cannot be undone. The items will be removed from Trash and the encrypted objects will be
-		permanently deleted.
+		{#if permanentDeleteContainer}
+			This cannot be undone. All remaining deleted files and folders inside this folder will be
+			removed from Trash and permanently deleted.
+		{:else}
+			This cannot be undone. The items will be removed from Trash and the encrypted objects will be
+			permanently deleted.
+		{/if}
 	</p>
 	{#snippet actions()}
 		<button
@@ -585,7 +615,7 @@
 		<button
 			class="cursor-pointer rounded border border-red-500 bg-red-500 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
 			type="button"
-			disabled={mutating || !selectedTargets.length}
+			disabled={mutating || (!selectedTargets.length && !permanentDeleteContainer)}
 			onclick={() => void permanentlyDelete()}
 			>{mutating ? 'Deleting…' : 'Delete permanently'}</button
 		>

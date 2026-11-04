@@ -116,9 +116,10 @@ type RestoreTrashResult struct {
 }
 
 type PermanentlyDeleteTrashInput struct {
-	UserID    string
-	FileIDs   []string
-	FolderIDs []string
+	UserID             string
+	FileIDs            []string
+	FolderIDs          []string
+	ContainerFolderIDs []string
 }
 
 type PermanentlyDeleteTrashResult struct {
