@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import {
 		ArrowDownUp,
 		ChevronDown,
@@ -21,7 +22,7 @@
 	let transfers = $state<TransferState>({ jobs: [], open: false });
 	let transferListViewport = $state<HTMLDivElement>();
 	let selectAllCheckbox = $state<HTMLInputElement>();
-	let selectedIds = $state<Set<string>>(new Set());
+	let selectedIds = new SvelteSet<string>();
 	const counts = $derived.by(() => {
 		let active = 0;
 		let completed = 0;
@@ -89,27 +90,27 @@
 	}
 
 	function toggleSelection(id: string): void {
-		const next = new Set(selectedIds);
-
-		if (next.has(id)) next.delete(id);
-		else next.add(id);
-		selectedIds = next;
+		if (selectedIds.has(id)) selectedIds.delete(id);
+		else selectedIds.add(id);
 	}
 
 	function toggleAll(): void {
-		selectedIds = allSelected ? new Set() : new Set(transfers.jobs.map((job) => job.id));
+		selectedIds.clear();
+		if (!allSelected) {
+			for (const job of transfers.jobs) selectedIds.add(job.id);
+		}
 	}
 
 	function clearCompleted(): void {
-		const completed = new Set(
+		const completed = new SvelteSet(
 			transfers.jobs.filter((job) => job.status === 'completed').map((job) => job.id),
 		);
 		manager.clearCompleted();
-		selectedIds = new Set([...selectedIds].filter((id) => !completed.has(id)));
+		for (const id of completed) selectedIds.delete(id);
 	}
 
 	function removeSelected(): void {
-		const removable = new Set(
+		const removable = new SvelteSet(
 			transfers.jobs
 				.filter(
 					(job) => selectedIds.has(job.id) && job.status !== 'queued' && job.status !== 'running',
@@ -117,7 +118,7 @@
 				.map((job) => job.id),
 		);
 		manager.removeMany([...removable]);
-		selectedIds = new Set([...selectedIds].filter((id) => !removable.has(id)));
+		for (const id of removable) selectedIds.delete(id);
 	}
 
 	onMount(() => manager.state.subscribe((next) => (transfers = next)));
@@ -193,7 +194,7 @@
 									class="inline-flex size-7 cursor-pointer items-center justify-center rounded text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)"
 									type="button"
 									aria-label="Clear selection"
-									onclick={() => (selectedIds = new Set())}
+									onclick={() => selectedIds.clear()}
 									><X class="size-4" aria-hidden="true" /></button
 								>
 							</Tooltip>

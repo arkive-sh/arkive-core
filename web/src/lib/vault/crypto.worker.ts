@@ -157,8 +157,8 @@ async function unwrapRecoveryMasterKey(
 			kek,
 			aadBytes(`arkive:master-key:recovery:v1:${userID}`),
 		);
-	} catch (_) {
-		throw new Error('Invalid recovery key');
+	} catch (cause) {
+		throw new Error('Invalid recovery key', { cause });
 	} finally {
 		kek = clearBytes(kek);
 	}
@@ -259,7 +259,7 @@ async function handlePrepareInitialRecovery(params: WorkerInput<'prepareInitialR
 	}
 }
 
-async function handleLockVault(params: WorkerInput<'lockVault'>) {
+async function handleLockVault() {
 	lockVault();
 
 	return { unlocked: false };

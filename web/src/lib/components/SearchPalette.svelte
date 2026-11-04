@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import type { PathnameWithSearchOrHash } from '$app/types';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { Search } from '@lucide/svelte';
 	import Modal from '#lib/components/Modal.svelte';
@@ -89,7 +92,7 @@
 	let searchTimer: number | undefined;
 	let abortController: AbortController | undefined;
 	let latestQuery = '';
-	const thumbnailURLs = new Set<string>();
+	const thumbnailURLs = new SvelteSet<string>();
 	let fileFolderResults = $derived(results.filter((result) => result.category === 'results'));
 	let shareResults = $derived(results.filter((result) => result.category === 'shares'));
 	let settingsResults = $derived(results.filter((result) => result.category === 'settings'));
@@ -360,7 +363,7 @@
 			event.preventDefault();
 			const result = results[activeIndex];
 			closeSearch();
-			void goto(result.url);
+			void goto(resolve(result.url.replace(/^\/+/, '') as PathnameWithSearchOrHash));
 		}
 	}
 
@@ -454,7 +457,7 @@
 						{@const index = results.indexOf(result)}
 						<a
 							id={`search-result-${index}`}
-							href={result.url}
+							href={resolve(result.url.replace(/^\/+/, '') as PathnameWithSearchOrHash)}
 							class={`group flex items-center justify-between gap-4 rounded-md px-3.5 py-3.5 ${index === activeIndex ? 'bg-(--accent) text-(--accent-ink)' : 'text-(--text) hover:bg-(--accent) hover:text-(--accent-ink)'}`}
 							onclick={closeSearch}
 						>
@@ -501,7 +504,7 @@
 						{@const index = results.indexOf(result)}
 						<a
 							id={`search-result-${index}`}
-							href={result.url}
+							href={resolve(result.url.replace(/^\/+/, '') as PathnameWithSearchOrHash)}
 							class={`group flex items-center justify-between gap-4 rounded-md px-3.5 py-3.5 ${index === activeIndex ? 'bg-(--accent) text-(--accent-ink)' : 'text-(--text) hover:bg-(--accent) hover:text-(--accent-ink)'}`}
 							onclick={closeSearch}
 						>
@@ -538,7 +541,7 @@
 						{@const index = results.indexOf(result)}
 						<a
 							id={`search-result-${index}`}
-							href={result.url}
+							href={resolve(result.url.replace(/^\/+/, '') as PathnameWithSearchOrHash)}
 							class={`group flex items-center justify-between gap-4 rounded-md px-3.5 py-3.5 ${index === activeIndex ? 'bg-(--accent) text-(--accent-ink)' : 'text-(--text) hover:bg-(--accent) hover:text-(--accent-ink)'}`}
 							onclick={closeSearch}
 						>

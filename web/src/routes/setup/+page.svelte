@@ -1,6 +1,7 @@
 <script lang="ts">
 	import axios from 'axios';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { BadgeInfo, Database, LockKeyhole, Rocket, Server, ShieldAlert } from '@lucide/svelte';
 	import Button from '#lib/components/Button.svelte';
 	import InputField from '#lib/components/InputField.svelte';
@@ -163,14 +164,14 @@
 				},
 			};
 			await api.post('/api/setup', request);
-			await goto('/setup/recovery-key', { replace: true });
+			await goto(resolve('/setup/recovery-key'), { replace: true });
 		} catch (error) {
 			if (axios.isAxiosError(error) && error.response?.status === 409) {
 				try {
 					const { data: status } = await api.get<SetupStatus>('/api/setup/status');
 
 					if (status.recoveryPending && sessionStorage.getItem(SETUP_MASTER_KEY_STORAGE)) {
-						await goto('/setup/recovery-key', { replace: true });
+						await goto(resolve('/setup/recovery-key'), { replace: true });
 
 						return;
 					}
@@ -178,7 +179,7 @@
 					// Keep the local key when setup may have completed despite a lost response.
 				}
 				sessionStorage.removeItem(SETUP_MASTER_KEY_STORAGE);
-				await goto('/login', { replace: true });
+				await goto(resolve('/login'), { replace: true });
 
 				return;
 			}

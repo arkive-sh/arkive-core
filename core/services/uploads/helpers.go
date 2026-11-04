@@ -54,12 +54,21 @@ func plaintextFileSize(encryptedSize int64, chunkCount int) int64 {
 }
 
 func reservedUploadSize(encryptedSize int64) int64 {
+	if encryptedSize == 0 {
+		return 0
+	}
 	return encryptedSize + thumbnailMaxEncryptedBytes
 }
 
 func expectedEncryptedPartSize(plaintextSize, chunkSize, partSize int64, partNumber int) (int64, error) {
-	if plaintextSize <= 0 || chunkSize <= 0 || partSize <= 0 || partNumber <= 0 {
+	if plaintextSize < 0 || chunkSize <= 0 || partSize <= 0 || partNumber <= 0 {
 		return 0, fmt.Errorf("invalid upload part size")
+	}
+	if plaintextSize == 0 {
+		if partNumber == 1 {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("upload part is out of range")
 	}
 	start := int64(partNumber-1) * partSize
 	if start >= plaintextSize {

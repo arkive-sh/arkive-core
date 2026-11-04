@@ -576,5 +576,5 @@ async function notifyClient(clientId: string, message: Record<string, unknown>):
 		if (client) {
 			client.postMessage(message);
 		}
-	} catch (_) {}
+	} catch {}
 }

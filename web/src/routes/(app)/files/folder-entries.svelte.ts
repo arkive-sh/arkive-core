@@ -1,4 +1,5 @@
 import { createInfiniteQuery } from '@tanstack/svelte-query';
+import { SvelteMap } from 'svelte/reactivity';
 import { api } from '#lib/api.ts';
 import { imageMimeType } from '#lib/utils/image.ts';
 import { decryptSearchFile, decryptSearchFolder } from '#lib/vault/search.ts';
@@ -79,7 +80,7 @@ export function createFolderEntries(
 	});
 
 	const loadedEntries = $derived([
-		...new Map<string, FileManagerEntry>(
+		...new SvelteMap<string, FileManagerEntry>(
 			[
 				...(query.data?.pages ?? []).flatMap((response) => [
 					...response.Folders.map((folder): FileManagerEntry => ({

@@ -25,6 +25,9 @@
 		rows,
 		focusFileId,
 		selectedIds,
+		selectionEnabled = true,
+		previewEnabled = true,
+		dateColumnLabel = 'Modified',
 		selectedCount,
 		loadedCount,
 		showDimensions,
@@ -44,6 +47,9 @@
 		rows: FileManagerEntry[];
 		focusFileId: string | null;
 		selectedIds: ReadonlySet<string>;
+		selectionEnabled?: boolean;
+		previewEnabled?: boolean;
+		dateColumnLabel?: string;
 		selectedCount: number;
 		loadedCount: number;
 		showDimensions: boolean;
@@ -74,7 +80,7 @@
 		{ accessorKey: 'name', header: 'Name' },
 		{ accessorKey: 'type', header: 'Type' },
 		{ accessorKey: 'size', header: 'Size' },
-		{ accessorKey: 'updatedAt', header: 'Modified' },
+		{ accessorKey: 'updatedAt', header: () => dateColumnLabel },
 		{
 			id: 'dimensions',
 			accessorFn: (entry) =>
@@ -146,6 +152,7 @@
 
 	function entryActionLabel(entry: FileManagerEntry): string | undefined {
 		if (entry.kind === 'folder') return `Open folder ${entry.name}`;
+		if (!previewEnabled) return;
 		if (isImageFile(entry.name, entry.type) || isPdfFile(entry)) return `Preview ${entry.name}`;
 		if (isMediaMimeType(entry.type)) return `Play ${entry.name}`;
 		if (isTextFile(entry)) return `Open ${entry.name}`;
@@ -153,6 +160,7 @@
 
 	function openEntry(entry: FileManagerEntry, trigger: HTMLElement): void {
 		if (entry.kind === 'folder') onOpenFolder(entry.id);
+		else if (!previewEnabled) return;
 		else if (isImageFile(entry.name, entry.type)) onPreviewImage(entry, trigger);
 		else if (isMediaMimeType(entry.type)) onPreviewMedia(entry);
 		else if (isPdfFile(entry)) onPreviewPdf(entry);
@@ -171,15 +179,15 @@
 			{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
 				<tr class="grid w-full" style={`grid-template-columns: ${activeGridColumns}`}>
 					<th class="flex items-center px-4 py-3 first:pl-5" scope="col">
-						<input
-							bind:this={selectAllCheckbox}
-							class="size-4 cursor-pointer accent-(--accent)"
-							type="checkbox"
-							disabled={!loadedCount}
-							checked={allSelected}
-							aria-label="Select all loaded entries"
-							onchange={onToggleAll}
-						/>
+						{#if selectionEnabled}<input
+								bind:this={selectAllCheckbox}
+								class="size-4 cursor-pointer accent-(--accent)"
+								type="checkbox"
+								disabled={!loadedCount}
+								checked={allSelected}
+								aria-label="Select all loaded entries"
+								onchange={onToggleAll}
+							/>{/if}
 					</th>
 					{#each headerGroup.headers as header (header.id)}
 						{#if header.id !== 'dimensions' || showDimensions}
@@ -229,7 +237,7 @@
 									onclick={(event) => openEntry(row.original, event.currentTarget)}
 								></button>
 							{/if}
-							{#if !isDraftFolder}<input
+							{#if selectionEnabled && !isDraftFolder && row.original.selectable !== false}<input
 									class="relative z-10 size-4 cursor-pointer accent-(--accent)"
 									type="checkbox"
 									checked={selectedIds.has(fileManagerEntryKey(row.original))}
@@ -316,7 +324,11 @@
 											>{formatBytes(cell.getValue() as number | null)}</span
 										>
 									{:else if cell.column.id === 'updatedAt'}
-										<span class="text-(--muted)">{formatDate(cell.getValue() as string)}</span>
+										<span class="text-(--muted)"
+											>{row.original.isTrashContainer
+												? 'Contains deleted items'
+												: formatDate(cell.getValue() as string)}</span
+										>
 									{:else if cell.column.id === 'dimensions'}
 										<span class="text-(--muted)">{cell.getValue() as string}</span>
 									{:else}

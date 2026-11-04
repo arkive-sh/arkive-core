@@ -24,7 +24,6 @@
 		displayedRows,
 		entriesReady,
 		newFolderActive,
-		showNewFolder,
 		selectedIds,
 		selectedEntries,
 		selectedFiles,
@@ -68,7 +67,6 @@
 		displayedRows: FileManagerEntry[];
 		entriesReady: boolean;
 		newFolderActive: boolean;
-		showNewFolder: boolean;
 		selectedIds: ReadonlySet<string>;
 		selectedEntries: FileManagerEntry[];
 		selectedFiles: FileManagerEntry[];
@@ -185,7 +183,7 @@
 							<button
 								class="inline-flex size-8 cursor-pointer items-center justify-center rounded text-red-400 hover:bg-red-500/10 hover:text-red-300"
 								type="button"
-								aria-label="Delete selected items"
+								aria-label="Move selected items to Trash"
 								onclick={onDeleteSelected}><Trash2 class="size-4" aria-hidden="true" /></button
 							>
 							<button

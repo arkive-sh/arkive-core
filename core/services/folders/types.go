@@ -91,9 +91,10 @@ type DeleteEntriesResult struct {
 }
 
 type ListTrashInput struct {
-	UserID string
-	Cursor string
-	Limit  int
+	UserID         string
+	ParentFolderID string
+	Cursor         string
+	Limit          int
 }
 
 type ListTrashResult struct {
@@ -103,9 +104,10 @@ type ListTrashResult struct {
 }
 
 type RestoreTrashInput struct {
-	UserID    string
-	FileIDs   []string
-	FolderIDs []string
+	UserID             string
+	FileIDs            []string
+	FolderIDs          []string
+	ContainerFolderIDs []string
 }
 
 type RestoreTrashResult struct {

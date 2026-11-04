@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 	import { LockKeyhole } from '@lucide/svelte';
 	import Button from '#lib/components/Button.svelte';
@@ -14,7 +15,7 @@
 	let submitting = $state(false);
 
 	onMount(() => {
-		if ($vaultUnlocked) void goto('/', { replace: true });
+		if ($vaultUnlocked) void goto(resolve('/(app)'), { replace: true });
 	});
 
 	async function submit(event: SubmitEvent): Promise<void> {
@@ -25,7 +26,7 @@
 		try {
 			await loginAndUnlock(data.user.email, password);
 			password = '';
-			await goto('/', { replace: true });
+			await goto(resolve('/(app)'), { replace: true });
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : 'Could not unlock the vault.';
 		} finally {

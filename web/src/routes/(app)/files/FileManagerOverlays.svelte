@@ -138,11 +138,13 @@
 
 <Modal
 	open={deleteDialogOpen}
-	label="Confirm delete"
-	title={`Delete ${deleteTargets.length} ${deleteTargets.length === 1 ? 'item' : 'items'}?`}
+	label="Confirm move to Trash"
+	title={`Move ${deleteTargets.length} ${deleteTargets.length === 1 ? 'item' : 'items'} to Trash?`}
 	onClose={onCloseDelete}
 >
-	<p class="m-0 text-sm text-(--muted)">This action cannot be undone.</p>
+	<p class="m-0 text-sm text-(--muted)">
+		Items stay in Trash for 30 days and can be restored before then.
+	</p>
 	{#snippet actions()}
 		<button
 			class="cursor-pointer rounded border border-(--border) px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
@@ -154,7 +156,7 @@
 			class="cursor-pointer rounded border border-red-500 bg-red-500 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
 			type="button"
 			disabled={deleting || !deleteTargets.length}
-			onclick={onConfirmDelete}>{deleting ? 'Deleting…' : 'Delete'}</button
+			onclick={onConfirmDelete}>{deleting ? 'Moving…' : 'Move to Trash'}</button
 		>
 	{/snippet}
 </Modal>

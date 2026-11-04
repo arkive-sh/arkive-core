@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import AppHeader from '#lib/components/AppHeader.svelte';
@@ -48,12 +49,12 @@
 				toast.error('Could not lock the vault.');
 			}
 		}
-		await goto('/lock', { replace: true });
+		await goto(resolve('/(app)/lock'), { replace: true });
 	}
 
 	$effect(() => {
 		if (vaultReady && !$vaultUnlocked && page.url.pathname !== '/lock') {
-			void goto('/lock', { replace: true });
+			void goto(resolve('/(app)/lock'), { replace: true });
 		}
 	});
 

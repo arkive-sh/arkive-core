@@ -33,13 +33,21 @@ func (s *Service) ListTrash(ctx context.Context, input ListTrashInput) (ListTras
 	if input.Limit > maxPageSize {
 		input.Limit = maxPageSize
 	}
+	parentFolderID := strings.TrimSpace(input.ParentFolderID)
+	if parentFolderID != "" {
+		validatedParentID, err := validateUUIDValue(parentFolderID)
+		if err != nil {
+			return ListTrashResult{}, ErrInvalidInput
+		}
+		parentFolderID = validatedParentID
+	}
 	cursor, err := decodeTrashCursor(input.Cursor)
 	if err != nil {
 		return ListTrashResult{}, ErrInvalidInput
 	}
 
 	cutoff := time.Now().Add(-filessvc.TrashRetention)
-	entries, err := s.trashRepo.ListEntriesPage(ctx, s.db, userID, cutoff, cursor, input.Limit+1)
+	entries, err := s.trashRepo.ListEntriesPage(ctx, s.db, userID, cutoff, parentFolderID, cursor, input.Limit+1)
 	if err != nil {
 		return ListTrashResult{}, err
 	}
@@ -61,7 +69,17 @@ func (s *Service) ListTrash(ctx context.Context, input ListTrashInput) (ListTras
 func (s *Service) RestoreTrash(ctx context.Context, input RestoreTrashInput) (RestoreTrashResult, error) {
 	userID := strings.TrimSpace(input.UserID)
 	fileIDs, folderIDs, err := normalizeTrashSelection(input.FileIDs, input.FolderIDs)
-	if err != nil || userID == "" || len(fileIDs)+len(folderIDs) == 0 {
+	containerFolderIDs := uniqueNonEmpty(input.ContainerFolderIDs)
+	selectedEntryCount := len(fileIDs) + len(folderIDs)
+	selectionCount := selectedEntryCount + len(containerFolderIDs)
+	if selectionCount > maxTrashSelection {
+		return RestoreTrashResult{}, ErrInvalidInput
+	}
+	containerFolderIDs, containerErr := validateUUIDList(containerFolderIDs)
+	if err != nil || containerErr != nil || userID == "" || selectionCount == 0 {
+		return RestoreTrashResult{}, ErrInvalidInput
+	}
+	if len(containerFolderIDs) > 0 && selectedEntryCount > 0 {
 		return RestoreTrashResult{}, ErrInvalidInput
 	}
 	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
@@ -71,11 +89,29 @@ func (s *Service) RestoreTrash(ctx context.Context, input RestoreTrashInput) (Re
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	cutoff := time.Now().Add(-filessvc.TrashRetention)
-	fileRoots, folderRoots, err := s.trashRepo.CountRestorableRoots(ctx, tx, userID, cutoff, fileIDs, folderIDs)
+	if len(containerFolderIDs) > 0 {
+		locked, err := s.trashRepo.LockActiveTrashContainers(ctx, tx, userID, containerFolderIDs)
+		if err != nil {
+			return RestoreTrashResult{}, err
+		}
+		if locked != len(containerFolderIDs) {
+			return RestoreTrashResult{}, ErrNotFound
+		}
+		files, folders, err := s.trashRepo.RestoreTrashContainerContents(ctx, tx, userID, cutoff, containerFolderIDs)
+		if err != nil {
+			return RestoreTrashResult{}, err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return RestoreTrashResult{}, err
+		}
+		return RestoreTrashResult{RestoredFiles: int(files), RestoredFolders: int(folders)}, nil
+	}
+
+	fileCount, folderCount, err := s.trashRepo.CountTrashEntries(ctx, tx, userID, cutoff, fileIDs, folderIDs)
 	if err != nil {
 		return RestoreTrashResult{}, err
 	}
-	if fileRoots != len(fileIDs) || folderRoots != len(folderIDs) {
+	if fileCount != len(fileIDs) || folderCount != len(folderIDs) {
 		return RestoreTrashResult{}, ErrNotFound
 	}
 	lockedFolders, err := s.trashRepo.LockTrashFolders(ctx, tx, userID, cutoff, folderIDs)
@@ -83,6 +119,20 @@ func (s *Service) RestoreTrash(ctx context.Context, input RestoreTrashInput) (Re
 		return RestoreTrashResult{}, err
 	}
 	if lockedFolders != len(folderIDs) {
+		return RestoreTrashResult{}, ErrNotFound
+	}
+	lockedFiles, err := s.trashRepo.LockTrashFiles(ctx, tx, userID, cutoff, fileIDs)
+	if err != nil {
+		return RestoreTrashResult{}, err
+	}
+	if lockedFiles != len(fileIDs) {
+		return RestoreTrashResult{}, ErrNotFound
+	}
+	ancestors, blocked, err := s.trashRepo.LockTrashAncestors(ctx, tx, userID, cutoff, fileIDs, folderIDs)
+	if err != nil {
+		return RestoreTrashResult{}, err
+	}
+	if blocked {
 		return RestoreTrashResult{}, ErrNotFound
 	}
 	if len(folderIDs) > 0 {
@@ -97,6 +147,17 @@ func (s *Service) RestoreTrash(ctx context.Context, input RestoreTrashInput) (Re
 	}
 
 	result := RestoreTrashResult{}
+	if len(ancestors) > 0 {
+		// Restore deleted parents too so the selected item remains at its original path.
+		restored, err := s.trashRepo.RestoreTrashAncestors(ctx, tx, userID, ancestors)
+		if err != nil {
+			return RestoreTrashResult{}, err
+		}
+		if restored != int64(len(ancestors)) {
+			return RestoreTrashResult{}, ErrNotFound
+		}
+		result.RestoredFolders += int(restored)
+	}
 	if len(folderIDs) > 0 {
 		files, folders, err := s.trashRepo.RestoreFolderTrees(ctx, tx, userID, cutoff, folderIDs)
 		if err != nil {
@@ -106,7 +167,7 @@ func (s *Service) RestoreTrash(ctx context.Context, input RestoreTrashInput) (Re
 			return RestoreTrashResult{}, ErrNotFound
 		}
 		result.RestoredFiles += int(files)
-		result.RestoredFolders = int(folders)
+		result.RestoredFolders += int(folders)
 	}
 	if len(fileIDs) > 0 {
 		restored, err := s.trashRepo.RestoreFiles(ctx, tx, userID, cutoff, fileIDs)
@@ -137,11 +198,11 @@ func (s *Service) PermanentlyDeleteTrash(ctx context.Context, input PermanentlyD
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	cutoff := time.Now().Add(-filessvc.TrashRetention)
-	fileRoots, folderRoots, err := s.trashRepo.CountRestorableRoots(ctx, tx, userID, cutoff, fileIDs, folderIDs)
+	fileCount, folderCount, err := s.trashRepo.CountTrashEntries(ctx, tx, userID, cutoff, fileIDs, folderIDs)
 	if err != nil {
 		return PermanentlyDeleteTrashResult{}, err
 	}
-	if fileRoots != len(fileIDs) || folderRoots != len(folderIDs) {
+	if fileCount != len(fileIDs) || folderCount != len(folderIDs) {
 		return PermanentlyDeleteTrashResult{}, ErrNotFound
 	}
 	lockedFolders, err := s.trashRepo.LockTrashFolders(ctx, tx, userID, cutoff, folderIDs)
@@ -149,6 +210,20 @@ func (s *Service) PermanentlyDeleteTrash(ctx context.Context, input PermanentlyD
 		return PermanentlyDeleteTrashResult{}, err
 	}
 	if lockedFolders != len(folderIDs) {
+		return PermanentlyDeleteTrashResult{}, ErrNotFound
+	}
+	lockedFiles, err := s.trashRepo.LockTrashFiles(ctx, tx, userID, cutoff, fileIDs)
+	if err != nil {
+		return PermanentlyDeleteTrashResult{}, err
+	}
+	if lockedFiles != len(fileIDs) {
+		return PermanentlyDeleteTrashResult{}, ErrNotFound
+	}
+	_, blocked, err := s.trashRepo.LockTrashAncestors(ctx, tx, userID, cutoff, fileIDs, folderIDs)
+	if err != nil {
+		return PermanentlyDeleteTrashResult{}, err
+	}
+	if blocked {
 		return PermanentlyDeleteTrashResult{}, ErrNotFound
 	}
 

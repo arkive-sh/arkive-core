@@ -1,4 +1,4 @@
-import type { MediaDimensions } from '#lib/vault/types';
+import type { MediaDimensions } from '#lib/vault/types.ts';
 
 export const NEW_FOLDER_DRAFT_ID = '__new-folder-draft__';
 
@@ -20,6 +20,8 @@ export interface FileManagerEntry {
 	type: string;
 	size: number | null;
 	updatedAt: string;
+	selectable?: boolean;
+	isTrashContainer?: boolean;
 	dimensions?: MediaDimensions;
 	thumbnail?: ThumbnailSource;
 }

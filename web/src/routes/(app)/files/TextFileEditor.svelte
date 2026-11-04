@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onDestroy, onMount, tick } from 'svelte';
+	import { SvelteMap } from 'svelte/reactivity';
 	import { get } from 'svelte/store';
 	import { createVirtualizer } from '@tanstack/svelte-virtual';
 	import { Pencil, X } from '@lucide/svelte';
@@ -22,7 +23,7 @@
 	// shortcut: these editor limits keep the line index bounded; use paged text editing if larger files become a requirement.
 	const encoder = new TextEncoder();
 	// Map Unicode Bidi_Control code points (UAX #9) to labels; this displays controls and does not implement the bidi algorithm.
-	const bidiControlNames = new Map<number, string>([
+	const bidiControlNames = new SvelteMap<number, string>([
 		[0x061c, 'ALM'],
 		[0x200e, 'LRM'],
 		[0x200f, 'RLM'],
@@ -537,17 +538,8 @@
 	function saveCopy(): void {
 		const name = filename.trim();
 
-		if (
-			!name ||
-			/[/\\\u0000-\u001f]/.test(name) ||
-			name === '.' ||
-			name === '..' ||
-			textSize === 0
-		) {
-			errorMessage =
-				textSize === 0
-					? 'Add text before saving; empty files are not supported by the upload API.'
-					: 'Enter a valid file name without path separators.';
+		if (!name || /[/\\\p{Cc}]/u.test(name) || name === '.' || name === '..') {
+			errorMessage = 'Enter a valid file name without path separators.';
 
 			return;
 		}
@@ -687,130 +679,124 @@
 			>
 		</header>
 	{/snippet}
-	{#snippet children()}
-		<div class="flex min-h-0 flex-1 flex-col">
-			{#if editing}
-				<div class="flex flex-wrap items-center gap-2 border-b border-(--border) px-4 py-3">
-					<input
-						class="h-9 min-w-0 flex-1 rounded border border-(--border) bg-(--bg) px-3 text-sm text-(--text) outline-none focus:border-(--accent)"
-						aria-label="Text file name"
-						bind:value={filename}
-						oninput={() => (dirty = true)}
-					/>
-					<button
-						class={`h-9 cursor-pointer rounded border px-3 text-sm hover:bg-(--surface-highest) ${wrapLines ? 'border-(--accent)' : 'border-(--border)'}`}
+	<div class="flex min-h-0 flex-1 flex-col">
+		{#if editing}
+			<div class="flex flex-wrap items-center gap-2 border-b border-(--border) px-4 py-3">
+				<input
+					class="h-9 min-w-0 flex-1 rounded border border-(--border) bg-(--bg) px-3 text-sm text-(--text) outline-none focus:border-(--accent)"
+					aria-label="Text file name"
+					bind:value={filename}
+					oninput={() => (dirty = true)}
+				/>
+				<button
+					class={`h-9 cursor-pointer rounded border px-3 text-sm hover:bg-(--surface-highest) ${wrapLines ? 'border-(--accent)' : 'border-(--border)'}`}
+					type="button"
+					aria-pressed={wrapLines}
+					onclick={toggleWrapLines}>Wrap lines</button
+				>
+				{#if bidiControlCount > 0}<button
+						class="h-9 cursor-pointer rounded border border-(--border) px-3 text-sm hover:bg-(--surface-highest)"
 						type="button"
-						aria-pressed={wrapLines}
-						onclick={toggleWrapLines}>Wrap lines</button
-					>
-					{#if bidiControlCount > 0}<button
-							class="h-9 cursor-pointer rounded border border-(--border) px-3 text-sm hover:bg-(--surface-highest)"
-							type="button"
-							aria-pressed={showHiddenCharacters}
-							onclick={toggleHiddenCharacters}
-							>{showHiddenCharacters ? 'Hide character markers' : 'Show hidden characters'}</button
-						>{/if}
-					<button
-						class="h-9 cursor-pointer rounded border border-(--accent) bg-(--accent) px-3 text-sm font-semibold text-(--accent-ink) disabled:cursor-not-allowed disabled:opacity-50"
-						type="button"
-						disabled={loading || textSize === 0 || (!dirty && entry !== null)}
-						onclick={saveCopy}>{entry ? 'Save copy' : 'Save file'}</button
-					>
-				</div>
-				{#if !loading && textSize === 0}<p
-						class="m-0 border-b border-(--border) px-4 py-2 text-xs text-(--muted)"
-					>
-						Type some text before saving. Empty files are not accepted by the upload API.
-					</p>{/if}
-			{/if}
-			{#if bidiControlCount > 0}
-				<p class="m-0 border-b border-(--border) px-4 py-2 text-xs text-amber-300" role="status">
-					{bidiControlCount} hidden formatting character{bidiControlCount === 1 ? '' : 's'} can make nearby
-					text appear in a different order.
-					{showHiddenCharacters
-						? ' Each is marked inline, for example ⟦U+202E RLO⟧.'
-						: ' Select “Show hidden characters” to inspect them.'}
-				</p>
-			{/if}
-			{#if allLinesSelected}<p
+						aria-pressed={showHiddenCharacters}
+						onclick={toggleHiddenCharacters}
+						>{showHiddenCharacters ? 'Hide character markers' : 'Show hidden characters'}</button
+					>{/if}
+				<button
+					class="h-9 cursor-pointer rounded border border-(--accent) bg-(--accent) px-3 text-sm font-semibold text-(--accent-ink) disabled:cursor-not-allowed disabled:opacity-50"
+					type="button"
+					disabled={loading || (!dirty && entry !== null)}
+					onclick={saveCopy}>{entry ? 'Save copy' : 'Save file'}</button
+				>
+			</div>
+		{/if}
+		{#if bidiControlCount > 0}
+			<p class="m-0 border-b border-(--border) px-4 py-2 text-xs text-amber-300" role="status">
+				{bidiControlCount} hidden formatting character{bidiControlCount === 1 ? '' : 's'} can make nearby
+				text appear in a different order.
+				{showHiddenCharacters
+					? ' Each is marked inline, for example ⟦U+202E RLO⟧.'
+					: ' Select “Show hidden characters” to inspect them.'}
+			</p>
+		{/if}
+		{#if allLinesSelected}<p
+				class="m-0 border-b border-(--border) px-4 py-2 text-xs text-(--muted)"
+				role="status"
+			>
+				{editing
+					? 'All text selected. Copy, replace, or delete it.'
+					: 'All text selected. Copy to place it on the clipboard.'}
+			</p>{/if}
+		{#if selectionMessage}<p
+				class="m-0 border-b border-(--border) px-4 py-2 text-xs text-(--muted)"
+				role="status"
+			>
+				{selectionMessage}
+			</p>{/if}
+		{#if errorMessage}<p
+				class="m-0 border-b border-(--border) px-4 py-2 text-sm text-red-400"
+				role="alert"
+			>
+				{errorMessage}
+			</p>{/if}
+		{#if lines.length}
+			{#if loading}<p
 					class="m-0 border-b border-(--border) px-4 py-2 text-xs text-(--muted)"
 					role="status"
 				>
-					{editing
-						? 'All text selected. Copy, replace, or delete it.'
-						: 'All text selected. Copy to place it on the clipboard.'}
+					Loading and decrypting text. You can read the lines loaded so far.
 				</p>{/if}
-			{#if selectionMessage}<p
-					class="m-0 border-b border-(--border) px-4 py-2 text-xs text-(--muted)"
-					role="status"
-				>
-					{selectionMessage}
-				</p>{/if}
-			{#if errorMessage}<p
-					class="m-0 border-b border-(--border) px-4 py-2 text-sm text-red-400"
-					role="alert"
-				>
-					{errorMessage}
-				</p>{/if}
-			{#if lines.length}
-				{#if loading}<p
-						class="m-0 border-b border-(--border) px-4 py-2 text-xs text-(--muted)"
-						role="status"
-					>
-						Loading and decrypting text. You can read the lines loaded so far.
-					</p>{/if}
-				<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions: the virtual text region needs focus and keyboard handlers for document-level selection. -->
-				<div
-					bind:this={viewport}
-					class="min-h-0 flex-1 overflow-auto bg-(--bg) py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--accent)"
-					tabindex={editing && !showHiddenCharacters ? -1 : 0}
-					role="region"
-					aria-label="Text document"
-					onkeydown={handleDocumentKeydown}
-					oncopy={handleCopy}
-					oncut={handleCut}
-					onpaste={handleDocumentPaste}
-					onpointerdown={handleDocumentPointerdown}
-				>
-					<div class="relative w-full" style={`height:${totalRowsHeight}px`}>
-						{#each virtualRows as row (row.key)}
-							<div
-								use:measureTextRow={row.index}
-								class={`absolute left-0 flex min-h-7 items-start ${wrapLines ? 'w-full' : 'w-max min-w-full'} ${allLinesSelected ? 'bg-(--surface-highest)' : ''}`}
-								style={`transform:translateY(${row.start}px)`}
+			<!-- eslint-disable-next-line svelte/no-unused-svelte-ignore -->
+			<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions: the virtual text region needs focus and keyboard handlers for document-level selection. -->
+			<div
+				bind:this={viewport}
+				class="min-h-0 flex-1 overflow-auto bg-(--bg) py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--accent)"
+				tabindex={editing && !showHiddenCharacters ? -1 : 0}
+				role="region"
+				aria-label="Text document"
+				onkeydown={handleDocumentKeydown}
+				oncopy={handleCopy}
+				oncut={handleCut}
+				onpaste={handleDocumentPaste}
+				onpointerdown={handleDocumentPointerdown}
+			>
+				<div class="relative w-full" style={`height:${totalRowsHeight}px`}>
+					{#each virtualRows as row (row.key)}
+						<div
+							use:measureTextRow={row.index}
+							class={`absolute left-0 flex min-h-7 items-start ${wrapLines ? 'w-full' : 'w-max min-w-full'} ${allLinesSelected ? 'bg-(--surface-highest)' : ''}`}
+							style={`transform:translateY(${row.start}px)`}
+						>
+							<span
+								class="w-14 shrink-0 select-none pr-3 text-right font-mono text-xs leading-7 text-(--muted)"
+								aria-hidden="true">{row.index + 1}</span
 							>
-								<span
-									class="w-14 shrink-0 select-none pr-3 text-right font-mono text-xs leading-7 text-(--muted)"
-									aria-hidden="true">{row.index + 1}</span
-								>
-								{#if editing && !showHiddenCharacters}
-									<TextEditorLine
-										index={row.index}
-										bytes={lines[row.index]!}
-										{wrapLines}
-										onChange={updateLine}
-										onKeydown={handleLineKeydown}
-										onPaste={handleLinePaste}
-									/>
-								{:else}
-									<pre
-										class={`m-0 px-2 font-mono text-sm leading-7 text-(--text) ${wrapLines ? 'min-w-0 flex-1 whitespace-pre-wrap wrap-break-word' : 'w-max whitespace-pre'}`}>{showHiddenCharacters
-											? visibleBidiMarkers(decodedLine(row.index))
-											: decodedLine(row.index) || ' '}</pre>
-								{/if}
-							</div>
-						{/each}
-					</div>
+							{#if editing && !showHiddenCharacters}
+								<TextEditorLine
+									index={row.index}
+									bytes={lines[row.index]!}
+									{wrapLines}
+									onChange={updateLine}
+									onKeydown={handleLineKeydown}
+									onPaste={handleLinePaste}
+								/>
+							{:else}
+								<pre
+									class={`m-0 px-2 font-mono text-sm leading-7 text-(--text) ${wrapLines ? 'min-w-0 flex-1 whitespace-pre-wrap wrap-break-word' : 'w-max whitespace-pre'}`}>{showHiddenCharacters
+										? visibleBidiMarkers(decodedLine(row.index))
+										: decodedLine(row.index) || ' '}</pre>
+							{/if}
+						</div>
+					{/each}
 				</div>
-			{:else if loading}
-				<div class="grid flex-1 place-items-center text-sm text-(--muted)" role="status">
-					Decrypting text file…
-				</div>
-			{:else if !errorMessage}
-				<div class="grid flex-1 place-items-center text-sm text-(--muted)">
-					This text file is empty.
-				</div>
-			{/if}
-		</div>
-	{/snippet}
+			</div>
+		{:else if loading}
+			<div class="grid flex-1 place-items-center text-sm text-(--muted)" role="status">
+				Decrypting text file…
+			</div>
+		{:else if !errorMessage}
+			<div class="grid flex-1 place-items-center text-sm text-(--muted)">
+				This text file is empty.
+			</div>
+		{/if}
+	</div>
 </Modal>

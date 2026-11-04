@@ -27,7 +27,9 @@
 	let root: HTMLDivElement | undefined;
 	let triggerButton: HTMLButtonElement | undefined;
 
-	function dropdown(_node: HTMLElement) {
+	// Svelte passes this required transition parameter even when the animation only needs progress.
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
+	function dropdown(node: HTMLElement) {
 		return {
 			duration: 160,
 			easing: cubicOut,

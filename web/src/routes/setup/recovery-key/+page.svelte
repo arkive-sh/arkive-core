@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import axios from 'axios';
 	import { Copy, Download, Printer, ShieldCheck, TriangleAlert } from '@lucide/svelte';
 	import Button from '#lib/components/Button.svelte';
@@ -125,10 +126,10 @@
 			recoveryKey = '';
 			encryptedMasterKeyRecovery = '';
 			recoveryProofPublicKey = '';
-			await goto('/login', { replace: true });
+			await goto(resolve('/login'), { replace: true });
 		} catch (error) {
 			if (axios.isAxiosError(error) && error.response?.status === 401) {
-				await goto('/login', { replace: true });
+				await goto(resolve('/login'), { replace: true });
 
 				return;
 			}

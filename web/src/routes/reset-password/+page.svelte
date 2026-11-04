@@ -2,6 +2,7 @@
 	import axios from 'axios';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import * as v from 'valibot';
 	import { api, type APIErrorResponse } from '#lib/api.ts';
 	import { opaqueAuth } from '#lib/opaque-auth.ts';
@@ -124,7 +125,7 @@
 				encryptedMasterKey: prepared.encryptedMasterKey,
 				recoveryProof: prepared.recoveryProof,
 			});
-			await goto('/login?password-reset-complete=1', { replace: true });
+			await goto(resolve('/login?password-reset-complete=1'), { replace: true });
 		} catch (cause) {
 			error = axios.isAxiosError<APIErrorResponse>(cause)
 				? (cause.response?.data?.error?.details?.fields?.general ??
