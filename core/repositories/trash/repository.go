@@ -131,26 +131,6 @@ func (r *Repository) ListEntriesPage(ctx context.Context, db database.PgExecutor
 	return entries, nil
 }
 
-func (r *Repository) CountTrashEntries(ctx context.Context, db database.PgExecutor, userID string, cutoff time.Time, fileIDs, folderIDs []string) (int, int, error) {
-	var fileCount, folderCount int
-	err := db.QueryRow(ctx, `SELECT
-		(SELECT count(*) FROM files file
-		 WHERE file.user_id = $1
-			AND file.id = ANY($3::uuid[])
-			AND file.deleted_at IS NOT NULL
-			AND file.deleted_at > $2
-			AND file.purged_at IS NULL
-			AND file.purge_requested_at IS NULL),
-		(SELECT count(*) FROM folders folder
-		 WHERE folder.user_id = $1
-			AND folder.id = ANY($4::uuid[])
-			AND folder.deleted_at IS NOT NULL
-			AND folder.deleted_at > $2
-			AND folder.purged_at IS NULL
-			AND folder.purge_requested_at IS NULL)`, userID, cutoff, fileIDs, folderIDs).Scan(&fileCount, &folderCount)
-	return fileCount, folderCount, err
-}
-
 func (r *Repository) LockTrashFiles(ctx context.Context, db database.PgExecutor, userID string, cutoff time.Time, fileIDs []string) (int, error) {
 	rows, err := db.Query(ctx, `SELECT id FROM files
 	WHERE user_id = $1 AND id = ANY($2::uuid[]) AND deleted_at > $3 AND purged_at IS NULL AND purge_requested_at IS NULL
@@ -252,9 +232,10 @@ func (r *Repository) LockActiveTrashContainers(ctx context.Context, db database.
 	return count, rows.Err()
 }
 
-func (r *Repository) RestoreTrashContainerContents(ctx context.Context, db database.PgExecutor, userID string, cutoff time.Time, folderIDs []string) (int64, int64, error) {
+func (r *Repository) RestoreRemainingTrashContents(ctx context.Context, db database.PgExecutor, userID string, cutoff time.Time, folderIDs []string) (int64, int64, error) {
 	// Active ancestor folders stay navigable in Trash after restoring a deep child; restore their remaining deleted descendants together.
-	files, err := db.Exec(ctx, `WITH RECURSIVE tree(id) AS (
+	var files, folders int64
+	err := db.QueryRow(ctx, `WITH RECURSIVE tree(id) AS (
 		SELECT id FROM folders
 		WHERE user_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NULL
 			AND purged_at IS NULL AND purge_requested_at IS NULL
@@ -262,33 +243,26 @@ func (r *Repository) RestoreTrashContainerContents(ctx context.Context, db datab
 		SELECT child.id FROM folders child
 		JOIN tree parent ON child.parent_folder_id = parent.id
 		WHERE child.user_id = $1 AND child.purged_at IS NULL AND child.purge_requested_at IS NULL
+	), restored_files AS (
+		UPDATE files file
+		SET deleted_at = NULL, updated_at = now()
+		WHERE file.user_id = $1 AND file.folder_id IN (SELECT id FROM tree)
+			AND file.deleted_at > $3 AND file.purged_at IS NULL AND file.purge_requested_at IS NULL
+		RETURNING file.id
+	), restored_folders AS (
+		UPDATE folders folder
+		SET deleted_at = NULL, updated_at = now()
+		WHERE folder.user_id = $1 AND folder.id IN (SELECT id FROM tree)
+			AND folder.id <> ALL($2::uuid[]) AND folder.deleted_at > $3
+			AND folder.purged_at IS NULL AND folder.purge_requested_at IS NULL
+		RETURNING folder.id
 	)
-	UPDATE files file
-	SET deleted_at = NULL, updated_at = now()
-	WHERE file.user_id = $1 AND file.folder_id IN (SELECT id FROM tree)
-		AND file.deleted_at > $3 AND file.purged_at IS NULL AND file.purge_requested_at IS NULL`, userID, folderIDs, cutoff)
+	SELECT (SELECT count(*) FROM restored_files), (SELECT count(*) FROM restored_folders)`,
+		userID, folderIDs, cutoff).Scan(&files, &folders)
 	if err != nil {
 		return 0, 0, err
 	}
-
-	folders, err := db.Exec(ctx, `WITH RECURSIVE tree(id) AS (
-		SELECT id FROM folders
-		WHERE user_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NULL
-			AND purged_at IS NULL AND purge_requested_at IS NULL
-		UNION
-		SELECT child.id FROM folders child
-		JOIN tree parent ON child.parent_folder_id = parent.id
-		WHERE child.user_id = $1 AND child.purged_at IS NULL AND child.purge_requested_at IS NULL
-	)
-	UPDATE folders folder
-	SET deleted_at = NULL, updated_at = now()
-	WHERE folder.user_id = $1 AND folder.id IN (SELECT id FROM tree)
-		AND folder.id <> ALL($2::uuid[]) AND folder.deleted_at > $3
-		AND folder.purged_at IS NULL AND folder.purge_requested_at IS NULL`, userID, folderIDs, cutoff)
-	if err != nil {
-		return 0, 0, err
-	}
-	return files.RowsAffected(), folders.RowsAffected(), nil
+	return files, folders, nil
 }
 
 func (r *Repository) LockTrashFolders(ctx context.Context, db database.PgExecutor, userID string, cutoff time.Time, folderIDs []string) (int, error) {
@@ -345,7 +319,8 @@ func (r *Repository) LockRestorableFolderFiles(ctx context.Context, db database.
 
 func (r *Repository) RestoreFolderTrees(ctx context.Context, db database.PgExecutor, userID string, cutoff time.Time, folderIDs []string) (int64, int64, error) {
 	// Matching delete timestamps keeps older, separately trashed descendants in Trash.
-	files, err := db.Exec(ctx, `WITH RECURSIVE tree(id, deleted_at) AS (
+	var files, folders int64
+	err := db.QueryRow(ctx, `WITH RECURSIVE tree(id, deleted_at) AS (
 		SELECT id, deleted_at FROM folders
 		WHERE user_id = $1 AND id = ANY($2::uuid[]) AND deleted_at > $3 AND purged_at IS NULL AND purge_requested_at IS NULL
 		UNION
@@ -353,37 +328,30 @@ func (r *Repository) RestoreFolderTrees(ctx context.Context, db database.PgExecu
 		FROM folders child
 		JOIN tree parent ON child.parent_folder_id = parent.id AND child.deleted_at = parent.deleted_at
 		WHERE child.user_id = $1 AND child.purged_at IS NULL AND child.purge_requested_at IS NULL
+	), restored_files AS (
+		UPDATE files file
+		SET deleted_at = NULL, updated_at = now()
+		WHERE file.user_id = $1
+			AND file.purged_at IS NULL
+			AND file.purge_requested_at IS NULL
+			AND file.deleted_at > $3
+			AND EXISTS (
+				SELECT 1 FROM tree
+				WHERE tree.id = file.folder_id AND tree.deleted_at = file.deleted_at
+			)
+		RETURNING file.id
+	), restored_folders AS (
+		UPDATE folders folder
+		SET deleted_at = NULL, updated_at = now()
+		WHERE folder.user_id = $1 AND folder.id IN (SELECT id FROM tree)
+		RETURNING folder.id
 	)
-	UPDATE files file
-	SET deleted_at = NULL, updated_at = now()
-	WHERE file.user_id = $1
-		AND file.purged_at IS NULL
-		AND file.purge_requested_at IS NULL
-		AND file.deleted_at > $3
-		AND EXISTS (
-			SELECT 1 FROM tree
-			WHERE tree.id = file.folder_id AND tree.deleted_at = file.deleted_at
-		)`, userID, folderIDs, cutoff)
+	SELECT (SELECT count(*) FROM restored_files), (SELECT count(*) FROM restored_folders)`,
+		userID, folderIDs, cutoff).Scan(&files, &folders)
 	if err != nil {
 		return 0, 0, err
 	}
-
-	folders, err := db.Exec(ctx, `WITH RECURSIVE tree(id, deleted_at) AS (
-		SELECT id, deleted_at FROM folders
-		WHERE user_id = $1 AND id = ANY($2::uuid[]) AND deleted_at > $3 AND purged_at IS NULL AND purge_requested_at IS NULL
-		UNION
-		SELECT child.id, child.deleted_at
-		FROM folders child
-		JOIN tree parent ON child.parent_folder_id = parent.id AND child.deleted_at = parent.deleted_at
-		WHERE child.user_id = $1 AND child.purged_at IS NULL AND child.purge_requested_at IS NULL
-	)
-	UPDATE folders folder
-	SET deleted_at = NULL, updated_at = now()
-	WHERE folder.user_id = $1 AND folder.id IN (SELECT id FROM tree)`, userID, folderIDs, cutoff)
-	if err != nil {
-		return 0, 0, err
-	}
-	return files.RowsAffected(), folders.RowsAffected(), nil
+	return files, folders, nil
 }
 
 func (r *Repository) RestoreFiles(ctx context.Context, db database.PgExecutor, userID string, cutoff time.Time, fileIDs []string) (int64, error) {
@@ -398,28 +366,53 @@ func (r *Repository) RestoreFiles(ctx context.Context, db database.PgExecutor, u
 	return tag.RowsAffected(), err
 }
 
-func (r *Repository) RequestPurge(ctx context.Context, db database.PgExecutor, userID string, cutoff time.Time, fileIDs, folderIDs []string) (int64, int64, error) {
-	files, err := db.Exec(ctx, `UPDATE files file
-	SET purge_requested_at = now(), updated_at = now()
-	WHERE file.user_id = $1
-		AND file.id = ANY($2::uuid[])
-		AND file.deleted_at > $3
-		AND file.purge_requested_at IS NULL
-		AND file.purged_at IS NULL`, userID, fileIDs, cutoff)
-	if err != nil {
-		return 0, 0, err
-	}
-	folders, err := db.Exec(ctx, `UPDATE folders folder
-	SET purge_requested_at = now(), updated_at = now()
-	WHERE folder.user_id = $1
-		AND folder.id = ANY($2::uuid[])
-		AND folder.deleted_at > $3
-		AND folder.purge_requested_at IS NULL
-		AND folder.purged_at IS NULL`, userID, folderIDs, cutoff)
-	if err != nil {
-		return 0, 0, err
-	}
-	return files.RowsAffected(), folders.RowsAffected(), nil
+func (r *Repository) QueuePermanentDelete(ctx context.Context, db database.PgExecutor, userID string, cutoff time.Time, fileIDs, folderIDs []string) (int64, int64, error) {
+	var files, folders int64
+	err := db.QueryRow(ctx, `WITH queued_files AS (
+		UPDATE files file
+		SET purge_requested_at = now(), updated_at = now()
+		WHERE file.user_id = $1 AND file.id = ANY($2::uuid[])
+			AND file.deleted_at > $3 AND file.purge_requested_at IS NULL AND file.purged_at IS NULL
+		RETURNING file.id
+	), queued_folders AS (
+		UPDATE folders folder
+		SET purge_requested_at = now(), updated_at = now()
+		WHERE folder.user_id = $1 AND folder.id = ANY($4::uuid[])
+			AND folder.deleted_at > $3 AND folder.purge_requested_at IS NULL AND folder.purged_at IS NULL
+		RETURNING folder.id
+	)
+	SELECT (SELECT count(*) FROM queued_files), (SELECT count(*) FROM queued_folders)`,
+		userID, fileIDs, cutoff, folderIDs).Scan(&files, &folders)
+	return files, folders, err
+}
+
+func (r *Repository) QueuePermanentDeleteRemainingTrashContents(ctx context.Context, db database.PgExecutor, userID string, cutoff time.Time, folderIDs []string) (int64, int64, error) {
+	// Bulk deletion scopes to trashed descendants while leaving restored container folders intact.
+	var files, folders int64
+	err := db.QueryRow(ctx, `WITH RECURSIVE tree(id) AS (
+		SELECT id FROM folders
+		WHERE user_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NULL
+			AND purged_at IS NULL AND purge_requested_at IS NULL
+		UNION
+		SELECT child.id FROM folders child
+		JOIN tree parent ON child.parent_folder_id = parent.id
+		WHERE child.user_id = $1 AND child.purged_at IS NULL AND child.purge_requested_at IS NULL
+	), queued_files AS (
+		UPDATE files file
+		SET purge_requested_at = now(), updated_at = now()
+		WHERE file.user_id = $1 AND file.folder_id IN (SELECT id FROM tree)
+			AND file.deleted_at > $3 AND file.purged_at IS NULL AND file.purge_requested_at IS NULL
+		RETURNING file.id
+	), queued_folders AS (
+		UPDATE folders folder
+		SET purge_requested_at = now(), updated_at = now()
+		WHERE folder.user_id = $1 AND folder.id IN (SELECT id FROM tree)
+			AND folder.deleted_at > $3 AND folder.purged_at IS NULL AND folder.purge_requested_at IS NULL
+		RETURNING folder.id
+	)
+	SELECT (SELECT count(*) FROM queued_files), (SELECT count(*) FROM queued_folders)`,
+		userID, folderIDs, cutoff).Scan(&files, &folders)
+	return files, folders, err
 }
 
 func (r *Repository) MarkExpiredFoldersPurged(ctx context.Context, db database.PgExecutor, cutoff time.Time) (int64, error) {

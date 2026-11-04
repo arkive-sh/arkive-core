@@ -40,6 +40,7 @@
 		onRestore?: (entry: FileManagerEntry) => void;
 		onRestoreContents?: (entry: FileManagerEntry) => void;
 		onPermanentDelete?: (entry: FileManagerEntry) => void;
+		onPermanentDeleteContents?: (entry: FileManagerEntry) => void;
 	};
 
 	let {
@@ -65,6 +66,7 @@
 		onRestore,
 		onRestoreContents,
 		onPermanentDelete,
+		onPermanentDeleteContents,
 	}: Props = $props();
 	let menu = $state<HTMLDivElement>();
 	let position = $state({ left: 8, top: 8 });
@@ -188,6 +190,13 @@
 		onPermanentDelete?.(selected);
 	}
 
+	function permanentlyDeleteTrashContainerContents(): void {
+		if (!entry?.isTrashContainer) return;
+		const selected = entry;
+		onClose();
+		onPermanentDeleteContents?.(selected);
+	}
+
 	function createFolder(): void {
 		onClose();
 		onCreateFolder(entry);
@@ -260,6 +269,15 @@
 				>
 					<RotateCcw class="size-4 text-(--muted)" aria-hidden="true" />
 					<span>Restore remaining items</span>
+				</button>
+				<button
+					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm text-red-400 hover:bg-red-500/10"
+					type="button"
+					role="menuitem"
+					onclick={permanentlyDeleteTrashContainerContents}
+				>
+					<Trash2 class="size-4" aria-hidden="true" />
+					<span>Permanently delete remaining items</span>
 				</button>
 			{/if}
 		{:else}

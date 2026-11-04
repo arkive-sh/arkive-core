@@ -21,8 +21,9 @@ type trashEntriesResponse struct {
 }
 
 type trashSelectionRequest struct {
-	FileIDs            []string `json:"fileIds"`
-	FolderIDs          []string `json:"folderIds"`
+	FileIDs   []string `json:"fileIds"`
+	FolderIDs []string `json:"folderIds"`
+	// These are active folders shown inside Trash; the action applies to their remaining trashed descendants.
 	ContainerFolderIDs []string `json:"containerFolderIds"`
 }
 
@@ -112,9 +113,10 @@ func APIPermanentlyDeleteTrash(folderService *folderssvc.Service) gin.HandlerFun
 			return
 		}
 		result, err := folderService.PermanentlyDeleteTrash(c.Request.Context(), folderssvc.PermanentlyDeleteTrashInput{
-			UserID:    userID.(string),
-			FileIDs:   req.FileIDs,
-			FolderIDs: req.FolderIDs,
+			UserID:             userID.(string),
+			FileIDs:            req.FileIDs,
+			FolderIDs:          req.FolderIDs,
+			ContainerFolderIDs: req.ContainerFolderIDs,
 		})
 		if err != nil {
 			switch {
