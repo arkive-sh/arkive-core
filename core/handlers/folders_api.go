@@ -18,6 +18,8 @@ import (
 )
 
 type createFolderRequest struct {
+	// The client assigns this before encryption so it can authenticate the folder ID.
+	ID                string               `json:"id"`
 	ParentFolderID    *string              `json:"parentFolderId"`
 	EncryptedName     string               `json:"encryptedName"`
 	EncryptedMetadata string               `json:"encryptedMetadata"`
@@ -25,9 +27,20 @@ type createFolderRequest struct {
 }
 
 type moveEntriesRequest struct {
-	TargetFolderID *string  `json:"targetFolderId"`
-	FileIDs        []string `json:"fileIds"`
-	FolderIDs      []string `json:"folderIds"`
+	TargetFolderID *string             `json:"targetFolderId"`
+	Files          []moveFileRequest   `json:"files"`
+	Folders        []moveFolderRequest `json:"folders"`
+}
+
+type moveFileRequest struct {
+	ID               string `json:"id"`
+	EncryptedFileKey string `json:"encryptedFileKey"`
+}
+
+type moveFolderRequest struct {
+	ID                string `json:"id"`
+	EncryptedName     string `json:"encryptedName"`
+	EncryptedMetadata string `json:"encryptedMetadata"`
 }
 
 type deleteEntriesRequest struct {
@@ -118,6 +131,7 @@ func APICreateFolder(folderService *folderssvc.Service) gin.HandlerFunc {
 		}
 
 		folder, err := folderService.CreateFolder(c.Request.Context(), folderssvc.CreateFolderInput{
+			ID:                req.ID,
 			UserID:            userID.(string),
 			VaultID:           userID.(string),
 			ParentFolderID:    req.ParentFolderID,
@@ -255,11 +269,35 @@ func APIMoveEntries(folderService *folderssvc.Service) gin.HandlerFunc {
 			return
 		}
 
+		moveFiles := make([]folderssvc.MoveFileInput, 0, len(req.Files))
+		for _, file := range req.Files {
+			encryptedFileKey, err := base64.StdEncoding.DecodeString(strings.TrimSpace(file.EncryptedFileKey))
+			if err != nil || len(encryptedFileKey) == 0 {
+				apierror.InvalidPayload(c)
+				return
+			}
+			moveFiles = append(moveFiles, folderssvc.MoveFileInput{
+				ID: file.ID, EncryptedFileKey: encryptedFileKey,
+			})
+		}
+		moveFolders := make([]folderssvc.MoveFolderInput, 0, len(req.Folders))
+		for _, folder := range req.Folders {
+			encryptedName, nameErr := base64.StdEncoding.DecodeString(strings.TrimSpace(folder.EncryptedName))
+			encryptedMetadata, metadataErr := base64.StdEncoding.DecodeString(strings.TrimSpace(folder.EncryptedMetadata))
+			if nameErr != nil || metadataErr != nil || len(encryptedName) == 0 || len(encryptedMetadata) == 0 {
+				apierror.InvalidPayload(c)
+				return
+			}
+			moveFolders = append(moveFolders, folderssvc.MoveFolderInput{
+				ID: folder.ID, EncryptedName: encryptedName, EncryptedMetadata: encryptedMetadata,
+			})
+		}
+
 		if err := folderService.MoveEntries(c.Request.Context(), folderssvc.MoveEntriesInput{
 			UserID:         userID.(string),
 			TargetFolderID: req.TargetFolderID,
-			FileIDs:        req.FileIDs,
-			FolderIDs:      req.FolderIDs,
+			Files:          moveFiles,
+			Folders:        moveFolders,
 		}); err != nil {
 			switch err {
 			case folderssvc.ErrInvalidInput:

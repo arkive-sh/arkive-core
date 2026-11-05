@@ -1,5 +1,13 @@
 import { decodeJSON, encodeJSON, normalizeAAD, toBase64, toWorkerBytes } from './bytes';
-import type { FileCryptoRecord, VaultAAD, VaultBytes, VaultMetadata } from './types';
+import {
+	FILE_METADATA_AAD,
+	fileKeyAAD,
+	fileManifestAAD,
+	fileMetadataAAD,
+	folderMetadataAAD,
+	folderNameAAD,
+} from './aad';
+import type { FileCryptoRecord, ShareFileRecord, VaultAAD, VaultBytes, VaultMetadata } from './types';
 import { callVaultWorker } from './worker-client';
 
 export function openFileContext(
@@ -11,9 +19,9 @@ export function openFileContext(
 		encryptedFileKey: record.encryptedFileKey,
 		encryptedMetadata: record.encryptedMetadata,
 		encryptedManifest: record.encryptedManifest,
-		fileKeyAad: `arkive:file-key:v1:${record.vaultId}:${record.fileId}`,
-		metadataAad: `arkive:file-metadata:v1:${record.vaultId}:${record.fileId}`,
-		manifestAad: `arkive:file-manifest:v1:${record.vaultId}:${record.fileId}`,
+		fileKeyAad: fileKeyAAD(record.vaultId, record.fileId, record.folderId),
+		metadataAad: fileMetadataAAD(record.vaultId, record.fileId),
+		manifestAad: fileManifestAAD(record.vaultId, record.fileId),
 	});
 }
 
@@ -41,7 +49,7 @@ export function encryptFileMetadata(
 ): Promise<{ encryptedMetadata: string }> {
 	const metadataBytes = encodeJSON(metadata);
 
-	return callVaultWorker('encryptFileMetadata', { metadataBytes, aad: 'arkive:file-metadata:v1' }, [
+	return callVaultWorker('encryptFileMetadata', { metadataBytes, aad: FILE_METADATA_AAD }, [
 		metadataBytes,
 	]);
 }
@@ -57,7 +65,7 @@ export function encryptFileMetadataForFile(
 		'encryptFileMetadata',
 		{
 			metadataBytes,
-			aad: `arkive:file-metadata:v1:${vaultId}:${fileId}`,
+			aad: fileMetadataAAD(vaultId, fileId),
 		},
 		[metadataBytes],
 	);
@@ -76,7 +84,7 @@ export function encryptFileMetadataInContext(
 		{
 			contextId,
 			metadataBytes,
-			aad: `arkive:file-metadata:v1:${vaultId}:${fileId}`,
+			aad: fileMetadataAAD(vaultId, fileId),
 		},
 		[metadataBytes],
 	);
@@ -87,27 +95,17 @@ export async function decryptFileMetadata(
 ): Promise<{ metadata: VaultMetadata }> {
 	const result = await callVaultWorker('decryptFileMetadata', {
 		encryptedMetadata: toBase64(encryptedMetadata),
-		aad: 'arkive:file-metadata:v1',
+		aad: FILE_METADATA_AAD,
 	});
 
 	return { metadata: decodeJSON<VaultMetadata>(result.metadataBytes) };
 }
 
-export function encryptFolderName(metadata: VaultMetadata): Promise<{ encryptedMetadata: string }> {
-	const metadataBytes = encodeJSON(metadata);
-
-	return callVaultWorker(
-		'encryptFolderMetadata',
-		{
-			metadataBytes,
-			aad: 'arkive:folder-name:v1',
-		},
-		[metadataBytes],
-	);
-}
-
-export function encryptFolderMetadata(
+export function encryptFolderName(
 	metadata: VaultMetadata,
+	vaultId: string,
+	folderId: string,
+	parentFolderId: string | null,
 ): Promise<{ encryptedMetadata: string }> {
 	const metadataBytes = encodeJSON(metadata);
 
@@ -115,17 +113,38 @@ export function encryptFolderMetadata(
 		'encryptFolderMetadata',
 		{
 			metadataBytes,
-			aad: 'arkive:folder-metadata:v1',
+			aad: folderNameAAD(vaultId, folderId, parentFolderId),
+		},
+		[metadataBytes],
+	);
+}
+
+export function encryptFolderMetadata(
+	metadata: VaultMetadata,
+	vaultId: string,
+	folderId: string,
+	parentFolderId: string | null,
+): Promise<{ encryptedMetadata: string }> {
+	const metadataBytes = encodeJSON(metadata);
+
+	return callVaultWorker(
+		'encryptFolderMetadata',
+		{
+			metadataBytes,
+			aad: folderMetadataAAD(vaultId, folderId, parentFolderId),
 		},
 		[metadataBytes],
 	);
 }
 export async function decryptFolderName(
 	encryptedMetadata: string | VaultBytes,
+	vaultId: string,
+	folderId: string,
+	parentFolderId: string | null,
 ): Promise<{ metadata: VaultMetadata }> {
 	const result = await callVaultWorker('decryptFolderMetadata', {
 		encryptedMetadata: toBase64(encryptedMetadata),
-		aad: 'arkive:folder-name:v1',
+		aad: folderNameAAD(vaultId, folderId, parentFolderId),
 	});
 
 	return { metadata: decodeJSON<VaultMetadata>(result.metadataBytes) };
@@ -133,11 +152,25 @@ export async function decryptFolderName(
 
 export async function decryptFolderMetadata(
 	encryptedMetadata: string | VaultBytes,
+	vaultId: string,
+	folderId: string,
+	parentFolderId: string | null,
 ): Promise<{ metadata: VaultMetadata }> {
 	const result = await callVaultWorker('decryptFolderMetadata', {
 		encryptedMetadata: toBase64(encryptedMetadata),
-		aad: 'arkive:folder-metadata:v1',
+		aad: folderMetadataAAD(vaultId, folderId, parentFolderId),
 	});
 
 	return { metadata: decodeJSON<VaultMetadata>(result.metadataBytes) };
+}
+
+export function rewrapFileKeyForParent(
+	record: ShareFileRecord,
+	parentFolderId: string | null,
+): Promise<{ encryptedFileKey: string }> {
+	return callVaultWorker('rewrapFileKey', {
+		encryptedFileKey: record.encryptedFileKey,
+		oldAad: fileKeyAAD(record.vaultId, record.fileId, record.folderId),
+		newAad: fileKeyAAD(record.vaultId, record.fileId, parentFolderId),
+	});
 }

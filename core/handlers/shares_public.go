@@ -167,9 +167,6 @@ func APIPublicShareRecord(shareService *shares.Service, filesService *filessvc.S
 			"allowPreview":             share.AllowPreview,
 			"allowDownload":            share.AllowDownload,
 			"burnAfterRead":            share.BurnAfterRead,
-			"shareFileKeyAad":          "arkive:share-file-key:v1:" + record.FileID + ":" + record.Token,
-			"metadataAad":              "arkive:file-metadata:v1:" + record.VaultID + ":" + record.FileID,
-			"manifestAad":              "arkive:file-manifest:v1:" + record.VaultID + ":" + record.FileID,
 		})
 	}
 }
@@ -284,9 +281,6 @@ func APIPublicShareConsume(shareService *shares.Service, filesService *filessvc.
 			"maxAccessCount":           share.MaxAccessCount,
 			"consumedAt":               share.ConsumedAt,
 			"status":                   share.Status,
-			"shareFileKeyAad":          "arkive:share-file-key:v1:" + record.FileID + ":" + record.Token,
-			"metadataAad":              "arkive:file-metadata:v1:" + record.VaultID + ":" + record.FileID,
-			"manifestAad":              "arkive:file-manifest:v1:" + record.VaultID + ":" + record.FileID,
 		})
 	}
 }

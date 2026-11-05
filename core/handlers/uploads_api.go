@@ -726,6 +726,7 @@ func APIFileRecord(svc *filessvc.Service) gin.HandlerFunc {
 		c.JSON(http.StatusOK, gin.H{
 			"fileId":            record.FileID,
 			"vaultId":           record.VaultID,
+			"folderId":          record.FolderID,
 			"encryptionVersion": record.EncryptionVersion,
 			"chunkSize":         record.ChunkSize,
 			"totalChunks":       record.TotalChunks,

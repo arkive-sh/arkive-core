@@ -30,6 +30,7 @@ type ListEntriesCursorResult struct {
 }
 
 type CreateFolderInput struct {
+	ID                string
 	UserID            string
 	VaultID           string
 	ParentFolderID    *string
@@ -56,8 +57,19 @@ type ListEntriesCursorInput struct {
 type MoveEntriesInput struct {
 	UserID         string
 	TargetFolderID *string
-	FileIDs        []string
-	FolderIDs      []string
+	Files          []MoveFileInput
+	Folders        []MoveFolderInput
+}
+
+type MoveFileInput struct {
+	ID               string
+	EncryptedFileKey []byte
+}
+
+type MoveFolderInput struct {
+	ID                string
+	EncryptedName     []byte
+	EncryptedMetadata []byte
 }
 
 type RenameFolderInput struct {

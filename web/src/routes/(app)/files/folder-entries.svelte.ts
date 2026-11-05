@@ -119,6 +119,7 @@ export function createFolderEntries(
 					try {
 						const decrypted = await decryptSearchFolder({
 							id: folder.ID,
+							parentFolderId: folder.ParentFolderID,
 							vaultId: getVaultId(),
 							encryptedName: folder.EncryptedName,
 							encryptedMetadata: folder.EncryptedMetadata,
@@ -191,6 +192,7 @@ export function createFolderEntries(
 											thumbnailWidth: Number(preview.thumbnail_width || 0),
 											thumbnailHeight: Number(preview.thumbnail_height || 0),
 											vaultId: getVaultId(),
+											folderId: file.FolderID,
 											encryptedMetadata: file.EncryptedMetadata,
 											encryptedFileKey: file.EncryptedFileKey,
 										}
@@ -219,6 +221,7 @@ export function createFolderEntries(
 						try {
 							const decrypted = await decryptSearchFolder({
 								id: folder.ID,
+							parentFolderId: folder.ParentFolderID,
 								vaultId: getVaultId(),
 								encryptedName: folder.EncryptedName,
 								encryptedMetadata: folder.EncryptedMetadata,

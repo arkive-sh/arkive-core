@@ -4,6 +4,7 @@ import { closeFileContext, decryptFileChunk, openFileContext } from './files.ts'
 import { waitUntilReady } from './session.ts';
 import type { FileCryptoRecord, VaultMetadata } from './types.ts';
 import { ENCRYPTED_ENVELOPE_OVERHEAD_BYTES, ENCRYPTION_VERSION } from './crypto-format.ts';
+import { fileChunkAAD } from './aad.ts';
 
 interface EncryptedFileRecord extends FileCryptoRecord {
 	encryptionVersion: number;
@@ -365,7 +366,13 @@ export class DecryptedFileReader {
 			if (encryptedChunk.byteLength !== chunk.cipher_size)
 				throw new Error('The file data is incomplete.');
 
-			const aad = `arkive:file-chunk:v1:${context.record.vaultId}:${context.record.fileId}:${index + 1}:${context.record.chunkSize}:${context.record.totalChunks}`;
+			const aad = fileChunkAAD(
+				context.record.vaultId,
+				context.record.fileId,
+				index + 1,
+				context.record.chunkSize,
+				context.record.totalChunks,
+			);
 
 			const { chunkBytes } = await decryptFileChunk(
 				this.contextId,

@@ -1,4 +1,5 @@
 import { normalizeAAD, toWorkerBytes } from './bytes';
+import { fileKeyAAD, fileManifestAAD, fileMetadataAAD, shareFileKeyAAD, shareKeyAAD } from './aad';
 import type {
 	PublicShareCryptoRecord,
 	ShareFileRecord,
@@ -17,9 +18,9 @@ export function prepareShare(
 		fileId: record.fileId,
 		token,
 		encryptedFileKey: record.encryptedFileKey,
-		fileKeyAad: `arkive:file-key:v1:${record.vaultId}:${record.fileId}`,
-		shareKeyAad: `arkive:share-key:v1:${token}`,
-		shareFileKeyAad: `arkive:share-file-key:v1:${record.fileId}:${token}`,
+		fileKeyAad: fileKeyAAD(record.vaultId, record.fileId, record.folderId),
+		shareKeyAad: shareKeyAAD(token),
+		shareFileKeyAad: shareFileKeyAAD(record.fileId, token),
 	});
 }
 
@@ -29,7 +30,7 @@ export function openShareKey(
 ): Promise<{ shareSecret: Uint8Array<ArrayBuffer> }> {
 	return callVaultWorker('openShareKey', {
 		encryptedShareKey,
-		shareKeyAad: `arkive:share-key:v1:${token}`,
+		shareKeyAad: shareKeyAAD(token),
 	});
 }
 
@@ -41,9 +42,20 @@ export function openPublicShareContext(
 	const secret = toWorkerBytes(shareSecret);
 	shareSecret.fill(0);
 
-	return callVaultWorker('openPublicShareContext', { contextId, shareSecret: secret, ...record }, [
-		secret,
-	]);
+	return callVaultWorker(
+		'openPublicShareContext',
+		{
+			contextId,
+			shareSecret: secret,
+			encryptedFileKeyForShare: record.encryptedFileKeyForShare,
+			encryptedMetadata: record.encryptedMetadata,
+			encryptedManifest: record.encryptedManifest,
+			shareFileKeyAad: shareFileKeyAAD(record.fileId, record.token),
+			metadataAad: fileMetadataAAD(record.vaultId, record.fileId),
+			manifestAad: fileManifestAAD(record.vaultId, record.fileId),
+		},
+		[secret],
+	);
 }
 
 export function closePublicShareContext(contextId: string): Promise<{ cleared: boolean }> {

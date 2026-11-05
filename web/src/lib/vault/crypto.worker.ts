@@ -5,6 +5,7 @@ import { EncryptionService } from './encryption-service';
 import { HashService } from './hash-service';
 import { formatRecoveryKey, parseRecoveryKey } from './recovery-key';
 import { ENCRYPTION_VERSION } from './crypto-format';
+import { VAULT_MASTER_KEY_AAD, recoveryMasterKeyAAD } from './aad';
 import type { VaultWorkerCalls, VaultWorkerMethod } from './types';
 
 type WorkerInput<K extends VaultWorkerMethod> = VaultWorkerCalls[K]['params'];
@@ -78,6 +79,7 @@ function clearBytes(bytes: Uint8Array | null | undefined): null {
 }
 
 function aadBytes(value: unknown): Uint8Array {
+	// Stable UTF-8 encoding keeps every client deriving the same authenticated context.
 	if (!value) {
 		return new Uint8Array();
 	}
@@ -128,11 +130,7 @@ async function wrapRecoveryMasterKey(
 			new TextEncoder().encode('arkive-recovery-kek-v1'),
 		);
 
-		return await encryption.wrapKey(
-			masterKey,
-			kek,
-			aadBytes(`arkive:master-key:recovery:v1:${userID}`),
-		);
+		return await encryption.wrapKey(masterKey, kek, aadBytes(recoveryMasterKeyAAD(userID)));
 	} finally {
 		kek = clearBytes(kek);
 	}
@@ -155,7 +153,7 @@ async function unwrapRecoveryMasterKey(
 		return await decryption.unwrapKey(
 			encryptedMasterKey,
 			kek,
-			aadBytes(`arkive:master-key:recovery:v1:${userID}`),
+			aadBytes(recoveryMasterKeyAAD(userID)),
 		);
 	} catch (cause) {
 		throw new Error('Invalid recovery key', { cause });
@@ -207,11 +205,7 @@ async function handleCreateInitialVault(params: WorkerInput<'createInitialVault'
 		salt = randomBytes(16);
 		masterKey = randomBytes(32);
 		kek = await deriveVaultKEK(exportKey, salt);
-		encryptedMasterKey = await encryption.wrapKey(
-			masterKey,
-			kek,
-			new TextEncoder().encode('arkive:master-key:v1'),
-		);
+		encryptedMasterKey = await encryption.wrapKey(masterKey, kek, aadBytes(VAULT_MASTER_KEY_AAD));
 
 		return {
 			vaultSalt: toBase64(salt),
@@ -294,7 +288,7 @@ async function handlePreparePasswordReset(params: WorkerInput<'preparePasswordRe
 		masterKey = await unwrapRecoveryMasterKey(encryptedMasterKeyRecovery, recoveryKey, userID);
 		recoveryProof = await signRecoveryProof(recoveryKey, userID, String(params.resetToken || ''));
 		kek = await deriveVaultKEK(exportKey, salt);
-		wrappedMasterKey = await encryption.wrapKey(masterKey, kek, aadBytes('arkive:master-key:v1'));
+		wrappedMasterKey = await encryption.wrapKey(masterKey, kek, aadBytes(VAULT_MASTER_KEY_AAD));
 
 		return {
 			vaultSalt: toBase64(salt),
@@ -412,6 +406,32 @@ async function handlePrepareUpload(params: WorkerInput<'prepareUpload'>) {
 	} finally {
 		fileKey = clearBytes(fileKey);
 		encryptedFileKey = clearBytes(encryptedFileKey);
+	}
+}
+
+async function handleRewrapFileKey(params: WorkerInput<'rewrapFileKey'>) {
+	if (!unlockedMasterKey) throw new Error('Vault is locked');
+	const generation = vaultGeneration;
+	let encryptedFileKey;
+	let fileKey;
+	let reboundFileKey;
+
+	try {
+		encryptedFileKey = fromBase64(params.encryptedFileKey);
+		fileKey = await decryption.unwrapKey(
+			encryptedFileKey,
+			unlockedMasterKey,
+			aadBytes(params.oldAad),
+		);
+		assertVaultGeneration(generation);
+		reboundFileKey = await encryption.wrapKey(fileKey, unlockedMasterKey, aadBytes(params.newAad));
+		assertVaultGeneration(generation);
+
+		return { encryptedFileKey: toBase64(reboundFileKey) };
+	} finally {
+		encryptedFileKey = clearBytes(encryptedFileKey);
+		fileKey = clearBytes(fileKey);
+		reboundFileKey = clearBytes(reboundFileKey);
 	}
 }
 
@@ -991,6 +1011,7 @@ const messageHandlers: WorkerHandlers = {
 	prepareShare: handlePrepareShare,
 	openShareKey: handleOpenShareKey,
 	prepareUpload: handlePrepareUpload,
+	rewrapFileKey: handleRewrapFileKey,
 	encryptUploadMetadata: handleEncryptUploadMetadata,
 	encryptUploadThumbnail: handleEncryptUploadThumbnail,
 	encryptUploadPart: handleEncryptUploadPart,

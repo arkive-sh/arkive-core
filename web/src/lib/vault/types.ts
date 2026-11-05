@@ -28,6 +28,7 @@ export interface EncryptedSearchFile {
 
 export interface EncryptedSearchFolder {
 	id: string;
+	parentFolderId: string | null;
 	vaultId: string;
 	encryptedName: string;
 	encryptedMetadata: string;
@@ -48,6 +49,7 @@ export interface VaultState {
 export interface ShareFileRecord {
 	vaultId: string;
 	fileId: string;
+	folderId: string | null;
 	encryptedFileKey: string;
 }
 
@@ -57,12 +59,13 @@ export interface FileCryptoRecord extends ShareFileRecord {
 }
 
 export interface PublicShareCryptoRecord {
+	// Derive AAD client-side from the public identifiers rather than accepting it from the API.
+	token: string;
+	fileId: string;
+	vaultId: string;
 	encryptedFileKeyForShare: string;
 	encryptedMetadata: string;
 	encryptedManifest: string;
-	shareFileKeyAad: string;
-	metadataAad: string;
-	manifestAad: string;
 }
 
 /** Typed RPC boundary between the Svelte app and the crypto worker. */
@@ -124,6 +127,10 @@ export interface VaultWorkerCalls {
 		params: { uploadToken: string; totalParts: number; fileKeyAad: string };
 		result: { encryptedFileKey: string; totalParts: number; encryptionVersion: number };
 	};
+	rewrapFileKey: {
+		params: { encryptedFileKey: string; oldAad: string; newAad: string };
+		result: { encryptedFileKey: string };
+	};
 	encryptUploadMetadata: {
 		params: { uploadToken: string; metadataBytes: ArrayBuffer | null; metadataAad: string };
 		result: { encryptedMetadata: string };
@@ -161,7 +168,16 @@ export interface VaultWorkerCalls {
 	};
 	closeFileContext: { params: { contextId: string }; result: { cleared: boolean } };
 	openPublicShareContext: {
-		params: { contextId: string; shareSecret: VaultBytes | null } & PublicShareCryptoRecord;
+		params: {
+			contextId: string;
+			shareSecret: VaultBytes | null;
+			encryptedFileKeyForShare: string;
+			encryptedMetadata: string;
+			encryptedManifest: string;
+			shareFileKeyAad: string;
+			metadataAad: string;
+			manifestAad: string;
+		};
 		result: { metadataBytes: Uint8Array; manifestBytes: Uint8Array };
 	};
 	closePublicShareContext: { params: { contextId: string }; result: { cleared: boolean } };
