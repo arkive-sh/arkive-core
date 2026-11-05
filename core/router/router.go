@@ -127,7 +127,8 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 		apiFolders.GET("/folders/root/entries", handlers.APIListRootFolderEntries(folderService))
 		apiFolders.GET("/folders/:id/entries", handlers.APIListFolderEntries(folderService))
 		apiFolders.POST("/entries/delete", handlers.APIDeleteEntries(folderService))
-		apiFolders.POST("/entries/move", handlers.APIMoveEntries(folderService))
+		// Allow the service's 1,000-entry move limit while bounding JSON/base64 allocation in the handler.
+		apiFolders.POST("/entries/move", middleware.LimitBody(8<<20), handlers.APIMoveEntries(folderService))
 		apiFolders.POST("/entries/rename", handlers.APIRenameEntry(folderService, filesService))
 	}
 
