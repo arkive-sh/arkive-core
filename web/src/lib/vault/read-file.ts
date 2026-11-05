@@ -30,6 +30,16 @@ interface FileReadContext {
 	plaintextSize: number;
 }
 
+// The viewer uses the type to distinguish the size cap from retryable preview failures.
+export class PreviewSizeLimitError extends Error {
+	constructor(maxBytes: number) {
+		super(
+			`Images larger than ${Math.floor(maxBytes / 1024 / 1024)} MiB cannot be previewed here. Download the file instead.`,
+		);
+		this.name = 'PreviewSizeLimitError';
+	}
+}
+
 interface PendingChunkRead {
 	controller: AbortController;
 	consumers: number;
@@ -228,8 +238,12 @@ export class DecryptedFileReader {
 		}
 	}
 
-	async createBlob(mimeType?: string): Promise<Blob> {
+	async createBlob(mimeType?: string, maxPlaintextBytes?: number): Promise<Blob> {
 		const { plaintextSize, metadata } = await this.load();
+
+		if (maxPlaintextBytes !== undefined && plaintextSize > maxPlaintextBytes)
+			throw new PreviewSizeLimitError(maxPlaintextBytes);
+
 		const parts: Uint8Array[] = [];
 
 		try {
@@ -405,11 +419,12 @@ export async function readDecryptedFile(
 	fileId: string,
 	mimeType: string,
 	signal: AbortSignal,
+	maxPlaintextBytes?: number,
 ): Promise<Blob> {
 	const reader = new DecryptedFileReader(fileId, signal);
 
 	try {
-		return await reader.createBlob(mimeType);
+		return await reader.createBlob(mimeType, maxPlaintextBytes);
 	} finally {
 		await reader.dispose();
 	}

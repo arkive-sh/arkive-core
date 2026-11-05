@@ -5,8 +5,8 @@
 	import type { Content } from 'photoswipe/lightbox';
 	import { readDecryptedThumbnail } from '#lib/vault/thumbnail.ts';
 	import type { FileManagerEntry } from './types';
-	import { readDecryptedFile } from '#lib/vault/read-file.ts';
-	import { isHeicImage } from '#lib/utils/image.ts';
+	import { PreviewSizeLimitError, readDecryptedFile } from '#lib/vault/read-file.ts';
+	import { isHeicImage, MAX_IMAGE_PREVIEW_BYTES } from '#lib/utils/image.ts';
 	import { decodeHeicImage } from '#lib/utils/heic.ts';
 
 	type PreviewRequest = { fileId: string; trigger?: HTMLElement };
@@ -20,7 +20,8 @@
 		controller: AbortController;
 		objectUrl?: string;
 		pendingObjectUrl?: string;
-		status: 'loading-thumbnail' | 'ready' | 'loading-original' | 'original' | 'failed';
+		status:
+			'loading-thumbnail' | 'ready' | 'loading-original' | 'original' | 'failed' | 'too-large';
 	};
 
 	let { entries, request, onClose, onError }: Props = $props();
@@ -41,13 +42,16 @@
 		originalButton.disabled =
 			!resource ||
 			resource.status === 'loading-thumbnail' ||
-			resource.status === 'loading-original';
+			resource.status === 'loading-original' ||
+			resource.status === 'too-large';
 		originalButton.textContent =
 			resource?.status === 'loading-original'
 				? 'Loading…'
-				: resource?.status === 'failed'
-					? 'Retry original'
-					: 'View original';
+				: resource?.status === 'too-large'
+					? 'Too large to preview'
+					: resource?.status === 'failed'
+						? 'Retry original'
+						: 'View original';
 	}
 
 	function ensureLightbox(): Promise<import('photoswipe/lightbox').default> {
@@ -180,14 +184,20 @@
 			!(image instanceof HTMLImageElement) ||
 			resource.status === 'loading-thumbnail' ||
 			resource.status === 'loading-original' ||
-			resource.status === 'original'
+			resource.status === 'original' ||
+			resource.status === 'too-large'
 		)
 			return;
 
 		resource.status = 'loading-original';
 		updateOriginalButton();
 		try {
-			const decrypted = await readDecryptedFile(entry.id, entry.type, resource.controller.signal);
+			const decrypted = await readDecryptedFile(
+				entry.id,
+				entry.type,
+				resource.controller.signal,
+				MAX_IMAGE_PREVIEW_BYTES,
+			);
 
 			if (resource.controller.signal.aborted) return;
 
@@ -246,7 +256,7 @@
 			showOriginal(decrypted);
 		} catch (error) {
 			if (resource.controller.signal.aborted) return;
-			resource.status = 'failed';
+			resource.status = error instanceof PreviewSizeLimitError ? 'too-large' : 'failed';
 			onError(error instanceof Error ? error.message : `Could not preview ${entry.name}.`);
 			updateOriginalButton();
 		}
