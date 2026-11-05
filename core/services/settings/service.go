@@ -36,7 +36,6 @@ type StorageInput struct {
 
 type UploadInput struct {
 	MaxQueueItems    string
-	PartConcurrency  string
 	StaleUploadHours string
 }
 
@@ -226,7 +225,6 @@ func ValidateStorageSettings(settings models.StorageSettings, validationErrors v
 func DefaultUploadSettings() models.UploadSettings {
 	return models.UploadSettings{
 		MaxQueueItems:    300,
-		PartConcurrency:  3,
 		StaleUploadHours: 1,
 	}
 }
@@ -251,15 +249,6 @@ func BuildUploadSettings(input UploadInput) (models.UploadSettings, validation.E
 			maxQueueItems = n
 		}
 	}
-	partConcurrency := defaults.PartConcurrency
-	if strings.TrimSpace(input.PartConcurrency) != "" {
-		n, err := strconv.Atoi(strings.TrimSpace(input.PartConcurrency))
-		if err != nil || n <= 0 {
-			validationErrors.Add("part_concurrency", "must be a positive number")
-		} else {
-			partConcurrency = n
-		}
-	}
 	staleUploadHours := defaults.StaleUploadHours
 	if strings.TrimSpace(input.StaleUploadHours) != "" {
 		n, err := strconv.Atoi(strings.TrimSpace(input.StaleUploadHours))
@@ -271,7 +260,6 @@ func BuildUploadSettings(input UploadInput) (models.UploadSettings, validation.E
 	}
 	return models.UploadSettings{
 		MaxQueueItems:    maxQueueItems,
-		PartConcurrency:  partConcurrency,
 		StaleUploadHours: staleUploadHours,
 	}, validationErrors
 }
@@ -279,9 +267,6 @@ func BuildUploadSettings(input UploadInput) (models.UploadSettings, validation.E
 func ValidateUploadSettings(settings models.UploadSettings, validationErrors validation.Errors) {
 	if settings.MaxQueueItems <= 0 {
 		validationErrors.Add("max_queue_items", "must be a positive number")
-	}
-	if settings.PartConcurrency <= 0 || settings.PartConcurrency > 8 {
-		validationErrors.Add("part_concurrency", "must be between 1 and 8")
 	}
 	if settings.StaleUploadHours <= 0 || settings.StaleUploadHours > 168 {
 		validationErrors.Add("stale_upload_hours", "must be between 1 and 168")

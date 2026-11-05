@@ -58,7 +58,7 @@ func (r *Repository) GetStorageSettings(ctx context.Context, db database.PgExecu
 }
 
 func (r *Repository) GetUploadSettings(ctx context.Context, db database.PgExecutor) (models.UploadSettings, error) {
-	rows, err := db.Query(ctx, `SELECT key, value FROM instance_settings WHERE key LIKE 'upload.%'`)
+	rows, err := db.Query(ctx, `SELECT key, value FROM instance_settings WHERE key IN ('upload.max_queue_items', 'upload.stale_hours')`)
 	if err != nil {
 		return models.UploadSettings{}, err
 	}
@@ -83,26 +83,20 @@ func (r *Repository) GetUploadSettings(ctx context.Context, db database.PgExecut
 	if maxQueueItems <= 0 {
 		maxQueueItems = 300
 	}
-	partConcurrency, _ := strconv.Atoi(values["upload.part_concurrency"])
-	if partConcurrency <= 0 {
-		partConcurrency = 3
-	}
 	staleUploadHours, _ := strconv.Atoi(values["upload.stale_hours"])
 	if staleUploadHours <= 0 {
 		staleUploadHours = 1
 	}
 	return models.UploadSettings{
 		MaxQueueItems:    maxQueueItems,
-		PartConcurrency:  partConcurrency,
 		StaleUploadHours: staleUploadHours,
 	}, nil
 }
 
 func (r *Repository) SaveUploadSettings(ctx context.Context, db database.PgExecutor, settings models.UploadSettings) error {
 	values := map[string]string{
-		"upload.max_queue_items":  strconv.Itoa(settings.MaxQueueItems),
-		"upload.part_concurrency": strconv.Itoa(settings.PartConcurrency),
-		"upload.stale_hours":      strconv.Itoa(settings.StaleUploadHours),
+		"upload.max_queue_items": strconv.Itoa(settings.MaxQueueItems),
+		"upload.stale_hours":     strconv.Itoa(settings.StaleUploadHours),
 	}
 	for key, value := range values {
 		if _, err := db.Exec(ctx, `
@@ -113,6 +107,9 @@ func (r *Repository) SaveUploadSettings(ctx context.Context, db database.PgExecu
 		`, key, value); err != nil {
 			return err
 		}
+	}
+	if _, err := db.Exec(ctx, `DELETE FROM instance_settings WHERE key = 'upload.part_concurrency'`); err != nil {
+		return err
 	}
 	return nil
 }
