@@ -18,14 +18,15 @@ func (r *Repository) Create(ctx context.Context, db database.PgExecutor, folder 
 	var created models.Folder
 	var parentFolderID *string
 	query := `INSERT INTO folders
-		(user_id, vault_id, parent_folder_id, encrypted_name, encrypted_metadata)
+		(id, user_id, vault_id, parent_folder_id, encrypted_name, encrypted_metadata)
 	VALUES
-		($1, $2, $3, $4, $5)
+		($1, $2, $3, $4, $5, $6)
 	RETURNING
 		id, user_id, vault_id, parent_folder_id, encrypted_name, encrypted_metadata, created_at, updated_at, deleted_at`
 	if err := db.QueryRow(
 		ctx,
 		query,
+		folder.ID,
 		folder.UserID,
 		folder.VaultID,
 		folder.ParentFolderID,
@@ -246,16 +247,19 @@ func (r *Repository) GetChildFolderCreatedAt(ctx context.Context, db database.Pg
 	return createdAt, err
 }
 
-func (r *Repository) MoveFolders(ctx context.Context, db database.PgExecutor, userID string, folderIDs []string, targetFolderID *string) (int64, error) {
-	query := `UPDATE folders
+func (r *Repository) MoveFolders(ctx context.Context, db database.PgExecutor, userID string, folderIDs []string, encryptedNames, encryptedMetadata [][]byte, targetFolderID *string) (int64, error) {
+	query := `UPDATE folders AS folder
 	SET
-		parent_folder_id = $3,
+		parent_folder_id = $5,
+		encrypted_name = moved.encrypted_name,
+		encrypted_metadata = moved.encrypted_metadata,
 		updated_at = now()
+	FROM UNNEST($2::uuid[], $3::bytea[], $4::bytea[]) AS moved(id, encrypted_name, encrypted_metadata)
 	WHERE
-		user_id = $1
-		AND id = ANY($2::uuid[])
-		AND deleted_at IS NULL`
-	tag, err := db.Exec(ctx, query, userID, folderIDs, targetFolderID)
+		folder.user_id = $1
+		AND folder.id = moved.id
+		AND folder.deleted_at IS NULL`
+	tag, err := db.Exec(ctx, query, userID, folderIDs, encryptedNames, encryptedMetadata, targetFolderID)
 	if err != nil {
 		return 0, err
 	}

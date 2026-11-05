@@ -1,4 +1,5 @@
 import { encodeJSON, normalizeAAD, toWorkerBytes } from './bytes';
+import { fileKeyAAD, fileManifestAAD, fileMetadataAAD } from './aad';
 import type { VaultAAD, VaultBytes, VaultMetadata, VaultWorkerCalls } from './types';
 import { callVaultWorker } from './worker-client';
 
@@ -6,12 +7,13 @@ export function prepareUpload(
 	uploadToken: string,
 	vaultId: string,
 	fileId: string,
+	folderId: string | null,
 	totalParts: number,
 ): Promise<VaultWorkerCalls['prepareUpload']['result']> {
 	return callVaultWorker('prepareUpload', {
 		uploadToken,
 		totalParts,
-		fileKeyAad: `arkive:file-key:v1:${vaultId}:${fileId}`,
+		fileKeyAad: fileKeyAAD(vaultId, fileId, folderId),
 	});
 }
 
@@ -28,7 +30,7 @@ export function encryptUploadMetadata(
 		{
 			uploadToken,
 			metadataBytes,
-			metadataAad: `arkive:file-metadata:v1:${vaultId}:${fileId}`,
+			metadataAad: fileMetadataAAD(vaultId, fileId),
 		},
 		[metadataBytes],
 	);
@@ -83,7 +85,7 @@ export function finalizeUpload(
 			uploadToken,
 			manifestBytes,
 			partHashes,
-			manifestAad: `arkive:file-manifest:v1:${vaultId}:${fileId}`,
+			manifestAad: fileManifestAAD(vaultId, fileId),
 		},
 		[manifestBytes],
 	);

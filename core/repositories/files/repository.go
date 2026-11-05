@@ -432,18 +432,20 @@ func (r *Repository) GetListedFileCreatedAt(ctx context.Context, db database.PgE
 	return createdAt, err
 }
 
-func (r *Repository) MoveFilesToFolder(ctx context.Context, db database.PgExecutor, userID string, fileIDs []string, targetFolderID *string) (int64, error) {
-	query := `UPDATE files
+func (r *Repository) MoveFilesToFolder(ctx context.Context, db database.PgExecutor, userID string, fileIDs []string, encryptedFileKeys [][]byte, targetFolderID *string) (int64, error) {
+	query := `UPDATE files AS file
 	SET
-		folder_id = $3,
+		folder_id = $4,
+		encrypted_file_key = moved.encrypted_file_key,
 		updated_at = now()
+	FROM UNNEST($2::uuid[], $3::bytea[]) AS moved(id, encrypted_file_key)
 	WHERE
-		user_id = $1
-		AND id = ANY($2::uuid[])
-		AND upload_status = 'complete'
-		AND expires_at IS NULL
-		AND deleted_at IS NULL`
-	tag, err := db.Exec(ctx, query, userID, fileIDs, targetFolderID)
+		file.user_id = $1
+		AND file.id = moved.id
+		AND file.upload_status = 'complete'
+		AND file.expires_at IS NULL
+		AND file.deleted_at IS NULL`
+	tag, err := db.Exec(ctx, query, userID, fileIDs, encryptedFileKeys, targetFolderID)
 	if err != nil {
 		return 0, err
 	}

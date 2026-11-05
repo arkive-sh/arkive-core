@@ -46,8 +46,12 @@ func NewService(db database.PgPool, folderRepo *foldersrepo.Repository, fileRepo
 
 func (s *Service) CreateFolder(ctx context.Context, input CreateFolderInput) (models.Folder, error) {
 	userID := strings.TrimSpace(input.UserID)
-	if userID == "" || len(input.EncryptedName) == 0 {
+	if userID == "" || len(input.EncryptedName) == 0 || len(input.EncryptedMetadata) == 0 {
 		return models.Folder{}, ErrInvalidInput
+	}
+	folderID, err := validateUUIDValue(input.ID)
+	if err != nil {
+		return models.Folder{}, err
 	}
 	searchTokens, err := filessvc.NormalizeSearchTokens(input.SearchTokens, filessvc.MaxSearchTokensPerFile)
 	if err != nil {
@@ -81,6 +85,7 @@ func (s *Service) CreateFolder(ctx context.Context, input CreateFolderInput) (mo
 	}
 
 	folder, err := s.folderRepo.Create(ctx, tx, models.Folder{
+		ID:                folderID,
 		UserID:            userID,
 		VaultID:           vaultID,
 		ParentFolderID:    input.ParentFolderID,
@@ -515,22 +520,41 @@ func (s *Service) MoveEntries(ctx context.Context, input MoveEntriesInput) error
 	if userID == "" {
 		return ErrInvalidInput
 	}
-	fileIDs := uniqueNonEmpty(input.FileIDs)
-	folderIDs := uniqueNonEmpty(input.FolderIDs)
-	if len(fileIDs) == 0 && len(folderIDs) == 0 {
+	if len(input.Files) == 0 && len(input.Folders) == 0 {
 		return ErrInvalidInput
 	}
-	if len(fileIDs)+len(folderIDs) > maxMoveEntries {
+	if len(input.Files)+len(input.Folders) > maxMoveEntries {
 		return ErrInvalidInput
 	}
-	var err error
-	fileIDs, err = validateUUIDList(fileIDs)
-	if err != nil {
-		return err
+	fileIDs := make([]string, len(input.Files))
+	encryptedFileKeys := make([][]byte, len(input.Files))
+	seenFiles := make(map[string]struct{}, len(input.Files))
+	for i, file := range input.Files {
+		id, err := validateUUIDValue(file.ID)
+		if err != nil || len(file.EncryptedFileKey) == 0 {
+			return ErrInvalidInput
+		}
+		if _, exists := seenFiles[id]; exists {
+			return ErrInvalidInput
+		}
+		seenFiles[id] = struct{}{}
+		fileIDs[i], encryptedFileKeys[i] = id, file.EncryptedFileKey
 	}
-	folderIDs, err = validateUUIDList(folderIDs)
-	if err != nil {
-		return err
+	folderIDs := make([]string, len(input.Folders))
+	encryptedNames := make([][]byte, len(input.Folders))
+	encryptedMetadata := make([][]byte, len(input.Folders))
+	seenFolders := make(map[string]struct{}, len(input.Folders))
+	for i, folder := range input.Folders {
+		id, err := validateUUIDValue(folder.ID)
+		if err != nil || len(folder.EncryptedName) == 0 || len(folder.EncryptedMetadata) == 0 {
+			return ErrInvalidInput
+		}
+		if _, exists := seenFolders[id]; exists {
+			return ErrInvalidInput
+		}
+		seenFolders[id] = struct{}{}
+		folderIDs[i] = id
+		encryptedNames[i], encryptedMetadata[i] = folder.EncryptedName, folder.EncryptedMetadata
 	}
 
 	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
@@ -570,7 +594,8 @@ func (s *Service) MoveEntries(ctx context.Context, input MoveEntriesInput) error
 	}
 
 	if len(folderIDs) > 0 {
-		moved, err := s.folderRepo.MoveFolders(ctx, tx, userID, folderIDs, targetFolderID)
+		// Re-encrypt moved folder context because its authenticated parent ID changes.
+		moved, err := s.folderRepo.MoveFolders(ctx, tx, userID, folderIDs, encryptedNames, encryptedMetadata, targetFolderID)
 		if err != nil {
 			return err
 		}
@@ -580,7 +605,8 @@ func (s *Service) MoveEntries(ctx context.Context, input MoveEntriesInput) error
 	}
 
 	if len(fileIDs) > 0 {
-		moved, err := s.fileRepo.MoveFilesToFolder(ctx, tx, userID, fileIDs, targetFolderID)
+		// A file key is authenticated against its direct parent, so moves must replace its wrapped key.
+		moved, err := s.fileRepo.MoveFilesToFolder(ctx, tx, userID, fileIDs, encryptedFileKeys, targetFolderID)
 		if err != nil {
 			return err
 		}

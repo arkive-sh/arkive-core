@@ -1,4 +1,5 @@
 import { get } from 'svelte/store';
+import { VAULT_MASTER_KEY_AAD } from './aad';
 import { setVaultUnlocked, vaultUnlocked } from './state';
 import type { VaultState } from './types';
 import { callVaultWorker } from './worker-client';
@@ -26,7 +27,7 @@ export async function unlockVault(
 			exportKey: exportKey.buffer,
 			salt,
 			encryptedMasterKey,
-			aad: 'arkive:master-key:v1',
+			aad: VAULT_MASTER_KEY_AAD,
 		},
 		[exportKey.buffer],
 	);

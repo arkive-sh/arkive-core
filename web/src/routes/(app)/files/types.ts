@@ -9,6 +9,7 @@ export interface ThumbnailSource {
 	thumbnailWidth: number;
 	thumbnailHeight: number;
 	vaultId: string;
+	folderId: string | null;
 	encryptedMetadata: string;
 	encryptedFileKey: string;
 }

@@ -19,7 +19,7 @@
 	type ApiTrashEntry = {
 		type: 'file' | 'folder';
 		id: string;
-		parentFolderId?: string;
+		parentFolderId?: string | null;
 		encryptedName?: string;
 		encryptedMetadata?: string;
 		encryptedFileKey?: string;
@@ -100,6 +100,7 @@
 					throw new Error('Encrypted folder details are missing.');
 				const decrypted = await decryptSearchFolder({
 					id: entry.id,
+					parentFolderId: entry.parentFolderId ?? null,
 					vaultId: data.user.id,
 					encryptedName: entry.encryptedName,
 					encryptedMetadata: entry.encryptedMetadata,

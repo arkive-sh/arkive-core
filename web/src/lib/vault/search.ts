@@ -1,4 +1,11 @@
 import { decodeJSON, toWorkerBytes } from './bytes';
+import {
+	fileKeyAAD,
+	fileMetadataAAD,
+	fileThumbnailAAD,
+	folderMetadataAAD,
+	folderNameAAD,
+} from './aad';
 import type {
 	EncryptedSearchFile,
 	EncryptedSearchFolder,
@@ -56,8 +63,8 @@ export async function decryptSearchFile(file: EncryptedSearchFile): Promise<{
 		vaultId: file.vaultId,
 		encryptedMetadata: file.encryptedMetadata,
 		encryptedFileKey: file.encryptedFileKey,
-		fileKeyAad: `arkive:file-key:v1:${file.vaultId}:${file.id}`,
-		metadataAad: `arkive:file-metadata:v1:${file.vaultId}:${file.id}`,
+		fileKeyAad: fileKeyAAD(file.vaultId, file.id, file.folderId),
+		metadataAad: fileMetadataAAD(file.vaultId, file.id),
 	});
 
 	return {
@@ -79,8 +86,8 @@ export async function decryptSearchFolder(folder: EncryptedSearchFolder): Promis
 	const result = await callVaultWorker('decryptSearchFolder', {
 		encryptedName: folder.encryptedName,
 		encryptedMetadata: folder.encryptedMetadata,
-		nameAad: 'arkive:folder-name:v1',
-		metadataAad: 'arkive:folder-metadata:v1',
+		nameAad: folderNameAAD(folder.vaultId, folder.id, folder.parentFolderId),
+		metadataAad: folderMetadataAAD(folder.vaultId, folder.id, folder.parentFolderId),
 	});
 	let nameBytes: Uint8Array | null = result.nameBytes;
 	let metadataBytes: Uint8Array | null = result.metadataBytes;
@@ -112,8 +119,8 @@ export function decryptSearchThumbnail(
 		{
 			encryptedFileKey: file.encryptedFileKey,
 			encryptedThumbnail: payload,
-			fileKeyAad: `arkive:file-key:v1:${file.vaultId}:${file.id}`,
-			thumbnailAad: `arkive:file-thumbnail:v1:${file.vaultId}:${file.id}`,
+			fileKeyAad: fileKeyAAD(file.vaultId, file.id, file.folderId),
+			thumbnailAad: fileThumbnailAAD(file.vaultId, file.id),
 		},
 		[payload],
 	);

@@ -9,6 +9,7 @@ export interface EncryptedThumbnailInput {
 	size: number;
 	mime: string;
 	vaultId: string;
+	folderId: string | null;
 	encryptedMetadata: string;
 	encryptedFileKey: string;
 }
@@ -36,7 +37,7 @@ export async function readDecryptedThumbnail(
 
 	const searchFile: EncryptedSearchFile = {
 		id: file.id,
-		folderId: null,
+		folderId: file.folderId,
 		vaultId: file.vaultId,
 		encryptedMetadata: file.encryptedMetadata,
 		encryptedFileKey: file.encryptedFileKey,

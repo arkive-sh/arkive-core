@@ -16,6 +16,7 @@ import {
 	hashUploadPayload,
 	prepareUpload,
 } from '../vault/uploads';
+import { fileChunkAAD } from '../vault/aad';
 
 const FILE_CHUNK_SIZE = 4 * 1024 * 1024;
 const UPLOAD_PART_SIZE = 8 * 1024 * 1024;
@@ -103,9 +104,10 @@ export async function createUploadFolder(
 	vaultId: string,
 	signal?: AbortSignal,
 ): Promise<string> {
+	const folderId = crypto.randomUUID();
 	const [{ encryptedMetadata: encryptedName }, { encryptedMetadata }, tokens] = await Promise.all([
-		encryptFolderName({ name }),
-		encryptFolderMetadata({ name }),
+		encryptFolderName({ name }, vaultId, folderId, parentFolderId),
+		encryptFolderMetadata({ name }, vaultId, folderId, parentFolderId),
 		createSearchTokens(name, vaultId, 128),
 	]);
 
@@ -117,7 +119,7 @@ export async function createUploadFolder(
 	}));
 	const { data } = await api.post<{ folder: { id: string } }>(
 		'/api/folders',
-		{ parentFolderId, encryptedName, encryptedMetadata, searchTokens },
+		{ id: folderId, parentFolderId, encryptedName, encryptedMetadata, searchTokens },
 		{ signal },
 	);
 
@@ -164,6 +166,7 @@ export async function uploadFile(
 			uploadToken,
 			started.vaultId,
 			started.fileId,
+			folderId,
 			started.totalChunks,
 		);
 		const chunksByPart: Array<
@@ -218,7 +221,13 @@ export async function uploadFile(
 						const encrypted = await encryptUploadPart(
 							uploadToken,
 							plaintext,
-							`arkive:file-chunk:v1:${started.vaultId}:${started.fileId}:${chunkNumber}:${started.fileChunkSize}:${started.totalChunks}`,
+							fileChunkAAD(
+								started.vaultId,
+								started.fileId,
+								chunkNumber,
+								started.fileChunkSize,
+								started.totalChunks,
+							),
 						);
 						encryptedChunks.push(encrypted.encryptedChunk);
 						partChunks.push({

@@ -15,6 +15,7 @@ import (
 type EncryptedFileRecord struct {
 	FileID            string
 	VaultID           string
+	FolderID          *string
 	EncryptionVersion int16
 	ChunkSize         int64
 	TotalChunks       int
@@ -205,6 +206,7 @@ func (s *Service) GetEncryptedFileRecord(ctx context.Context, userID, fileID str
 	return EncryptedFileRecord{
 		FileID:            file.ID,
 		VaultID:           file.UserID,
+		FolderID:          file.FolderID,
 		EncryptionVersion: file.EncryptionVersion,
 		ChunkSize:         file.ChunkSize,
 		TotalChunks:       file.ChunkCount,

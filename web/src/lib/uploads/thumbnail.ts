@@ -3,6 +3,7 @@ import { asset } from '$app/paths';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { api } from '../api';
 import { encryptUploadThumbnail } from '../vault/uploads';
+import { fileThumbnailAAD } from '../vault/aad';
 import { imageMimeType, isHeicImage } from '#lib/utils/image.ts';
 import { decodeHeicImage } from '#lib/utils/heic.ts';
 import type { PdfRangeSource } from '#lib/pdf/range-transport.ts';
@@ -364,7 +365,7 @@ export async function createAndUploadThumbnail(
 		const encrypted = await encryptUploadThumbnail(
 			input.uploadToken,
 			thumbnail.bytes,
-			`arkive:file-thumbnail:v1:${input.vaultId}:${input.fileId}`,
+			fileThumbnailAAD(input.vaultId, input.fileId),
 		);
 		encryptedThumbnail = encrypted.encryptedThumbnail;
 		if (controller.signal.aborted) return null;
