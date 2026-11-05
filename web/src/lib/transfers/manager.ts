@@ -43,7 +43,6 @@ export interface TransferManager {
 	state: Readable<TransferState>;
 	enqueueUploads(files: UploadItem[], vaultId: string, parentFolderId: string | null): number;
 	enqueueDownload(fileName: string, totalBytes: number, run: TransferRunner): string;
-	setLimits(limits: { concurrency: number; maxInProgressUploads: number }): void;
 	setOpen(open: boolean): void;
 	cancelMany(ids: string[]): void;
 	cancelAll(): Promise<void>;
@@ -54,9 +53,12 @@ export interface TransferManager {
 }
 
 const contextKey = Symbol('arkive-transfer-manager');
-const DEFAULT_TRANSFER_CONCURRENCY = 3;
-const DEFAULT_MAX_IN_PROGRESS_UPLOADS = 300;
-const MAX_CONCURRENT_UPLOAD_FILES = 4;
+const DEVICE_CORES = typeof navigator === 'undefined' ? 6 : navigator.hardwareConcurrency || 6;
+const TRANSFER_CHUNK_CONCURRENCY = Math.min(4, Math.max(3, Math.ceil(DEVICE_CORES / 2)));
+const MAX_CONCURRENT_UPLOAD_FILES = Math.min(6, Math.max(2, DEVICE_CORES));
+const MAX_CONCURRENT_LARGE_UPLOAD_FILES = 4;
+// shortcut: 8 MiB matches upload-file's single-part size; keep the two limits aligned.
+const SINGLE_PART_UPLOAD_BYTES = 8 * 1024 * 1024;
 
 export function provideTransferManager(manager: TransferManager): void {
 	setContext(contextKey, manager);
@@ -77,9 +79,6 @@ export function createTransferManager(): TransferManager {
 	const uploadSources = new Map<string, UploadSource>();
 	const controllers = new Map<string, AbortController>();
 	const runningTasks = new Map<string, Promise<void>>();
-	let concurrency = DEFAULT_TRANSFER_CONCURRENCY;
-	let maxInProgressUploads = DEFAULT_MAX_IN_PROGRESS_UPLOADS;
-	let settingsReady = false;
 	let processing = false;
 	let uploadsChanged = false;
 
@@ -93,18 +92,6 @@ export function createTransferManager(): TransferManager {
 			return;
 		uploadsChanged = false;
 		window.dispatchEvent(new Event('arkive:upload-complete'));
-	}
-
-	function setLimits(limits: { concurrency: number; maxInProgressUploads: number }): void {
-		concurrency = Number.isFinite(limits.concurrency)
-			? Math.min(8, Math.max(1, Math.floor(limits.concurrency)))
-			: DEFAULT_TRANSFER_CONCURRENCY;
-		maxInProgressUploads =
-			Number.isFinite(limits.maxInProgressUploads) && limits.maxInProgressUploads > 0
-				? Math.floor(limits.maxInProgressUploads)
-				: DEFAULT_MAX_IN_PROGRESS_UPLOADS;
-		settingsReady = true;
-		void runQueue();
 	}
 
 	function updateJob(id: string, update: Partial<Transfer>): void {
@@ -131,7 +118,7 @@ export function createTransferManager(): TransferManager {
 					updateJob(job.id, {
 						transferredBytes: Math.min(job.totalBytes, Math.max(0, transferredBytes)),
 					}),
-				concurrency,
+				TRANSFER_CHUNK_CONCURRENCY,
 			);
 			updateJob(job.id, { status: 'completed', transferredBytes: job.totalBytes });
 			runners.delete(job.id);
@@ -154,23 +141,28 @@ export function createTransferManager(): TransferManager {
 	}
 
 	async function runQueue(): Promise<void> {
-		if (processing || !settingsReady || typeof window === 'undefined') return;
+		if (processing || typeof window === 'undefined') return;
 		processing = true;
 		try {
 			while (true) {
 				const jobs = get(state).jobs;
-				const next = jobs.find((job) => job.status === 'queued');
+				const active = jobs.filter((job) => job.status === 'running');
+				const activeUploads = active.filter((job) => job.kind === 'upload');
+				const maxConcurrentUploads = MAX_CONCURRENT_UPLOAD_FILES;
+				const next = jobs.find((job) => {
+					if (job.status !== 'queued') return false;
+					if (job.kind === 'download') return active.length === 0;
+					if (!active.every((activeJob) => activeJob.kind === 'upload')) return false;
+					if (activeUploads.length >= maxConcurrentUploads) return false;
+
+					return (
+						job.totalBytes <= SINGLE_PART_UPLOAD_BYTES ||
+						activeUploads.filter((activeJob) => activeJob.totalBytes > SINGLE_PART_UPLOAD_BYTES)
+							.length < Math.min(MAX_CONCURRENT_LARGE_UPLOAD_FILES, maxConcurrentUploads)
+					);
+				});
 
 				if (!next) return;
-
-				const active = jobs.filter((job) => job.status === 'running');
-				const canRun =
-					next.kind === 'upload'
-						? active.every((job) => job.kind === 'upload') &&
-							active.length < Math.min(MAX_CONCURRENT_UPLOAD_FILES, maxInProgressUploads)
-						: active.length === 0;
-
-				if (!canRun) return;
 
 				const controller = new AbortController();
 				controllers.set(next.id, controller);
@@ -316,7 +308,6 @@ export function createTransferManager(): TransferManager {
 
 	return {
 		state,
-		setLimits,
 		enqueueUploads(files, vaultId, baseFolderId) {
 			if (typeof window === 'undefined' || files.length === 0) return 0;
 			const folderIds = new Map<string, Promise<string>>();

@@ -15,7 +15,6 @@ type StorageSettings struct {
 
 type UploadSettings struct {
 	MaxQueueItems    int
-	PartConcurrency  int
 	StaleUploadHours int
 }
 
