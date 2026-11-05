@@ -10,6 +10,8 @@ const IMAGE_MIME_BY_EXTENSION: Record<string, string> = {
 	webp: 'image/webp',
 };
 
+export const MAX_IMAGE_PREVIEW_BYTES = 80 * 1024 * 1024;
+
 export function imageMimeType(name: string, mime = ''): string {
 	if (mime.toLowerCase().startsWith('image/')) return mime;
 	const extension = name.split('.').pop()?.toLowerCase() ?? '';

@@ -1,7 +1,6 @@
-import { isHeicImage } from './image';
+import { isHeicImage, MAX_IMAGE_PREVIEW_BYTES } from './image';
 
 const DECODE_TIMEOUT_MS = 15_000;
-const MAX_HEIC_DECODE_BYTES = 80 * 1024 * 1024;
 
 export interface DecodedHeicImage {
 	blob: Blob;
@@ -92,7 +91,7 @@ export function decodeHeicImage(
 	signal?: AbortSignal,
 ): Promise<DecodedHeicImage> {
 	if (!isHeicImage(name, mime)) return Promise.reject(new Error('This is not a HEIC/HEIF image.'));
-	if (source.size > MAX_HEIC_DECODE_BYTES) {
+	if (source.size > MAX_IMAGE_PREVIEW_BYTES) {
 		return Promise.reject(
 			new Error('HEIC/HEIF files larger than 80 MB cannot be decoded by this browser.'),
 		);
