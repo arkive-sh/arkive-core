@@ -34,7 +34,9 @@ const (
 	UploadPartComplete = "complete"
 
 	S3MultipartMinPartSizeBytes int64 = 5 * 1024 * 1024
-	MaxPresignBatchParts              = 32
+	// Keep direct PUTs within one web upload part; larger files use multipart storage uploads.
+	directUploadMaxPlaintextSizeBytes int64 = 8 * 1024 * 1024
+	MaxPresignBatchParts                    = 32
 )
 
 type MultipartUploadStartInput struct {
@@ -45,7 +47,7 @@ type MultipartUploadStartInput struct {
 	UploadPartCount   int
 	EncryptionVersion int16
 	FolderID          *string
-	SinglePart        bool
+	SinglePart        bool // Selects a direct object PUT; that object may contain multiple encrypted chunks.
 }
 
 type MultipartUploadCompleteInput struct {
@@ -108,8 +110,8 @@ func (s *Service) StartMultipartUploadSession(ctx context.Context, userID string
 	if input.UploadPartCount <= 0 {
 		validationErrors.Add("uploadPartCount", "upload part count is required")
 	}
-	if input.SinglePart && (input.TotalChunks > 1 || input.UploadPartCount != 1) {
-		validationErrors.Add("singlePart", "single-part uploads require at most one chunk")
+	if input.SinglePart && input.UploadPartCount != 1 {
+		validationErrors.Add("singlePart", "direct uploads require exactly one storage part")
 	}
 	if input.TotalChunks == 0 && !input.SinglePart {
 		validationErrors.Add("singlePart", "empty files must use a single-part upload")
@@ -132,6 +134,10 @@ func (s *Service) StartMultipartUploadSession(ctx context.Context, userID string
 		return models.UploadStartResponse{}, validationErrors, nil
 	}
 	plaintextSize := plaintextFileSize(input.EncryptedSize, input.TotalChunks)
+	if input.SinglePart && plaintextSize > directUploadMaxPlaintextSizeBytes {
+		validationErrors.Add("singlePart", "direct uploads are limited to 8 MiB")
+		return models.UploadStartResponse{}, validationErrors, nil
+	}
 	expectedChunks := int64(0)
 	if plaintextSize > 0 {
 		expectedChunks = int64(1) + (plaintextSize-1)/input.FileChunkSize
