@@ -6,6 +6,7 @@ import { encryptFolderMetadata, encryptFolderName } from '../vault/files';
 import { ENCRYPTED_ENVELOPE_OVERHEAD_BYTES, ENCRYPTION_VERSION } from '../vault/crypto-format';
 import type { SearchTokenEntry } from '../vault/types';
 import { createAndUploadThumbnail, type UploadedThumbnail } from './thumbnail';
+import { FILE_CHUNK_SIZE, UPLOAD_PART_SIZE } from './constants';
 import type { UploadSource } from '#lib/transfers/manager.ts';
 import { imageMimeType } from '#lib/utils/image.ts';
 import {
@@ -18,8 +19,6 @@ import {
 } from '../vault/uploads';
 import { fileChunkAAD } from '../vault/aad';
 
-const FILE_CHUNK_SIZE = 4 * 1024 * 1024;
-const UPLOAD_PART_SIZE = 8 * 1024 * 1024;
 const PRESIGN_BATCH_SIZE = 8;
 
 interface UploadStart {
@@ -154,7 +153,7 @@ export async function uploadFile(
 			uploadPartCount,
 			encryptionVersion: ENCRYPTION_VERSION,
 			folderId,
-			singlePart: totalChunks <= 1,
+			singlePart: uploadPartCount === 1,
 		},
 		{ signal },
 	);

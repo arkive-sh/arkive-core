@@ -1,5 +1,6 @@
 import { getContext, setContext } from 'svelte';
 import { get, writable, type Readable } from 'svelte/store';
+import { UPLOAD_PART_SIZE } from '#lib/uploads/constants.ts';
 
 export type TransferKind = 'upload' | 'download';
 export type TransferStatus = 'queued' | 'running' | 'completed' | 'failed' | 'canceled';
@@ -57,8 +58,7 @@ const DEVICE_CORES = typeof navigator === 'undefined' ? 6 : navigator.hardwareCo
 const TRANSFER_CHUNK_CONCURRENCY = Math.min(4, Math.max(3, Math.ceil(DEVICE_CORES / 2)));
 const MAX_CONCURRENT_UPLOAD_FILES = Math.min(6, Math.max(2, DEVICE_CORES));
 const MAX_CONCURRENT_LARGE_UPLOAD_FILES = 4;
-// shortcut: 8 MiB matches upload-file's single-part size; keep the two limits aligned.
-const SINGLE_PART_UPLOAD_BYTES = 8 * 1024 * 1024;
+const SMALL_UPLOAD_MAX_BYTES = UPLOAD_PART_SIZE;
 
 export function provideTransferManager(manager: TransferManager): void {
 	setContext(contextKey, manager);
@@ -156,8 +156,8 @@ export function createTransferManager(): TransferManager {
 					if (activeUploads.length >= maxConcurrentUploads) return false;
 
 					return (
-						job.totalBytes <= SINGLE_PART_UPLOAD_BYTES ||
-						activeUploads.filter((activeJob) => activeJob.totalBytes > SINGLE_PART_UPLOAD_BYTES)
+						job.totalBytes <= SMALL_UPLOAD_MAX_BYTES ||
+						activeUploads.filter((activeJob) => activeJob.totalBytes > SMALL_UPLOAD_MAX_BYTES)
 							.length < Math.min(MAX_CONCURRENT_LARGE_UPLOAD_FILES, maxConcurrentUploads)
 					);
 				});
