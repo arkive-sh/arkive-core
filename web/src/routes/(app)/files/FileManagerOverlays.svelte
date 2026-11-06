@@ -20,6 +20,7 @@
 		contextMenuOpen,
 		contextMenuEntry,
 		contextMenuPosition,
+		clipboardCount,
 		propertiesEntry,
 		currentLocation,
 		deleteDialogOpen,
@@ -39,6 +40,8 @@
 		onPreviewText,
 		onProperties,
 		onDeleteEntry,
+		onCutEntry,
+		onPaste,
 		onCreateFolder,
 		onCreateTextFile,
 		onUploadFiles,
@@ -61,6 +64,7 @@
 		contextMenuOpen: boolean;
 		contextMenuEntry: FileManagerEntry | null;
 		contextMenuPosition: { x: number; y: number };
+		clipboardCount: number;
 		propertiesEntry: FileManagerEntry | null;
 		currentLocation: string;
 		deleteDialogOpen: boolean;
@@ -80,6 +84,8 @@
 		onPreviewText: (entry: FileManagerEntry) => void;
 		onProperties: (entry: FileManagerEntry) => void;
 		onDeleteEntry: (entry: FileManagerEntry) => void;
+		onCutEntry: (entry: FileManagerEntry) => void;
+		onPaste: (entry: FileManagerEntry | null) => void;
 		onCreateFolder: (entry: FileManagerEntry | null) => void;
 		onCreateTextFile: () => void;
 		onUploadFiles: () => void;
@@ -113,6 +119,7 @@
 <FileEntryContextMenu
 	open={contextMenuOpen}
 	entry={contextMenuEntry}
+	{clipboardCount}
 	x={contextMenuPosition.x}
 	y={contextMenuPosition.y}
 	onClose={onCloseContextMenu}
@@ -124,6 +131,8 @@
 	{onPreviewText}
 	{onProperties}
 	onDelete={onDeleteEntry}
+	onCut={onCutEntry}
+	{onPaste}
 	{onCreateFolder}
 	{onCreateTextFile}
 	{onUploadFiles}

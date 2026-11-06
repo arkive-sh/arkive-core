@@ -10,6 +10,7 @@
 	import { api } from '#lib/api.ts';
 	import { toast } from '#lib/toast.ts';
 	import { isImageFile } from '#lib/utils/image.ts';
+	import { rewrapFileKeyForParent, rewrapFolderMetadataForParent } from '#lib/vault/files.ts';
 	import {
 		fileManagerEntryKey,
 		NEW_FOLDER_DRAFT_ID,
@@ -41,6 +42,8 @@
 	let deleteDialogOpen = $state(false);
 	let deleting = $state(false);
 	let deleteTargets = $state<FileManagerEntry[]>([]);
+	let cutEntries = $state<FileManagerEntry[]>([]);
+	let movingEntries = $state(false);
 	let newFolderActive = $state(false);
 	let newFolderParentId = $state<string | null>(null);
 	let newFolderName = $state('');
@@ -64,6 +67,8 @@
 	const selectedIds = new SvelteSet<string>();
 	const transfers = useTransferManager();
 	const queryClient = useQueryClient();
+	// Keep this aligned with the move API's per-request root limit.
+	const MAX_MOVE_ENTRIES = 1000;
 
 	const folderId = $derived(page.url.searchParams.get('folder_id') || null);
 	const focusFileId = $derived(page.url.searchParams.get('focus_file'));
@@ -134,6 +139,7 @@
 
 	$effect(() => {
 		if ($vaultUnlocked) return;
+		cutEntries = [];
 		contextMenuEntry = null;
 		contextMenuOpen = false;
 		propertiesEntry = null;
@@ -214,6 +220,105 @@
 		selectedIds.clear();
 	}
 
+	function stageCut(entries: FileManagerEntry[]): void {
+		if (!$vaultUnlocked || movingEntries || !entries.length) return;
+		if (entries.length > MAX_MOVE_ENTRIES) {
+			toast.error(`Move up to ${MAX_MOVE_ENTRIES} items at a time.`);
+
+			return;
+		}
+		if (
+			entries.some(
+				(entry) =>
+					(entry.kind === 'file' && !entry.encryptedFileKey) ||
+					(entry.kind === 'folder' && (!entry.encryptedName || !entry.encryptedMetadata)),
+			)
+		) {
+			toast.error('Wait for the selected items to finish loading, then try again.');
+
+			return;
+		}
+
+		cutEntries = [...entries];
+		selectedIds.clear();
+		contextMenuEntry = null;
+		contextMenuOpen = false;
+	}
+
+	function cutEntry(entry: FileManagerEntry): void {
+		const entries =
+			selectedIds.has(fileManagerEntryKey(entry)) && selectedEntries.length
+				? selectedEntries
+				: [entry];
+		stageCut(entries);
+	}
+
+	async function pasteCutEntries(targetFolderId: string | null): Promise<void> {
+		if (movingEntries || !cutEntries.length || !$vaultUnlocked) return;
+		const entries = cutEntries.filter((entry) => (entry.parentFolderId ?? null) !== targetFolderId);
+
+		if (!entries.length) {
+			cutEntries = [];
+			toast.success('These items are already in this folder.');
+
+			return;
+		}
+		movingEntries = true;
+		try {
+			// Parent IDs are part of entry AAD, so rewrap moved roots before updating their parent IDs.
+			const files = await Promise.all(
+				entries
+					.filter((entry) => entry.kind === 'file')
+					.map(async (entry) => ({
+						id: entry.id,
+						...(await rewrapFileKeyForParent(
+							{
+								vaultId: data.user.id,
+								fileId: entry.id,
+								folderId: entry.parentFolderId ?? null,
+								encryptedFileKey: entry.encryptedFileKey!,
+							},
+							targetFolderId,
+						)),
+					})),
+			);
+			const folders = await Promise.all(
+				entries
+					.filter((entry) => entry.kind === 'folder')
+					.map(async (entry) => ({
+						id: entry.id,
+						...(await rewrapFolderMetadataForParent(
+							{
+								vaultId: data.user.id,
+								folderId: entry.id,
+								parentFolderId: entry.parentFolderId ?? null,
+								encryptedName: entry.encryptedName!,
+								encryptedMetadata: entry.encryptedMetadata!,
+							},
+							targetFolderId,
+						)),
+					})),
+			);
+			await api.post('/api/entries/move', { targetFolderId, files, folders });
+			const alreadyThere = cutEntries.length - entries.length;
+			cutEntries = [];
+			selectedIds.clear();
+			toast.success(
+				alreadyThere
+					? `Moved ${entries.length} items; ${alreadyThere} already in this folder.`
+					: `Moved ${entries.length} ${entries.length === 1 ? 'item' : 'items'}.`,
+			);
+			await Promise.all([
+				queryClient.invalidateQueries({ queryKey: ['folder-entries'] }),
+				queryClient.invalidateQueries({ queryKey: ['search'] }),
+			]);
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : 'Could not move selected items.');
+		} finally {
+			movingEntries = false;
+		}
+	}
+
 	function beginNewFolder(parentFolderId: string | null = folderId): void {
 		if (!$vaultUnlocked || creatingFolder) return;
 		newFolderParentId = parentFolderId;
@@ -277,6 +382,24 @@
 			document.querySelector('[data-modal-open="true"]')
 		)
 			return;
+		const command = event.ctrlKey || event.metaKey;
+
+		if (command && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'x') {
+			if (selectedEntries.length) {
+				event.preventDefault();
+				stageCut(selectedEntries);
+			}
+
+			return;
+		}
+		if (command && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'v') {
+			if (cutEntries.length) {
+				event.preventDefault();
+				void pasteCutEntries(folderId);
+			}
+
+			return;
+		}
 		if (
 			(event.ctrlKey || event.metaKey) &&
 			event.altKey &&
@@ -533,6 +656,8 @@
 	{selectedIds}
 	{selectedEntries}
 	{selectedFiles}
+	clipboardCount={cutEntries.length}
+	moving={movingEntries}
 	loadedCount={loadedEntries.length}
 	{allRowsSelected}
 	{tileSize}
@@ -546,6 +671,9 @@
 	onToggleAll={toggleAllLoaded}
 	onClearSelection={clearSelection}
 	onDownloadSelected={downloadSelected}
+	onCutSelected={() => stageCut(selectedEntries)}
+	onPaste={() => void pasteCutEntries(folderId)}
+	onClearClipboard={() => (cutEntries = [])}
 	onDeleteSelected={() => requestDelete()}
 	onOpenFolder={openFolder}
 	onShowContextMenu={showContextMenu}
@@ -579,6 +707,7 @@
 	{contextMenuOpen}
 	{contextMenuEntry}
 	{contextMenuPosition}
+	clipboardCount={movingEntries ? 0 : cutEntries.length}
 	{propertiesEntry}
 	{currentLocation}
 	{deleteDialogOpen}
@@ -601,6 +730,8 @@
 	onPreviewText={previewText}
 	onProperties={(entry) => (propertiesEntry = entry)}
 	onDeleteEntry={requestDelete}
+	onCutEntry={cutEntry}
+	onPaste={(entry) => void pasteCutEntries(entry?.kind === 'folder' ? entry.id : folderId)}
 	onCreateFolder={createFolderFromContext}
 	onCreateTextFile={createTextFile}
 	onUploadFiles={chooseUploadFiles}

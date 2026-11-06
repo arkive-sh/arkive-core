@@ -435,6 +435,50 @@ async function handleRewrapFileKey(params: WorkerInput<'rewrapFileKey'>) {
 	}
 }
 
+async function handleRewrapFolderMetadata(params: WorkerInput<'rewrapFolderMetadata'>) {
+	if (!unlockedMasterKey) throw new Error('Vault is locked');
+	const generation = vaultGeneration;
+	let encryptedName;
+	let encryptedMetadata;
+	let name;
+	let metadata;
+	let reboundName;
+	let reboundMetadata;
+
+	try {
+		encryptedName = fromBase64(params.encryptedName);
+		encryptedMetadata = fromBase64(params.encryptedMetadata);
+		name = await decryption.decrypt(encryptedName, unlockedMasterKey, aadBytes(params.oldNameAad));
+		assertVaultGeneration(generation);
+		metadata = await decryption.decrypt(
+			encryptedMetadata,
+			unlockedMasterKey,
+			aadBytes(params.oldMetadataAad),
+		);
+		assertVaultGeneration(generation);
+		reboundName = await encryption.encrypt(name, unlockedMasterKey, aadBytes(params.newNameAad));
+		assertVaultGeneration(generation);
+		reboundMetadata = await encryption.encrypt(
+			metadata,
+			unlockedMasterKey,
+			aadBytes(params.newMetadataAad),
+		);
+		assertVaultGeneration(generation);
+
+		return {
+			encryptedName: toBase64(reboundName),
+			encryptedMetadata: toBase64(reboundMetadata),
+		};
+	} finally {
+		encryptedName = clearBytes(encryptedName);
+		encryptedMetadata = clearBytes(encryptedMetadata);
+		name = clearBytes(name);
+		metadata = clearBytes(metadata);
+		reboundName = clearBytes(reboundName);
+		reboundMetadata = clearBytes(reboundMetadata);
+	}
+}
+
 async function handleEncryptUploadMetadata(params: WorkerInput<'encryptUploadMetadata'>) {
 	const uploadToken = String(params.uploadToken || '');
 	let upload: ActiveUpload | undefined;
@@ -1012,6 +1056,7 @@ const messageHandlers: WorkerHandlers = {
 	openShareKey: handleOpenShareKey,
 	prepareUpload: handlePrepareUpload,
 	rewrapFileKey: handleRewrapFileKey,
+	rewrapFolderMetadata: handleRewrapFolderMetadata,
 	encryptUploadMetadata: handleEncryptUploadMetadata,
 	encryptUploadThumbnail: handleEncryptUploadThumbnail,
 	encryptUploadPart: handleEncryptUploadPart,

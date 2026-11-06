@@ -131,6 +131,17 @@ export interface VaultWorkerCalls {
 		params: { encryptedFileKey: string; oldAad: string; newAad: string };
 		result: { encryptedFileKey: string };
 	};
+	rewrapFolderMetadata: {
+		params: {
+			encryptedName: string;
+			encryptedMetadata: string;
+			oldNameAad: string;
+			oldMetadataAad: string;
+			newNameAad: string;
+			newMetadataAad: string;
+		};
+		result: { encryptedName: string; encryptedMetadata: string };
+	};
 	encryptUploadMetadata: {
 		params: { uploadToken: string; metadataBytes: ArrayBuffer | null; metadataAad: string };
 		result: { encryptedMetadata: string };
