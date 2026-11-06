@@ -23,6 +23,10 @@ export interface FileManagerEntry {
 	updatedAt: string;
 	selectable?: boolean;
 	isTrashContainer?: boolean;
+	parentFolderId?: string | null;
+	encryptedName?: string;
+	encryptedMetadata?: string;
+	encryptedFileKey?: string;
 	dimensions?: MediaDimensions;
 	thumbnail?: ThumbnailSource;
 }

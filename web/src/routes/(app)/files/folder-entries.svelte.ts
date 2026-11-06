@@ -134,6 +134,9 @@ export function createFolderEntries(
 							type: 'Folder',
 							size: folder.SizeBytes ?? null,
 							updatedAt: folder.UpdatedAt,
+							parentFolderId: folder.ParentFolderID,
+							encryptedName: folder.EncryptedName,
+							encryptedMetadata: folder.EncryptedMetadata,
 						};
 					} catch {
 						return {
@@ -143,6 +146,9 @@ export function createFolderEntries(
 							type: 'Folder',
 							size: folder.SizeBytes ?? null,
 							updatedAt: folder.UpdatedAt,
+							parentFolderId: folder.ParentFolderID,
+							encryptedName: folder.EncryptedName,
+							encryptedMetadata: folder.EncryptedMetadata,
 						};
 					}
 				}),
@@ -199,6 +205,8 @@ export function createFolderEntries(
 									: undefined,
 							size: typeof decrypted.metadata.size === 'number' ? decrypted.metadata.size : null,
 							updatedAt: file.UpdatedAt,
+							parentFolderId: file.FolderID,
+							encryptedFileKey: file.EncryptedFileKey,
 							dimensions: mediaDimensions,
 						};
 					} catch {
@@ -209,6 +217,8 @@ export function createFolderEntries(
 							type: 'application/octet-stream',
 							size: null,
 							updatedAt: file.UpdatedAt,
+							parentFolderId: file.FolderID,
+							encryptedFileKey: file.EncryptedFileKey,
 						};
 					}
 				}),
@@ -221,7 +231,7 @@ export function createFolderEntries(
 						try {
 							const decrypted = await decryptSearchFolder({
 								id: folder.ID,
-							parentFolderId: folder.ParentFolderID,
+								parentFolderId: folder.ParentFolderID,
 								vaultId: getVaultId(),
 								encryptedName: folder.EncryptedName,
 								encryptedMetadata: folder.EncryptedMetadata,

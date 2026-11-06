@@ -1,5 +1,13 @@
 <script lang="ts">
-	import { Download, FolderOpen, FolderPlus, Trash2, X } from '@lucide/svelte';
+	import {
+		ClipboardPaste,
+		Download,
+		FolderOpen,
+		FolderPlus,
+		Scissors,
+		Trash2,
+		X,
+	} from '@lucide/svelte';
 	import Breadcrumbs from '#lib/components/Breadcrumbs.svelte';
 	import FilesGridView from './FilesGridView.svelte';
 	import FilesListView from './FilesListView.svelte';
@@ -27,6 +35,8 @@
 		selectedIds,
 		selectedEntries,
 		selectedFiles,
+		clipboardCount,
+		moving,
 		loadedCount,
 		allRowsSelected,
 		tileSize,
@@ -40,6 +50,9 @@
 		onToggleAll,
 		onClearSelection,
 		onDownloadSelected,
+		onCutSelected,
+		onPaste,
+		onClearClipboard,
 		onDeleteSelected,
 		onOpenFolder,
 		onShowContextMenu,
@@ -70,6 +83,8 @@
 		selectedIds: ReadonlySet<string>;
 		selectedEntries: FileManagerEntry[];
 		selectedFiles: FileManagerEntry[];
+		clipboardCount: number;
+		moving: boolean;
 		loadedCount: number;
 		allRowsSelected: boolean;
 		tileSize: number;
@@ -83,6 +98,9 @@
 		onToggleAll: () => void;
 		onClearSelection: () => void;
 		onDownloadSelected: () => void;
+		onCutSelected: () => void;
+		onPaste: () => void;
+		onClearClipboard: () => void;
 		onDeleteSelected: () => void;
 		onOpenFolder: (id: string) => void;
 		onShowContextMenu: (entry: FileManagerEntry | null, x: number, y: number) => void;
@@ -103,7 +121,7 @@
 	let sentinel = $state<HTMLDivElement>();
 	const selectedCount = $derived(selectedEntries.length);
 	const showSelectionToolbar = $derived(
-		(rows.length > 0 && viewMode === 'grid') || selectedCount > 0,
+		(rows.length > 0 && viewMode === 'grid') || selectedCount > 0 || clipboardCount > 0,
 	);
 
 	$effect(() => {
@@ -181,6 +199,16 @@
 								</button>
 							{/if}
 							<button
+								class="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded px-2 text-sm text-(--text) hover:bg-(--surface-highest)"
+								type="button"
+								aria-label={`Cut ${selectedCount} selected ${selectedCount === 1 ? 'item' : 'items'}`}
+								disabled={moving}
+								onclick={onCutSelected}
+							>
+								<Scissors class="size-4" aria-hidden="true" />
+								<span>Cut</span>
+							</button>
+							<button
 								class="inline-flex size-8 cursor-pointer items-center justify-center rounded text-red-400 hover:bg-red-500/10 hover:text-red-300"
 								type="button"
 								aria-label="Move selected items to Trash"
@@ -191,6 +219,27 @@
 								type="button"
 								aria-label="Clear selection"
 								onclick={onClearSelection}><X class="size-4" aria-hidden="true" /></button
+							>
+						{/if}
+						{#if clipboardCount > 0}
+							<span class="px-2 text-sm text-(--muted)"
+								>{moving ? 'Moving…' : `${clipboardCount} ready to move`}</span
+							>
+							<button
+								class="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded px-2 text-sm text-(--text) hover:bg-(--surface-highest)"
+								type="button"
+								disabled={moving}
+								onclick={onPaste}
+							>
+								<ClipboardPaste class="size-4" aria-hidden="true" />
+								<span>Paste here</span>
+							</button>
+							<button
+								class="inline-flex size-8 cursor-pointer items-center justify-center rounded text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)"
+								type="button"
+								aria-label="Cancel move"
+								disabled={moving}
+								onclick={onClearClipboard}><X class="size-4" aria-hidden="true" /></button
 							>
 						{/if}
 					</div>

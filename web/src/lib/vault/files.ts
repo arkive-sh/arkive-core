@@ -7,7 +7,13 @@ import {
 	folderMetadataAAD,
 	folderNameAAD,
 } from './aad';
-import type { FileCryptoRecord, ShareFileRecord, VaultAAD, VaultBytes, VaultMetadata } from './types';
+import type {
+	FileCryptoRecord,
+	ShareFileRecord,
+	VaultAAD,
+	VaultBytes,
+	VaultMetadata,
+} from './types';
 import { callVaultWorker } from './worker-client';
 
 export function openFileContext(
@@ -172,5 +178,25 @@ export function rewrapFileKeyForParent(
 		encryptedFileKey: record.encryptedFileKey,
 		oldAad: fileKeyAAD(record.vaultId, record.fileId, record.folderId),
 		newAad: fileKeyAAD(record.vaultId, record.fileId, parentFolderId),
+	});
+}
+
+export function rewrapFolderMetadataForParent(
+	record: {
+		vaultId: string;
+		folderId: string;
+		parentFolderId: string | null;
+		encryptedName: string;
+		encryptedMetadata: string;
+	},
+	parentFolderId: string | null,
+): Promise<{ encryptedName: string; encryptedMetadata: string }> {
+	return callVaultWorker('rewrapFolderMetadata', {
+		encryptedName: record.encryptedName,
+		encryptedMetadata: record.encryptedMetadata,
+		oldNameAad: folderNameAAD(record.vaultId, record.folderId, record.parentFolderId),
+		oldMetadataAad: folderMetadataAAD(record.vaultId, record.folderId, record.parentFolderId),
+		newNameAad: folderNameAAD(record.vaultId, record.folderId, parentFolderId),
+		newMetadataAad: folderMetadataAAD(record.vaultId, record.folderId, parentFolderId),
 	});
 }

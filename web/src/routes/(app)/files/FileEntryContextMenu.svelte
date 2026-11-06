@@ -4,6 +4,7 @@
 		AudioLines,
 		CloudUpload,
 		Download,
+		ClipboardPaste,
 		Film,
 		FileText,
 		FolderOpen,
@@ -11,6 +12,7 @@
 		Image,
 		Info,
 		RotateCcw,
+		Scissors,
 		Trash2,
 	} from '@lucide/svelte';
 	import { isImageFile } from '#lib/utils/image.ts';
@@ -20,6 +22,7 @@
 	type Props = {
 		mode?: 'files' | 'trash';
 		canMutateEntry?: boolean;
+		clipboardCount?: number;
 		open: boolean;
 		entry: FileManagerEntry | null;
 		x: number;
@@ -33,6 +36,8 @@
 		onPreviewText: (entry: FileManagerEntry) => void;
 		onProperties: (entry: FileManagerEntry) => void;
 		onDelete: (entry: FileManagerEntry) => void;
+		onCut?: (entry: FileManagerEntry) => void;
+		onPaste?: (entry: FileManagerEntry | null) => void;
 		onCreateFolder: (entry: FileManagerEntry | null) => void;
 		onCreateTextFile: () => void;
 		onUploadFiles: () => void;
@@ -46,6 +51,7 @@
 	let {
 		mode = 'files',
 		canMutateEntry = true,
+		clipboardCount = 0,
 		open,
 		entry,
 		x,
@@ -59,6 +65,8 @@
 		onPreviewText,
 		onProperties,
 		onDelete,
+		onCut,
+		onPaste,
 		onCreateFolder,
 		onCreateTextFile,
 		onUploadFiles,
@@ -216,6 +224,19 @@
 		onClose();
 		onUploadFolder();
 	}
+
+	function cutEntry(): void {
+		if (!entry) return;
+		const selected = entry;
+		onClose();
+		onCut?.(selected);
+	}
+
+	function pasteEntries(): void {
+		const target = entry;
+		onClose();
+		onPaste?.(target);
+	}
 </script>
 
 <svelte:window onpointerdown={closeOutside} onkeydown={handleKeydown} />
@@ -281,6 +302,17 @@
 				</button>
 			{/if}
 		{:else}
+			{#if clipboardCount > 0}
+				<button
+					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
+					type="button"
+					role="menuitem"
+					onclick={pasteEntries}
+				>
+					<ClipboardPaste class="size-4 text-(--muted)" aria-hidden="true" />
+					<span>{entry?.kind === 'folder' ? 'Paste into folder' : 'Paste here'}</span>
+				</button>
+			{/if}
 			{#if !entry}
 				<button
 					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
@@ -299,6 +331,17 @@
 				>
 					<FolderOpen class="size-4 text-(--muted)" aria-hidden="true" />
 					<span>Upload folder</span>
+				</button>
+			{/if}
+			{#if entry}
+				<button
+					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
+					type="button"
+					role="menuitem"
+					onclick={cutEntry}
+				>
+					<Scissors class="size-4 text-(--muted)" aria-hidden="true" />
+					<span>Cut</span>
 				</button>
 			{/if}
 			{#if entry?.kind === 'folder'}
