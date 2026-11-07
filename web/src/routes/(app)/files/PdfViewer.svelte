@@ -24,7 +24,11 @@
 	import type { PdfRangeTransport } from '#lib/pdf/range-transport.ts';
 	import type { FileManagerEntry } from './types';
 
-	let { entry, onClose }: { entry: FileManagerEntry; onClose: () => void } = $props();
+	let {
+		entry,
+		onClose,
+		reader: providedReader,
+	}: { entry: FileManagerEntry; onClose: () => void; reader?: DecryptedFileReader } = $props();
 	let overlay = $state<HTMLDivElement>();
 	let scrollContainer = $state<HTMLDivElement>();
 	let pageElement = $state<HTMLDivElement>();
@@ -146,7 +150,7 @@
 
 	onMount(() => {
 		const controller = new AbortController();
-		const reader = new DecryptedFileReader(entry.id, controller.signal);
+		const reader = providedReader ?? new DecryptedFileReader(entry.id, controller.signal);
 		let transport: PdfRangeTransport | undefined;
 		let disposed = false;
 
@@ -270,7 +274,7 @@
 				} catch {
 					// PDF.js may already have destroyed a failed or canceled loading task.
 				}
-				await reader.dispose();
+				if (!providedReader) await reader.dispose();
 			})();
 		};
 	});

@@ -4,6 +4,7 @@
 		AudioLines,
 		CloudUpload,
 		Download,
+		Share2,
 		ClipboardPaste,
 		Film,
 		FileText,
@@ -30,6 +31,7 @@
 		onClose: () => void;
 		onOpenFolder: (id: string) => void;
 		onDownload: (entry: FileManagerEntry) => void;
+		onShare?: (entry: FileManagerEntry) => void;
 		onPreviewImage: (entry: FileManagerEntry) => void;
 		onPreviewMedia: (entry: FileManagerEntry) => void;
 		onPreviewPdf: (entry: FileManagerEntry) => void;
@@ -59,6 +61,7 @@
 		onClose,
 		onOpenFolder,
 		onDownload,
+		onShare,
 		onPreviewImage,
 		onPreviewMedia,
 		onPreviewPdf,
@@ -140,6 +143,13 @@
 		const selected = entry;
 		onClose();
 		onDownload(selected);
+	}
+
+	function shareFile(): void {
+		if (!entry || entry.kind !== 'file') return;
+		const selected = entry;
+		onClose();
+		onShare?.(selected);
 	}
 
 	function previewPdf(): void {
@@ -356,6 +366,17 @@
 				</button>
 			{/if}
 			{#if entry?.kind === 'file'}
+				{#if mode === 'files'}
+					<button
+						class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
+						type="button"
+						role="menuitem"
+						onclick={shareFile}
+					>
+						<Share2 class="size-4 text-(--muted)" aria-hidden="true" />
+						<span>Share</span>
+					</button>
+				{/if}
 				{#if isImageFile(entry.name, entry.type)}
 					<button
 						class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"

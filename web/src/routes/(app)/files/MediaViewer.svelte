@@ -3,8 +3,17 @@
 	import { isAudioMimeType } from '#lib/utils/media.ts';
 	import type { FileManagerEntry } from './types';
 	import EncryptedMediaPlayer from './EncryptedMediaPlayer.svelte';
+	import type { DecryptedFileReader } from '#lib/vault/read-file.ts';
 
-	let { entry, onClose }: { entry: FileManagerEntry | null; onClose: () => void } = $props();
+	let {
+		entry,
+		onClose,
+		reader,
+	}: {
+		entry: FileManagerEntry | null;
+		onClose: () => void;
+		reader?: DecryptedFileReader;
+	} = $props();
 	const isAudio = $derived(isAudioMimeType(entry?.type ?? ''));
 	let overlay = $state<HTMLDivElement>();
 
@@ -49,7 +58,12 @@
 			{#if isAudio}<h2 class="mb-3 truncate text-base font-semibold text-white" title={entry.name}>
 					{entry.name}
 				</h2>{/if}
-			<EncryptedMediaPlayer fileId={entry.id} fileName={entry.name} mimeType={entry.type} />
+			<EncryptedMediaPlayer
+				fileId={entry.id}
+				fileName={entry.name}
+				mimeType={entry.type}
+				{reader}
+			/>
 		</div>
 	</div>
 {/if}

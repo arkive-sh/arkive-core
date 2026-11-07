@@ -35,6 +35,8 @@ type CreateInput struct {
 	Token                    string
 	Password                 string
 	ExpiresAt                *time.Time
+	AllowPreview             bool
+	AllowDownload            bool
 	BurnAfterRead            bool
 	EncryptedShareKey        string
 	EncryptedFileKeyForShare string
@@ -68,6 +70,9 @@ func (s *Service) CreateShare(ctx context.Context, input CreateInput) (models.Sh
 	}
 	if input.ExpiresAt != nil && !input.ExpiresAt.After(time.Now()) {
 		validationErrors.Add("expiresAt", ErrExpiryInvalid.Error())
+	}
+	if !input.AllowPreview && !input.AllowDownload {
+		validationErrors.Add("permissions", "preview or download must be enabled")
 	}
 	if input.Password != "" {
 		if message := sharePasswordValidationMessage(input.Password); message != "" {
@@ -144,6 +149,8 @@ func (s *Service) CreateShare(ctx context.Context, input CreateInput) (models.Sh
 		OwnerUserID:       input.OwnerUserID,
 		Token:             token,
 		EncryptedShareKey: encryptedShareKey,
+		AllowPreview:      input.AllowPreview,
+		AllowDownload:     input.AllowDownload,
 		PasswordHash:      passwordHash,
 		ExpiresAt:         input.ExpiresAt,
 		BurnAfterRead:     input.BurnAfterRead,
@@ -222,7 +229,7 @@ func (s *Service) GetShareForUser(ctx context.Context, shareID, ownerUserID stri
 	return share, nil
 }
 
-func (s *Service) UpdateShareForUser(ctx context.Context, shareID, ownerUserID string, expiresAt *time.Time, password string, requirePassword bool, burnAfterRead bool) (models.Share, validation.Errors, error) {
+func (s *Service) UpdateShareForUser(ctx context.Context, shareID, ownerUserID string, expiresAt *time.Time, password string, requirePassword bool, burnAfterRead *bool, allowPreview, allowDownload *bool) (models.Share, validation.Errors, error) {
 	shareID = strings.TrimSpace(shareID)
 	ownerUserID = strings.TrimSpace(ownerUserID)
 	password = strings.TrimSpace(password)
@@ -243,6 +250,21 @@ func (s *Service) UpdateShareForUser(ctx context.Context, shareID, ownerUserID s
 			return models.Share{}, nil, ErrNotFound
 		}
 		return models.Share{}, nil, err
+	}
+	if allowPreview == nil {
+		value := existing.AllowPreview
+		allowPreview = &value
+	}
+	if allowDownload == nil {
+		value := existing.AllowDownload
+		allowDownload = &value
+	}
+	if burnAfterRead == nil {
+		value := existing.BurnAfterRead
+		burnAfterRead = &value
+	}
+	if !*allowPreview && !*allowDownload {
+		validationErrors.Add("permissions", "preview or download must be enabled")
 	}
 
 	var passwordHash *string
@@ -273,7 +295,7 @@ func (s *Service) UpdateShareForUser(ctx context.Context, shareID, ownerUserID s
 		}
 	}
 
-	updated, err := s.shareRepo.UpdateShareForUser(ctx, s.db, shareID, ownerUserID, passwordHash, expiresAt, burnAfterRead, shareMaxAccessCount(burnAfterRead))
+	updated, err := s.shareRepo.UpdateShareForUser(ctx, s.db, shareID, ownerUserID, passwordHash, expiresAt, *burnAfterRead, shareMaxAccessCount(*burnAfterRead), *allowPreview, *allowDownload)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return models.Share{}, nil, ErrNotFound
