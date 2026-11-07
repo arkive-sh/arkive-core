@@ -2,13 +2,12 @@
 	import type { Snippet } from 'svelte';
 	import type { HTMLButtonAttributes } from 'svelte/elements';
 	import { resolve } from '$app/paths';
-	import type { PathnameWithSearchOrHash } from '$app/types';
 
 	type Props = Omit<HTMLButtonAttributes, 'class' | 'type' | 'disabled' | 'onclick'> & {
 		text: string;
 		variant?: string;
 		type?: HTMLButtonAttributes['type'];
-		href?: string;
+		href?: `/${string}`;
 		class?: string;
 		icon?: Snippet;
 		busyText?: string;
@@ -54,7 +53,8 @@
 </script>
 
 {#if href}
-	<a class={classes} href={resolve(href.replace(/^\/+/, '') as PathnameWithSearchOrHash)} {id}>
+	<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- href is root-relative and resolved against the app base. -->
+	<a class={classes} href={resolve('/(app)') + href.slice(1)} {id}>
 		{#if icon}<span class="inline-flex items-center justify-center">{@render icon()}</span>{/if}
 		<span>{text}</span>
 	</a>

@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
-	import { Copy, Link2, ShieldOff } from '@lucide/svelte';
+	import { Copy, ExternalLink, Link2, ShieldOff } from '@lucide/svelte';
 	import axios from 'axios';
-	import Modal from '#lib/components/Modal.svelte';
+	import Drawer from '#lib/components/Drawer.svelte';
+	import FileTypeIcon from '#lib/components/FileTypeIcon.svelte';
 	import { api } from '#lib/api.ts';
 	import { buildShareURL, decryptShareURL } from '#lib/share-link.ts';
 	import { toast } from '#lib/toast.ts';
@@ -54,6 +55,29 @@
 
 	async function restoreLink(record: ShareRecord): Promise<void> {
 		link = await decryptShareURL(window.location.origin, record.token, record.encryptedShareKey);
+	}
+
+	function statusLabel(): string {
+		if (!share) return '';
+		if (share.isExpired || share.status === 'expired') return 'Expired';
+		if (share.status === 'revoked') return 'Revoked';
+		if (share.status === 'burned') return 'Used';
+
+		return 'Active';
+	}
+
+	function expirySummary(): string {
+		if (!share?.expiresAt) return 'No expiry';
+		const date = new Date(share.expiresAt);
+
+		return Number.isNaN(date.getTime())
+			? 'Expiry date unavailable'
+			: `Expires ${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date)}`;
+	}
+
+	function openLink(): void {
+		if (!link || !share || share.status !== 'active' || share.isExpired) return;
+		window.open(link, '_blank', 'noopener,noreferrer');
 	}
 
 	async function loadShare(): Promise<void> {
@@ -210,119 +234,163 @@
 	});
 </script>
 
-<Modal open={true} label={`Share ${entry.name}`} title="Share file" {onClose}>
-	<div class="grid gap-4">
-		<p class="m-0 truncate font-medium" title={entry.name}>{entry.name}</p>
+<Drawer open={true} label={`Share ${entry.name}`} title="Share" {onClose}>
+	<div class="grid gap-6">
+		<div class="flex min-w-0 items-center gap-3 border-b border-(--border) pb-4">
+			<FileTypeIcon name={entry.name} mime={entry.type} className="size-5 shrink-0" />
+			<span class="min-w-0 truncate text-sm font-medium" title={entry.name}>{entry.name}</span>
+		</div>
+
 		{#if loading}
-			<p class="m-0 text-(--muted)">Loading share settings…</p>
+			<p class="m-0 text-sm text-(--muted)" role="status">Loading share settings…</p>
 		{:else}
-			<fieldset class="grid gap-3 border-0 p-0">
-				<legend class="mb-2 text-sm font-semibold">Link access</legend>
-				<label class="flex items-start gap-2.5">
+			{#if share}
+				<section class="grid gap-3 border-b border-(--border) pb-5">
+					<div class="flex items-start justify-between gap-3">
+						<div>
+							<h3 class="m-0 text-sm font-semibold">Share link</h3>
+							<p class="m-0 mt-1 text-xs text-(--muted)">{expirySummary()}</p>
+						</div>
+						<span
+							class={`inline-flex items-center gap-1.5 text-xs font-medium ${share.isExpired || share.status === 'expired' ? 'text-amber-300' : share.status === 'active' ? 'text-emerald-300' : 'text-(--muted)'}`}
+						>
+							<span
+								class={`size-2 rounded-full ${share.isExpired || share.status === 'expired' ? 'bg-amber-300' : share.status === 'active' ? 'bg-emerald-300' : 'bg-(--muted)'}`}
+							></span>
+							{statusLabel()}
+						</span>
+					</div>
+					{#if link && share.status !== 'burned'}
+						<div class="flex flex-wrap gap-2">
+							<button
+								class="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-md bg-(--accent) px-3.5 text-sm font-semibold text-(--accent-ink) hover:bg-(--accent-strong)"
+								type="button"
+								onclick={() => void copyLink()}
+							>
+								<Copy class="size-4" aria-hidden="true" />Copy link
+							</button>
+							<button
+								class="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-md border border-(--border) px-3.5 text-sm hover:bg-(--surface-raised) disabled:cursor-not-allowed disabled:opacity-50"
+								type="button"
+								disabled={share.status !== 'active' || share.isExpired}
+								onclick={openLink}
+							>
+								<ExternalLink class="size-4" aria-hidden="true" />Open
+							</button>
+						</div>
+					{:else if share.status === 'burned'}
+						<p class="m-0 text-sm text-(--muted)">This one-time link has already been used.</p>
+					{/if}
+					{#if share.status === 'revoked'}
+						<button
+							class="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-(--border) px-3.5 text-sm font-medium hover:bg-(--surface-raised) disabled:cursor-wait disabled:opacity-50"
+							type="button"
+							disabled={saving}
+							onclick={() => void changeShareStatus('activate')}
+						>
+							<Link2 class="size-4" aria-hidden="true" />Reactivate link
+						</button>
+					{/if}
+				</section>
+			{/if}
+
+			<fieldset
+				class="grid gap-1 border-b border-(--border) p-0 pb-5"
+				disabled={saving || share?.status === 'revoked' || share?.status === 'burned'}
+			>
+				<legend class="mb-1 text-sm font-semibold">Permissions</legend>
+				<label class="flex cursor-pointer items-start gap-3 py-2">
 					<input
-						class="mt-1 accent-(--accent)"
+						class="mt-1 size-4 accent-(--accent)"
 						type="checkbox"
 						checked={allowPreview}
 						onchange={(event) =>
 							setPermission('preview', event.currentTarget.checked, event.currentTarget)}
 					/>
-					<span
-						><span class="block">Preview</span><span class="text-xs text-(--muted)"
-							>Open supported files in Arkive.</span
-						></span
-					>
+					<span class="grid gap-0.5">
+						<span class="text-sm font-medium">Preview</span>
+						<span class="text-xs leading-5 text-(--muted)">Open supported files in Arkive.</span>
+					</span>
 				</label>
-				<label class="flex items-start gap-2.5">
+				<label class="flex cursor-pointer items-start gap-3 py-2">
 					<input
-						class="mt-1 accent-(--accent)"
+						class="mt-1 size-4 accent-(--accent)"
 						type="checkbox"
 						checked={allowDownload}
 						onchange={(event) =>
 							setPermission('download', event.currentTarget.checked, event.currentTarget)}
 					/>
-					<span
-						><span class="block">Download</span><span class="text-xs text-(--muted)"
-							>Save a decrypted copy.</span
-						></span
-					>
+					<span class="grid gap-0.5">
+						<span class="text-sm font-medium">Download</span>
+						<span class="text-xs leading-5 text-(--muted)">Save a decrypted copy.</span>
+					</span>
 				</label>
+				<p class="m-0 text-xs text-(--muted)">At least one permission must stay enabled.</p>
 			</fieldset>
 
-			<label class="grid gap-1.5 text-sm font-medium" for="share-expiry">
-				Link expiry <span class="text-xs font-normal text-(--muted)"
-					>Leave empty for no expiry.</span
-				>
+			<label
+				class="grid gap-2 border-b border-(--border) pb-5 text-sm font-medium"
+				for="share-expiry"
+			>
+				<span>Expires</span>
+				<span class="text-xs font-normal text-(--muted)">Leave empty for no expiry.</span>
 				<input
 					id="share-expiry"
-					class="rounded border border-(--border) bg-(--surface-raised) px-3 py-2"
+					class="rounded-md border border-(--border) bg-(--surface-raised) px-3 py-2.5 text-sm"
 					type="datetime-local"
 					bind:value={expiresAt}
+					disabled={saving || share?.status === 'revoked' || share?.status === 'burned'}
 				/>
 			</label>
 
-			{#if share}
-				<p class="m-0 text-xs text-(--muted)">
-					Status: {share.isExpired ? 'Expired' : share.status}
-				</p>
-				{#if link}
-					<div class="flex min-w-0 gap-2">
-						<input
-							class="min-w-0 flex-1 rounded border border-(--border) bg-(--surface-raised) px-3 py-2 text-xs"
-							readonly
-							value={link}
-							aria-label="Share link"
-						/>
+			{#if share && share.status !== 'revoked' && share.status !== 'burned'}
+				<div>
+					{#if confirmRevoke}
+						<div class="grid gap-3">
+							<p class="m-0 text-sm text-(--muted)">
+								Anyone with this link will lose access immediately.
+							</p>
+							<div class="flex gap-2">
+								<button
+									class="cursor-pointer rounded-md border border-(--border) px-3 py-2 text-sm"
+									type="button"
+									disabled={saving}
+									onclick={() => (confirmRevoke = false)}>Cancel</button
+								>
+								<button
+									class="inline-flex cursor-pointer items-center gap-2 rounded-md border border-red-500/50 px-3 py-2 text-sm text-red-400 disabled:cursor-wait disabled:opacity-50"
+									type="button"
+									disabled={saving}
+									onclick={() => void changeShareStatus('revoke')}
+								>
+									<ShieldOff class="size-4" aria-hidden="true" />Confirm revoke
+								</button>
+							</div>
+						</div>
+					{:else}
 						<button
-							class="inline-flex cursor-pointer items-center gap-2 rounded border border-(--border) px-3 py-2"
+							class="inline-flex cursor-pointer items-center gap-2 text-sm text-(--muted) hover:text-red-400"
 							type="button"
-							onclick={() => void copyLink()}
-							aria-label="Copy share link"><Copy class="size-4" aria-hidden="true" /></button
+							onclick={() => (confirmRevoke = true)}
 						>
-					</div>
-				{/if}
-				{#if share.status === 'revoked'}
-					<button
-						class="inline-flex cursor-pointer items-center gap-2 justify-self-start rounded border border-(--border) px-3 py-2 text-sm"
-						type="button"
-						disabled={saving}
-						onclick={() => void changeShareStatus('activate')}
-						><Link2 class="size-4" aria-hidden="true" />Reactivate link</button
-					>
-				{:else if share.status !== 'burned' && confirmRevoke}
-					<p class="m-0 text-sm">Anyone with this link will lose access. Revoke it?</p>
-					<button
-						class="inline-flex cursor-pointer items-center gap-2 justify-self-start rounded border border-red-500 px-3 py-2 text-sm text-red-400"
-						type="button"
-						disabled={saving}
-						onclick={() => void changeShareStatus('revoke')}
-						><ShieldOff class="size-4" aria-hidden="true" />Confirm revoke</button
-					>
-				{:else if share.status !== 'burned'}
-					<button
-						class="inline-flex cursor-pointer items-center gap-2 justify-self-start rounded border border-(--border) px-3 py-2 text-sm"
-						type="button"
-						onclick={() => (confirmRevoke = true)}
-						><ShieldOff class="size-4" aria-hidden="true" />Revoke link</button
-					>
-				{/if}
+							<ShieldOff class="size-4" aria-hidden="true" />Revoke link
+						</button>
+					{/if}
+				</div>
 			{/if}
 		{/if}
+
 		{#if error}<p class="m-0 text-sm text-red-400" role="alert">{error}</p>{/if}
 	</div>
 	{#snippet actions()}
-		<button
-			class="cursor-pointer rounded border border-(--border) px-4 py-2 text-sm"
-			type="button"
-			onclick={onClose}>Close</button
-		>
 		{#if !loading && share?.status !== 'revoked' && share?.status !== 'burned'}
 			<button
-				class="cursor-pointer rounded bg-(--accent) px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+				class="min-h-10 cursor-pointer rounded-md bg-(--accent) px-4 text-sm font-semibold text-(--accent-ink) hover:bg-(--accent-strong) disabled:cursor-not-allowed disabled:opacity-50"
 				type="button"
 				disabled={saving || (!allowPreview && !allowDownload)}
 				onclick={() => void saveShare()}
-				>{saving ? 'Saving…' : share ? 'Save settings' : 'Create link'}</button
+				>{saving ? 'Saving…' : share ? 'Save changes' : 'Create link'}</button
 			>
 		{/if}
 	{/snippet}
-</Modal>
+</Drawer>

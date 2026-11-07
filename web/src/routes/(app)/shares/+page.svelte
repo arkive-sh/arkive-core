@@ -193,12 +193,7 @@
 </svelte:head>
 
 <div class="mx-auto grid w-full max-w-6xl content-start gap-4 p-4 sm:p-6">
-	<header class="flex items-center justify-between gap-3">
-		<h1 class="m-0 text-xl font-semibold">Shares</h1>
-		{#if !loading && !error}<span class="text-sm text-(--muted)">{shares.length} links</span>{/if}
-	</header>
-
-	<section class="overflow-hidden rounded-lg border border-(--border) bg-(--surface)">
+	<section class="overflow-hidden">
 		{#if loading}
 			<p class="m-0 p-5 text-sm text-(--muted)" role="status">Loading shared links…</p>
 		{:else if error}
@@ -216,7 +211,7 @@
 			</p>
 		{:else}
 			<div
-				class="hidden grid-cols-[minmax(0,1fr)_7rem_9rem_10rem_9rem] items-center gap-4 border-b border-(--border) bg-(--surface-raised) px-4 py-3 text-xs font-semibold text-(--muted) lg:grid"
+				class="hidden grid-cols-[minmax(0,1fr)_7rem_9rem_10rem_9rem] items-center gap-4 border-b border-(--border) px-4 py-3 text-xs font-semibold text-(--muted) lg:grid"
 				aria-hidden="true"
 			>
 				<span>Name</span>
@@ -225,33 +220,37 @@
 				<span>Expires</span>
 				<span class="text-center">Actions</span>
 			</div>
-			<ul class="m-0 divide-y divide-(--border) p-0">
+			<ul class="m-0 p-0">
 				{#each shares as share (share.record.id)}
 					{@const busy = actionInProgress?.id === share.record.id}
 					<li
-						class="grid gap-3 p-4 lg:grid-cols-[minmax(0,1fr)_7rem_9rem_10rem_9rem] lg:items-center lg:gap-4 lg:px-4 lg:py-3"
+						class="grid gap-4 border-b border-(--border) p-4 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_7rem_9rem_10rem_9rem] lg:items-center lg:gap-4 lg:px-4 lg:py-3"
 					>
-						<div class="grid min-w-0 grid-cols-2 gap-x-4 gap-y-3 lg:contents">
-							<div class="col-span-2 flex min-w-0 items-center gap-3 lg:col-span-1">
-								<FileTypeIcon
-									name={share.entry.name}
-									mime={share.entry.type}
-									className="size-5 shrink-0"
-								/>
-								<span class="min-w-0 truncate font-medium" title={share.entry.name}
-									>{share.entry.name}</span
-								>
-							</div>
-							<div class="min-w-0">
-								<span class="mb-1 block text-xs text-(--muted) lg:hidden">Status</span>
+						<div class="flex min-w-0 items-center gap-3">
+							<FileTypeIcon
+								name={share.entry.name}
+								mime={share.entry.type}
+								className="size-5 shrink-0"
+							/>
+							<span class="min-w-0 truncate font-medium" title={share.entry.name}
+								>{share.entry.name}</span
+							>
+						</div>
+						<div class="grid min-w-0 gap-2 lg:contents">
+							<div
+								class="grid min-w-0 grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-3 lg:block"
+							>
+								<span class="text-xs text-(--muted) lg:hidden">Status</span>
 								<span
-									class={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${statusClass(share.record)}`}
+									class={`inline-flex w-fit rounded-full border px-2 py-0.5 text-xs font-medium ${statusClass(share.record)}`}
 								>
 									{statusLabel(share.record)}
 								</span>
 							</div>
-							<div class="col-span-2 min-w-0 lg:col-span-1">
-								<span class="mb-1 block text-xs text-(--muted) lg:hidden">Permissions</span>
+							<div
+								class="grid min-w-0 grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-3 lg:block"
+							>
+								<span class="text-xs text-(--muted) lg:hidden">Permissions</span>
 								<div class="flex items-center gap-1" role="group" aria-label="Share permissions">
 									<Tooltip label={`Preview ${share.record.allowPreview ? 'allowed' : 'disabled'}`}>
 										<span
@@ -292,14 +291,16 @@
 									{/if}
 								</div>
 							</div>
-							<div class="min-w-0 text-sm">
-								<span class="mb-1 block text-xs text-(--muted) lg:hidden">Expires</span>
-								<time datetime={share.record.expiresAt ?? undefined}>
+							<div
+								class="grid min-w-0 grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-3 text-sm lg:block"
+							>
+								<span class="text-xs text-(--muted) lg:hidden">Expires</span>
+								<time class="min-w-0" datetime={share.record.expiresAt ?? undefined}>
 									{expiryLabel(share.record.expiresAt)}
 								</time>
 							</div>
 						</div>
-						<div class="col-span-2 flex items-center gap-2 lg:col-span-1 lg:justify-end">
+						<div class="flex justify-end gap-2">
 							<button
 								class="grid size-10 shrink-0 cursor-pointer place-items-center rounded border border-(--border) hover:bg-(--surface-raised) disabled:cursor-wait disabled:opacity-60"
 								type="button"

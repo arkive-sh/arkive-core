@@ -33,6 +33,181 @@ interface UploadStart {
 	uploadUrl?: string;
 }
 
+interface UploadStartRequest {
+	encryptedSize: number;
+	fileChunkSize: number;
+	totalChunks: number;
+	uploadPartSize: number;
+	uploadPartCount: number;
+	encryptionVersion: number;
+	folderId: string | null;
+	singlePart: boolean;
+}
+
+interface UploadBatchStartResult extends UploadStart {
+	clientId: string;
+	error?: string;
+	validationErrors?: Record<string, string>;
+}
+
+interface UploadCompleteRequest {
+	encryptedMetadata: string;
+	encryptedFileKey: string;
+	encryptedManifest: string;
+	encryptedHash: string;
+	searchTokens: SearchTokenEntry[];
+	hasThumbnail: boolean;
+	thumbnailSize: number;
+}
+
+interface PendingUploadStart {
+	clientId: string;
+	request: UploadStartRequest;
+	signal?: AbortSignal;
+	resolve(started: UploadStart): void;
+	reject(error: unknown): void;
+}
+
+interface PendingUploadComplete {
+	clientId: string;
+	uploadSessionId: string;
+	request: UploadCompleteRequest;
+	signal?: AbortSignal;
+	resolve(): void;
+	reject(error: unknown): void;
+}
+
+interface UploadBatchCompleteResult {
+	clientId: string;
+	completed: boolean;
+	error?: string;
+}
+
+let pendingUploadStarts: PendingUploadStart[] = [];
+let pendingUploadCompletes: PendingUploadComplete[] = [];
+let uploadStartFlushScheduled = false;
+let uploadCompleteFlushScheduled = false;
+
+// Delay one task turn so transfers started together share a batch request.
+function startSmallUploads(
+	request: UploadStartRequest,
+	signal?: AbortSignal,
+): Promise<UploadStart> {
+	return new Promise((resolve, reject) => {
+		pendingUploadStarts.push({ clientId: crypto.randomUUID(), request, signal, resolve, reject });
+		if (uploadStartFlushScheduled) return;
+
+		uploadStartFlushScheduled = true;
+		setTimeout(() => void flushUploadStarts(), 0);
+	});
+}
+
+async function flushUploadStarts(): Promise<void> {
+	uploadStartFlushScheduled = false;
+	const pending = pendingUploadStarts;
+	pendingUploadStarts = [];
+	const active: PendingUploadStart[] = [];
+
+	for (const item of pending) {
+		try {
+			checkAborted(item.signal);
+			active.push(item);
+		} catch (error) {
+			item.reject(error);
+		}
+	}
+	if (active.length === 0) return;
+
+	try {
+		const { data } = await api.post<{ uploads: UploadBatchStartResult[] }>(
+			'/api/uploads/batch/start',
+			{ files: active.map(({ clientId, request }) => ({ clientId, ...request })) },
+		);
+		const results = new Map(data.uploads.map((result) => [result.clientId, result]));
+
+		for (const item of active) {
+			const result = results.get(item.clientId);
+
+			if (!result) {
+				item.reject(new Error('Upload start failed.'));
+			} else if (result.error || result.validationErrors) {
+				item.reject(
+					new Error(
+						result.error ||
+							Object.values(result.validationErrors || {}).join(' ') ||
+							'Upload start failed.',
+					),
+				);
+			} else {
+				item.resolve(result);
+			}
+		}
+	} catch (error) {
+		for (const item of active) item.reject(error);
+	}
+}
+
+function completeSmallUploads(
+	uploadSessionId: string,
+	request: UploadCompleteRequest,
+	signal?: AbortSignal,
+): Promise<void> {
+	return new Promise((resolve, reject) => {
+		pendingUploadCompletes.push({
+			clientId: crypto.randomUUID(),
+			uploadSessionId,
+			request,
+			signal,
+			resolve,
+			reject,
+		});
+		if (uploadCompleteFlushScheduled) return;
+
+		uploadCompleteFlushScheduled = true;
+		setTimeout(() => void flushUploadCompletes(), 0);
+	});
+}
+
+async function flushUploadCompletes(): Promise<void> {
+	uploadCompleteFlushScheduled = false;
+	const pending = pendingUploadCompletes;
+	pendingUploadCompletes = [];
+	const active: PendingUploadComplete[] = [];
+
+	for (const item of pending) {
+		try {
+			checkAborted(item.signal);
+			active.push(item);
+		} catch (error) {
+			item.reject(error);
+		}
+	}
+	if (active.length === 0) return;
+
+	try {
+		const { data } = await api.post<{ uploads: UploadBatchCompleteResult[] }>(
+			'/api/uploads/batch/complete',
+			{
+				uploads: active.map(({ clientId, uploadSessionId, request }) => ({
+					clientId,
+					uploadSessionId,
+					...request,
+				})),
+			},
+		);
+		const results = new Map(data.uploads.map((result) => [result.clientId, result]));
+
+		for (const item of active) {
+			const result = results.get(item.clientId);
+
+			if (!result?.completed) item.reject(new Error(result?.error || 'Upload completion failed.'));
+			else item.resolve();
+		}
+	} catch (error) {
+		for (const item of active) item.reject(error);
+	}
+}
+
 function extension(name: string): string {
 	const dot = name.lastIndexOf('.');
 
@@ -143,23 +318,24 @@ export async function uploadFile(
 	const chunksPerPart = Math.floor(UPLOAD_PART_SIZE / FILE_CHUNK_SIZE);
 	const uploadPartCount = Math.max(1, Math.ceil(totalChunks / chunksPerPart));
 	const uploadToken = crypto.randomUUID();
-	const { data: started } = await api.post<UploadStart>(
-		'/api/uploads/start',
-		{
-			encryptedSize,
-			fileChunkSize: FILE_CHUNK_SIZE,
-			totalChunks,
-			uploadPartSize: UPLOAD_PART_SIZE,
-			uploadPartCount,
-			encryptionVersion: ENCRYPTION_VERSION,
-			folderId,
-			singlePart: uploadPartCount === 1,
-		},
-		{ signal },
-	);
+	const useBatchEndpoint = file.size >= 0 && file.size <= UPLOAD_PART_SIZE;
+	const startRequest: UploadStartRequest = {
+		encryptedSize,
+		fileChunkSize: FILE_CHUNK_SIZE,
+		totalChunks,
+		uploadPartSize: UPLOAD_PART_SIZE,
+		uploadPartCount,
+		encryptionVersion: ENCRYPTION_VERSION,
+		folderId,
+		singlePart: uploadPartCount === 1,
+	};
+	const started = useBatchEndpoint
+		? await startSmallUploads(startRequest, signal)
+		: (await api.post<UploadStart>('/api/uploads/start', startRequest, { signal })).data;
 	let complete = false;
 
 	try {
+		checkAborted(signal);
 		const mime = imageMimeType(file.name, file.type) || file.type || 'application/octet-stream';
 		const prepared = await prepareUpload(
 			uploadToken,
@@ -360,19 +536,25 @@ export async function uploadFile(
 			},
 			chunks.map((chunk) => chunk.hash),
 		);
-		await api.post(
-			`/api/uploads/${encodeURIComponent(started.uploadSessionId)}/complete`,
-			{
-				encryptedMetadata: encryptedMetadata.encryptedMetadata,
-				encryptedFileKey: prepared.encryptedFileKey,
-				encryptedManifest: finalized.encryptedManifest,
-				encryptedHash: finalized.encryptedHash,
-				searchTokens,
-				hasThumbnail: !!uploadedThumbnail,
-				thumbnailSize: uploadedThumbnail?.encryptedSize ?? 0,
-			},
-			{ signal },
-		);
+		const completeRequest: UploadCompleteRequest = {
+			encryptedMetadata: encryptedMetadata.encryptedMetadata,
+			encryptedFileKey: prepared.encryptedFileKey,
+			encryptedManifest: finalized.encryptedManifest,
+			encryptedHash: finalized.encryptedHash,
+			searchTokens,
+			hasThumbnail: !!uploadedThumbnail,
+			thumbnailSize: uploadedThumbnail?.encryptedSize ?? 0,
+		};
+
+		if (useBatchEndpoint) {
+			await completeSmallUploads(started.uploadSessionId, completeRequest, signal);
+		} else {
+			await api.post(
+				`/api/uploads/${encodeURIComponent(started.uploadSessionId)}/complete`,
+				completeRequest,
+				{ signal },
+			);
+		}
 		complete = true;
 	} finally {
 		if (!complete) {

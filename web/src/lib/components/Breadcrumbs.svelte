@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { ChevronRight } from '@lucide/svelte';
 	import { resolve } from '$app/paths';
-	import type { PathnameWithSearchOrHash } from '$app/types';
 
 	type BreadcrumbItem = {
 		id: string;
@@ -39,12 +38,13 @@
 							type="button"
 							onclick={item.onSelect}>{item.label}</button
 						>
-					{:else if item.href}
+					{:else if item.href !== undefined}
+						<!-- eslint-disable svelte/no-navigation-without-resolve -->
 						<a
 							class="block max-w-48 truncate text-(--muted) transition-colors hover:text-(--text)"
-							href={resolve(item.href.replace(/^\/+/, '') as PathnameWithSearchOrHash)}
-							>{item.label}</a
+							href={resolve('/(app)') + item.href}>{item.label}</a
 						>
+						<!-- eslint-enable svelte/no-navigation-without-resolve -->
 					{:else}
 						<span class="block max-w-48 truncate font-medium text-(--text)" aria-current="page"
 							>{item.label}</span
