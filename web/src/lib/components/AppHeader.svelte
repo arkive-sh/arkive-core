@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import type { PathnameWithSearchOrHash } from '$app/types';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import { get } from 'svelte/store';
 	import { Bell, CircleUser, Lock, Menu, Search, Unlock } from '@lucide/svelte';
@@ -137,11 +136,13 @@
 					<span class="break-all text-[13px] leading-4.5 text-(--muted)">{user.email}</span>
 				</div>
 				<div class="my-1.5 h-px bg-(--border)"></div>
+				<!-- eslint-disable svelte/no-navigation-without-resolve -->
 				<a
 					class="flex w-full items-center rounded-[10px] border border-transparent px-2.5 py-2 text-[13px] leading-4.5 text-(--text) transition-[background,border-color] duration-200 hover:border-(--border) hover:bg-(--bg-soft)"
-					href={resolve('settings' as PathnameWithSearchOrHash)}
+					href={resolve('/(app)') + 'settings'}
 					role="menuitem">Settings</a
 				>
+				<!-- eslint-enable svelte/no-navigation-without-resolve -->
 				<button
 					class="flex w-full cursor-pointer items-center rounded-[10px] border border-transparent px-2.5 py-2 text-left text-[13px] leading-4.5 text-(--text) transition-[background,border-color] duration-200 hover:border-(--border) hover:bg-(--bg-soft) disabled:cursor-wait disabled:opacity-60"
 					type="button"

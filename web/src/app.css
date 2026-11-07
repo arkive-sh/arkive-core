@@ -5,8 +5,8 @@
 	--font-mono: 'Inter', system-ui, -apple-system, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
 }
 
-/* Keep the document from scrolling behind modal and PhotoSwipe overlays. */
-body:has([data-modal-open='true'], .pswp--open) {
+/* Keep the document from scrolling behind modal, drawer and PhotoSwipe overlays. */
+body:has([data-modal-open='true'], [data-drawer-open='true'], .pswp--open) {
 	overflow: hidden;
 }
 
