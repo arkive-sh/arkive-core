@@ -17,7 +17,7 @@
 	const navigation = [
 		{ href: resolve('/(app)'), label: 'Files', icon: FolderOpen },
 		{ href: resolve('/(app)/trash'), label: 'Trash', icon: Trash2 },
-		{ href: '/shares', label: 'Shares', icon: Share2 },
+		{ href: resolve('/(app)/shares'), label: 'Shares', icon: Share2 },
 		{ href: '/settings', label: 'Settings', icon: Settings },
 	] as const;
 

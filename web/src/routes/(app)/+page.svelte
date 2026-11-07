@@ -2,7 +2,6 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import type { PathnameWithSearchOrHash } from '$app/types';
 	import { onMount } from 'svelte';
 	import { SvelteSet, SvelteURLSearchParams } from 'svelte/reactivity';
 	import { useQueryClient } from '@tanstack/svelte-query';
@@ -49,6 +48,7 @@
 	let newFolderName = $state('');
 	let creatingFolder = $state(false);
 	let propertiesEntry = $state<FileManagerEntry | null>(null);
+	let shareEntry = $state<FileManagerEntry | null>(null);
 	let imagePreviewRequest = $state<{ fileId: string; trigger?: HTMLElement } | null>(null);
 	let mediaPreviewEntry = $state<FileManagerEntry | null>(null);
 	let MediaViewer = $state<typeof import('./files/MediaViewer.svelte').default>();
@@ -135,6 +135,7 @@
 		contextMenuEntry = null;
 		contextMenuOpen = false;
 		propertiesEntry = null;
+		shareEntry = null;
 	});
 
 	$effect(() => {
@@ -143,22 +144,25 @@
 		contextMenuEntry = null;
 		contextMenuOpen = false;
 		propertiesEntry = null;
+		shareEntry = null;
 		cancelNewFolder(true);
 		cancelUploadSelection();
 	});
 
-	function urlFor(folder: string | null, nextView: FilesView = viewMode): string {
+	function urlFor(folder: string | null, nextView: FilesView = viewMode): '' | `?${string}` {
 		const params = new SvelteURLSearchParams();
 
 		if (folder) params.set('folder_id', folder);
 		if (nextView === 'grid') params.set('view', 'grid');
 		const query = params.toString();
 
-		return query ? `/?${query}` : '/';
+		return query ? `?${query}` : '';
 	}
 
 	function openFolder(id: string): void {
-		void goto(resolve(urlFor(id).replace(/^\/+/, '') as PathnameWithSearchOrHash));
+		// The route is fixed; folder and view state live in its query string.
+		// eslint-disable-next-line svelte/no-navigation-without-resolve
+		void goto(resolve('/(app)') + urlFor(id));
 	}
 
 	function stageUploadFiles(files: UploadItem[]): void {
@@ -326,8 +330,11 @@
 		newFolderActive = true;
 		contextMenuEntry = null;
 		contextMenuOpen = false;
-		if (parentFolderId !== folderId)
-			void goto(resolve(urlFor(parentFolderId).replace(/^\/+/, '') as PathnameWithSearchOrHash));
+		if (parentFolderId !== folderId) {
+			const href = urlFor(parentFolderId);
+			// eslint-disable-next-line svelte/no-navigation-without-resolve
+			void goto(resolve('/(app)') + href);
+		}
 	}
 
 	function createFolderFromContext(entry: FileManagerEntry | null): void {
@@ -598,7 +605,9 @@
 	}
 
 	function changeView(view: FilesView): void {
-		void goto(resolve(urlFor(folderId, view).replace(/^\/+/, '') as PathnameWithSearchOrHash));
+		const href = urlFor(folderId, view);
+		// eslint-disable-next-line svelte/no-navigation-without-resolve
+		void goto(resolve('/(app)') + href);
 	}
 
 	onMount(() => {
@@ -709,6 +718,7 @@
 	{contextMenuPosition}
 	clipboardCount={movingEntries ? 0 : cutEntries.length}
 	{propertiesEntry}
+	{shareEntry}
 	{currentLocation}
 	{deleteDialogOpen}
 	{deleting}
@@ -729,6 +739,8 @@
 	onPreviewPdf={previewPdf}
 	onPreviewText={previewText}
 	onProperties={(entry) => (propertiesEntry = entry)}
+	onShareEntry={(entry) => (shareEntry = entry.kind === 'file' ? entry : null)}
+	onCloseShare={() => (shareEntry = null)}
 	onDeleteEntry={requestDelete}
 	onCutEntry={cutEntry}
 	onPaste={(entry) => void pasteCutEntries(entry?.kind === 'folder' ? entry.id : folderId)}

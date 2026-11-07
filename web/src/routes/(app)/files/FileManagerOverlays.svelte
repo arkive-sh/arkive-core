@@ -2,6 +2,7 @@
 	import Modal from '#lib/components/Modal.svelte';
 	import FileEntryContextMenu from './FileEntryContextMenu.svelte';
 	import FilePropertiesModal from './FilePropertiesModal.svelte';
+	import ShareDialog from './ShareDialog.svelte';
 	import ImageViewer from './ImageViewer.svelte';
 	import TextFileEditor from './TextFileEditor.svelte';
 	import type { FileManagerEntry } from './types';
@@ -22,6 +23,7 @@
 		contextMenuPosition,
 		clipboardCount,
 		propertiesEntry,
+		shareEntry,
 		currentLocation,
 		deleteDialogOpen,
 		deleting,
@@ -39,6 +41,8 @@
 		onPreviewPdf,
 		onPreviewText,
 		onProperties,
+		onShareEntry,
+		onCloseShare,
 		onDeleteEntry,
 		onCutEntry,
 		onPaste,
@@ -66,6 +70,7 @@
 		contextMenuPosition: { x: number; y: number };
 		clipboardCount: number;
 		propertiesEntry: FileManagerEntry | null;
+		shareEntry: FileManagerEntry | null;
 		currentLocation: string;
 		deleteDialogOpen: boolean;
 		deleting: boolean;
@@ -83,6 +88,8 @@
 		onPreviewPdf: (entry: FileManagerEntry) => void;
 		onPreviewText: (entry: FileManagerEntry) => void;
 		onProperties: (entry: FileManagerEntry) => void;
+		onShareEntry: (entry: FileManagerEntry) => void;
+		onCloseShare: () => void;
 		onDeleteEntry: (entry: FileManagerEntry) => void;
 		onCutEntry: (entry: FileManagerEntry) => void;
 		onPaste: (entry: FileManagerEntry | null) => void;
@@ -130,6 +137,7 @@
 	{onPreviewPdf}
 	{onPreviewText}
 	{onProperties}
+	onShare={onShareEntry}
 	onDelete={onDeleteEntry}
 	onCut={onCutEntry}
 	{onPaste}
@@ -138,6 +146,10 @@
 	{onUploadFiles}
 	{onUploadFolder}
 />
+
+{#if shareEntry}
+	<ShareDialog entry={shareEntry} {vaultId} onClose={onCloseShare} />
+{/if}
 
 <FilePropertiesModal
 	entry={propertiesEntry}

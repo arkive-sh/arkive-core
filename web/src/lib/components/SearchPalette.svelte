@@ -3,7 +3,6 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import type { PathnameWithSearchOrHash } from '$app/types';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { Search } from '@lucide/svelte';
 	import Modal from '#lib/components/Modal.svelte';
@@ -363,7 +362,9 @@
 			event.preventDefault();
 			const result = results[activeIndex];
 			closeSearch();
-			void goto(resolve(result.url.replace(/^\/+/, '') as PathnameWithSearchOrHash));
+			// Search routes are root-relative; the generated route union cannot type dynamic query suffixes.
+			// eslint-disable-next-line svelte/no-navigation-without-resolve
+			void goto(resolve('/(app)') + result.url.slice(1));
 		}
 	}
 
@@ -455,9 +456,10 @@
 				<div class="grid gap-0.5">
 					{#each fileFolderResults as result (result.kind + ':' + result.id)}
 						{@const index = results.indexOf(result)}
+						<!-- eslint-disable svelte/no-navigation-without-resolve -->
 						<a
 							id={`search-result-${index}`}
-							href={resolve(result.url.replace(/^\/+/, '') as PathnameWithSearchOrHash)}
+							href={resolve('/(app)') + result.url.slice(1)}
 							class={`group flex items-center justify-between gap-4 rounded-md px-3.5 py-3.5 ${index === activeIndex ? 'bg-(--accent) text-(--accent-ink)' : 'text-(--text) hover:bg-(--accent) hover:text-(--accent-ink)'}`}
 							onclick={closeSearch}
 						>
@@ -488,6 +490,7 @@
 									>{result.status}</span
 								>{/if}
 						</a>
+						<!-- eslint-enable svelte/no-navigation-without-resolve -->
 					{/each}
 				</div>
 			</section>
@@ -502,9 +505,10 @@
 				<div class="grid gap-0.5">
 					{#each shareResults as result (result.kind + ':' + result.id)}
 						{@const index = results.indexOf(result)}
+						<!-- eslint-disable svelte/no-navigation-without-resolve -->
 						<a
 							id={`search-result-${index}`}
-							href={resolve(result.url.replace(/^\/+/, '') as PathnameWithSearchOrHash)}
+							href={resolve('/(app)') + result.url.slice(1)}
 							class={`group flex items-center justify-between gap-4 rounded-md px-3.5 py-3.5 ${index === activeIndex ? 'bg-(--accent) text-(--accent-ink)' : 'text-(--text) hover:bg-(--accent) hover:text-(--accent-ink)'}`}
 							onclick={closeSearch}
 						>
@@ -525,6 +529,7 @@
 									>{result.status}</span
 								>{/if}
 						</a>
+						<!-- eslint-enable svelte/no-navigation-without-resolve -->
 					{/each}
 				</div>
 			</section>
@@ -539,9 +544,10 @@
 				<div class="grid gap-0.5">
 					{#each settingsResults as result (result.id)}
 						{@const index = results.indexOf(result)}
+						<!-- eslint-disable svelte/no-navigation-without-resolve -->
 						<a
 							id={`search-result-${index}`}
-							href={resolve(result.url.replace(/^\/+/, '') as PathnameWithSearchOrHash)}
+							href={resolve('/(app)') + result.url.slice(1)}
 							class={`group flex items-center justify-between gap-4 rounded-md px-3.5 py-3.5 ${index === activeIndex ? 'bg-(--accent) text-(--accent-ink)' : 'text-(--text) hover:bg-(--accent) hover:text-(--accent-ink)'}`}
 							onclick={closeSearch}
 						>
@@ -562,6 +568,7 @@
 									>{result.status}</span
 								>{/if}
 						</a>
+						<!-- eslint-enable svelte/no-navigation-without-resolve -->
 					{/each}
 				</div>
 			</section>

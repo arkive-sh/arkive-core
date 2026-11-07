@@ -14,6 +14,8 @@ type CreateShareLinkInput struct {
 	OwnerUserID       string
 	Token             string
 	EncryptedShareKey []byte
+	AllowPreview      bool
+	AllowDownload     bool
 	PasswordHash      *string
 	ExpiresAt         *time.Time
 	BurnAfterRead     bool
@@ -42,15 +44,17 @@ func New() *Repository {
 
 func (r *Repository) CreateShareLink(ctx context.Context, db database.PgExecutor, input CreateShareLinkInput) (string, error) {
 	query := `INSERT INTO share_links
-		(owner_user_id, token, encrypted_share_key, password_hash, expires_at, burn_after_read, max_access_count, status)
+		(owner_user_id, token, encrypted_share_key, allow_preview, allow_download, password_hash, expires_at, burn_after_read, max_access_count, status)
 	VALUES
-		($1, $2, $3, $4, $5, $6, $7, $8)
+		($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	RETURNING id`
 	var id string
 	if err := db.QueryRow(ctx, query,
 		input.OwnerUserID,
 		input.Token,
 		input.EncryptedShareKey,
+		input.AllowPreview,
+		input.AllowDownload,
 		input.PasswordHash,
 		input.ExpiresAt,
 		input.BurnAfterRead,
@@ -267,7 +271,7 @@ func (r *Repository) GetShareForUser(ctx context.Context, db database.PgExecutor
 	return share, nil
 }
 
-func (r *Repository) UpdateShareForUser(ctx context.Context, db database.PgExecutor, shareID, ownerUserID string, passwordHash *string, expiresAt *time.Time, burnAfterRead bool, maxAccessCount *int) (models.Share, error) {
+func (r *Repository) UpdateShareForUser(ctx context.Context, db database.PgExecutor, shareID, ownerUserID string, passwordHash *string, expiresAt *time.Time, burnAfterRead bool, maxAccessCount *int, allowPreview, allowDownload bool) (models.Share, error) {
 	var share models.Share
 	query := `UPDATE
 		share_links
@@ -276,6 +280,8 @@ func (r *Repository) UpdateShareForUser(ctx context.Context, db database.PgExecu
 		expires_at = $4,
 		burn_after_read = $5,
 		max_access_count = $6,
+		allow_preview = $7,
+		allow_download = $8,
 		updated_at = now()
 	WHERE
 		id = $1 AND owner_user_id = $2 AND status = 'active'
@@ -283,7 +289,7 @@ func (r *Repository) UpdateShareForUser(ctx context.Context, db database.PgExecu
 		id, owner_user_id, token, encrypted_share_key, allow_preview, allow_download, burn_after_read,
 		access_count, max_access_count, password_hash, expires_at, status, revoked_at, consumed_at, created_at, updated_at`
 	var shareIDValue string
-	if err := db.QueryRow(ctx, query, shareID, ownerUserID, passwordHash, expiresAt, burnAfterRead, maxAccessCount).Scan(
+	if err := db.QueryRow(ctx, query, shareID, ownerUserID, passwordHash, expiresAt, burnAfterRead, maxAccessCount, allowPreview, allowDownload).Scan(
 		&shareIDValue,
 		&share.OwnerUserID,
 		&share.Token,
@@ -487,7 +493,11 @@ func (r *Repository) ListSharesForUser(ctx context.Context, db database.PgExecut
 		concat('file-', left(f.id::text, 8)),
 		'application/octet-stream',
 		f.actual_encrypted_size,
-		f.updated_at
+		f.updated_at,
+		f.user_id,
+		f.folder_id,
+		f.encrypted_metadata,
+		f.encrypted_file_key
 	FROM
 		share_links sl
 	JOIN
@@ -531,6 +541,10 @@ func (r *Repository) ListSharesForUser(ctx context.Context, db database.PgExecut
 			&share.FileContentType,
 			&share.FileSizeBytes,
 			&share.FileUpdatedAt,
+			&share.FileVaultID,
+			&share.FileFolderID,
+			&share.EncryptedFileMetadata,
+			&share.EncryptedFileKey,
 		); err != nil {
 			return nil, err
 		}

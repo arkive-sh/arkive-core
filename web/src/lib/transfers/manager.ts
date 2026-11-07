@@ -43,7 +43,12 @@ export type TransferRunner = (
 export interface TransferManager {
 	state: Readable<TransferState>;
 	enqueueUploads(files: UploadItem[], vaultId: string, parentFolderId: string | null): number;
-	enqueueDownload(fileName: string, totalBytes: number, run: TransferRunner): string;
+	enqueueDownload(
+		fileName: string,
+		totalBytes: number,
+		run: TransferRunner,
+		onDispose?: () => void,
+	): string;
 	setOpen(open: boolean): void;
 	cancelMany(ids: string[]): void;
 	cancelAll(): Promise<void>;
@@ -76,6 +81,7 @@ export function createTransferManager(): TransferManager {
 	// shortcut: transfers live for this tab, persist task data and server checkpoints before adding reload recovery.
 	const state = writable<TransferState>({ jobs: [], open: false });
 	const runners = new Map<string, TransferRunner>();
+	const runnerDisposers = new Map<string, () => void>();
 	const uploadSources = new Map<string, UploadSource>();
 	const controllers = new Map<string, AbortController>();
 	const runningTasks = new Map<string, Promise<void>>();
@@ -101,6 +107,12 @@ export function createTransferManager(): TransferManager {
 		}));
 	}
 
+	function disposeRunner(id: string): void {
+		runners.delete(id);
+		runnerDisposers.get(id)?.();
+		runnerDisposers.delete(id);
+	}
+
 	async function runJob(job: Transfer, controller: AbortController): Promise<void> {
 		const run = runners.get(job.id);
 
@@ -121,7 +133,7 @@ export function createTransferManager(): TransferManager {
 				TRANSFER_CHUNK_CONCURRENCY,
 			);
 			updateJob(job.id, { status: 'completed', transferredBytes: job.totalBytes });
-			runners.delete(job.id);
+			disposeRunner(job.id);
 			uploadSources.get(job.id)?.dispose?.();
 			uploadSources.delete(job.id);
 			if (job.kind === 'upload') uploadsChanged = true;
@@ -177,10 +189,16 @@ export function createTransferManager(): TransferManager {
 		}
 	}
 
-	function enqueueDownload(fileName: string, totalBytes: number, run: TransferRunner): string {
+	function enqueueDownload(
+		fileName: string,
+		totalBytes: number,
+		run: TransferRunner,
+		onDispose?: () => void,
+	): string {
 		if (typeof window === 'undefined') return '';
 		const id = crypto.randomUUID();
 		runners.set(id, run);
+		if (onDispose) runnerDisposers.set(id, onDispose);
 		state.update((current) => ({
 			...current,
 			jobs: [
@@ -300,7 +318,7 @@ export function createTransferManager(): TransferManager {
 			}),
 		}));
 		for (const id of removed) {
-			runners.delete(id);
+			disposeRunner(id);
 			uploadSources.get(id)?.dispose?.();
 			uploadSources.delete(id);
 		}

@@ -6,12 +6,29 @@ import type { FileCryptoRecord, VaultMetadata } from './types.ts';
 import { ENCRYPTED_ENVELOPE_OVERHEAD_BYTES, ENCRYPTION_VERSION } from './crypto-format.ts';
 import { fileChunkAAD } from './aad.ts';
 
-interface EncryptedFileRecord extends FileCryptoRecord {
+export interface EncryptedFileRecord extends FileCryptoRecord {
 	encryptionVersion: number;
 	chunkSize: number;
 	totalChunks: number;
 	encryptedHash: string;
 	sourceUrl: string;
+}
+
+// Public shares swap record/key lookup while retaining the normal range validation and cache.
+export interface FileReaderSource {
+	loadRecord(signal?: AbortSignal): Promise<EncryptedFileRecord>;
+	openContext(
+		contextId: string,
+		record: EncryptedFileRecord,
+	): Promise<{ metadataBytes: Uint8Array; manifestBytes: Uint8Array }>;
+	decryptChunk(
+		contextId: string,
+		encryptedChunk: Uint8Array,
+		aad: string,
+		expectedHash: string,
+	): Promise<{ chunkBytes: Uint8Array }>;
+	closeContext(contextId: string): Promise<unknown>;
+	dispose?(): void;
 }
 
 interface ManifestChunk {
@@ -89,6 +106,7 @@ export class DecryptedFileReader {
 	constructor(
 		private readonly fileId: string,
 		private readonly signal?: AbortSignal,
+		private readonly source?: FileReaderSource,
 	) {}
 
 	load(): Promise<FileReadContext> {
@@ -99,16 +117,20 @@ export class DecryptedFileReader {
 	}
 
 	private async loadFile(): Promise<FileReadContext> {
-		const session = await waitUntilReady();
+		let record: EncryptedFileRecord;
 
-		if (!session.unlocked) throw new Error('Unlock the vault to open this file.');
+		if (this.source) {
+			record = await this.source.loadRecord(this.signal);
+		} else {
+			const session = await waitUntilReady();
 
-		const { data: record } = await api.get<EncryptedFileRecord>(
-			`/api/files/${encodeURIComponent(this.fileId)}/record`,
-			{
-				signal: this.signal,
-			},
-		);
+			if (!session.unlocked) throw new Error('Unlock the vault to open this file.');
+			const response = await api.get<EncryptedFileRecord>(
+				`/api/files/${encodeURIComponent(this.fileId)}/record`,
+				{ signal: this.signal },
+			);
+			record = response.data;
+		}
 
 		if (
 			record.encryptionVersion !== ENCRYPTION_VERSION ||
@@ -121,7 +143,9 @@ export class DecryptedFileReader {
 			throw new Error('The file record is invalid.');
 		}
 
-		const opened = await openFileContext(this.contextId, record);
+		const opened = this.source
+			? await this.source.openContext(this.contextId, record)
+			: await openFileContext(this.contextId, record);
 		this.contextOpened = true;
 		let metadataBytes: Uint8Array | null = opened.metadataBytes;
 		let manifestBytes: Uint8Array | null = opened.manifestBytes;
@@ -239,7 +263,11 @@ export class DecryptedFileReader {
 		}
 	}
 
-	async createBlob(mimeType?: string, maxPlaintextBytes?: number): Promise<Blob> {
+	async createBlob(
+		mimeType?: string,
+		maxPlaintextBytes?: number,
+		signal?: AbortSignal,
+	): Promise<Blob> {
 		const { plaintextSize, metadata } = await this.load();
 
 		if (maxPlaintextBytes !== undefined && plaintextSize > maxPlaintextBytes)
@@ -249,7 +277,9 @@ export class DecryptedFileReader {
 
 		try {
 			for (let start = 0; start < plaintextSize; start += 4 * 1024 * 1024) {
-				parts.push(await this.readRange(start, Math.min(plaintextSize, start + 4 * 1024 * 1024)));
+				parts.push(
+					await this.readRange(start, Math.min(plaintextSize, start + 4 * 1024 * 1024), signal),
+				);
 			}
 
 			return new Blob(parts as BlobPart[], {
@@ -279,6 +309,7 @@ export class DecryptedFileReader {
 		this.loadPromise = undefined;
 
 		await this.closeContext();
+		this.source?.dispose?.();
 	}
 
 	private async readChunk(index: number, signal?: AbortSignal): Promise<Uint8Array> {
@@ -374,12 +405,9 @@ export class DecryptedFileReader {
 				context.record.totalChunks,
 			);
 
-			const { chunkBytes } = await decryptFileChunk(
-				this.contextId,
-				encryptedChunk,
-				aad,
-				chunk.hash,
-			);
+			const { chunkBytes } = this.source
+				? await this.source.decryptChunk(this.contextId, encryptedChunk, aad, chunk.hash)
+				: await decryptFileChunk(this.contextId, encryptedChunk, aad, chunk.hash);
 
 			if (this.disposed || signal.aborted) {
 				chunkBytes.fill(0);
@@ -418,7 +446,9 @@ export class DecryptedFileReader {
 	private async closeContext(): Promise<void> {
 		if (!this.contextOpened) return;
 		this.contextOpened = false;
-		await closeFileContext(this.contextId).catch(() => {});
+		await (
+			this.source ? this.source.closeContext(this.contextId) : closeFileContext(this.contextId)
+		).catch(() => {});
 	}
 }
 

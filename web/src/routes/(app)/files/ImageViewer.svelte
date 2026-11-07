@@ -6,6 +6,7 @@
 	import { readDecryptedThumbnail } from '#lib/vault/thumbnail.ts';
 	import type { FileManagerEntry } from './types';
 	import { PreviewSizeLimitError, readDecryptedFile } from '#lib/vault/read-file.ts';
+	import type { DecryptedFileReader } from '#lib/vault/read-file.ts';
 	import { isHeicImage, MAX_IMAGE_PREVIEW_BYTES } from '#lib/utils/image.ts';
 	import { decodeHeicImage } from '#lib/utils/heic.ts';
 
@@ -13,6 +14,7 @@
 	type Props = {
 		entries: FileManagerEntry[];
 		request: PreviewRequest | null;
+		reader?: DecryptedFileReader;
 		onClose: () => void;
 		onError: (message: string) => void;
 	};
@@ -24,7 +26,7 @@
 			'loading-thumbnail' | 'ready' | 'loading-original' | 'original' | 'failed' | 'too-large';
 	};
 
-	let { entries, request, onClose, onError }: Props = $props();
+	let { entries, request, reader, onClose, onError }: Props = $props();
 	let lightbox: import('photoswipe/lightbox').default | undefined;
 	let loadingLightbox: Promise<import('photoswipe/lightbox').default> | undefined;
 	let lastRequest: PreviewRequest | null = null;
@@ -142,6 +144,7 @@
 				resource.status = 'ready';
 				content.onLoaded();
 				updateOriginalButton();
+				if (reader) void loadOriginal(content);
 
 				return;
 			}
@@ -192,12 +195,14 @@
 		resource.status = 'loading-original';
 		updateOriginalButton();
 		try {
-			const decrypted = await readDecryptedFile(
-				entry.id,
-				entry.type,
-				resource.controller.signal,
-				MAX_IMAGE_PREVIEW_BYTES,
-			);
+			const decrypted = reader
+				? await reader.createBlob(entry.type, MAX_IMAGE_PREVIEW_BYTES, resource.controller.signal)
+				: await readDecryptedFile(
+						entry.id,
+						entry.type,
+						resource.controller.signal,
+						MAX_IMAGE_PREVIEW_BYTES,
+					);
 
 			if (resource.controller.signal.aborted) return;
 

@@ -103,13 +103,14 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 		apiFiles.GET("/:id/record", handlers.APIFileRecord(filesService))
 		apiFiles.GET("/:id/thumbnail/presign", handlers.APIThumbnailDownloadPresign(filesService))
 		apiFiles.GET("/:id/share", handlers.APIGetShareForFile(shareService))
-		apiFiles.POST("/:id/share", handlers.APICreateShare(shareService))
+		apiFiles.POST("/:id/share", middleware.LimitBody(64<<10), handlers.APICreateShare(shareService))
 	}
 
 	apiShares := api.Group("/shares")
 	apiShares.Use(middleware.RequireSessionJSON(authService))
 	{
-		apiShares.PATCH("/:id", handlers.APIUpdateShare(shareService))
+		apiShares.GET("", handlers.APIListShares(shareService))
+		apiShares.PATCH("/:id", middleware.LimitBody(16<<10), handlers.APIUpdateShare(shareService))
 		apiShares.POST("/:id/revoke", handlers.APIRevokeShare(shareService))
 		apiShares.POST("/:id/activate", handlers.APIActivateShare(shareService))
 		apiShares.GET("/:id/crypto-record", handlers.APIGetShareCryptoRecord(shareService))

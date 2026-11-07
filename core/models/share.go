@@ -24,10 +24,14 @@ type Share struct {
 
 type ShareWithFile struct {
 	Share
-	FileName        string
-	FileContentType string
-	FileSizeBytes   int64
-	FileUpdatedAt   time.Time
+	FileName              string
+	FileContentType       string
+	FileSizeBytes         int64
+	FileUpdatedAt         time.Time
+	FileVaultID           string
+	FileFolderID          *string
+	EncryptedFileMetadata []byte
+	EncryptedFileKey      []byte
 }
 
 type PublicShareRecord struct {

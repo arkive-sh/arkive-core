@@ -9,8 +9,17 @@
 	import { canStreamAudio, canStreamVideo, isAudioMimeType } from '#lib/utils/media.ts';
 	import { DecryptedFileReader } from '#lib/vault/read-file.ts';
 
-	let { fileId, fileName, mimeType }: { fileId: string; fileName: string; mimeType: string } =
-		$props();
+	let {
+		fileId,
+		fileName,
+		mimeType,
+		reader: providedReader,
+	}: {
+		fileId: string;
+		fileName: string;
+		mimeType: string;
+		reader?: DecryptedFileReader;
+	} = $props();
 	const isAudio = $derived(isAudioMimeType(mimeType));
 	let media = $state<HTMLMediaElement | null>(null);
 	let status = $state('Preparing encrypted media stream…');
@@ -22,7 +31,7 @@
 		if (!element) return;
 		const player = element as HTMLMediaElement;
 		const controller = new AbortController();
-		const reader = new DecryptedFileReader(fileId, controller.signal);
+		const reader = providedReader ?? new DecryptedFileReader(fileId, controller.signal);
 		let file: Awaited<ReturnType<typeof reader.load>> | undefined;
 		let stream: EncryptedStream | undefined;
 		let disposed = false;
@@ -135,7 +144,7 @@
 			player.pause();
 			player.removeAttribute('src');
 			player.load();
-			void reader.dispose();
+			if (!providedReader) void reader.dispose();
 		};
 	});
 </script>

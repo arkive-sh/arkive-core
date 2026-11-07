@@ -19,6 +19,8 @@ type shareCreateRequest struct {
 	Token                    string `json:"token"`
 	ExpiresAt                string `json:"expiresAt"`
 	Password                 string `json:"password"`
+	AllowPreview             bool   `json:"allowPreview"`
+	AllowDownload            bool   `json:"allowDownload"`
 	BurnAfterRead            bool   `json:"burnAfterRead"`
 	EncryptedShareKey        string `json:"encryptedShareKey"`
 	EncryptedFileKeyForShare string `json:"encryptedFileKeyForShare"`
@@ -28,7 +30,9 @@ type shareUpdateRequest struct {
 	ExpiresAt       string `json:"expiresAt"`
 	Password        string `json:"password"`
 	RequirePassword bool   `json:"requirePassword"`
-	BurnAfterRead   bool   `json:"burnAfterRead"`
+	AllowPreview    *bool  `json:"allowPreview"`
+	AllowDownload   *bool  `json:"allowDownload"`
+	BurnAfterRead   *bool  `json:"burnAfterRead"`
 }
 
 func APICreateShare(svc *shares.Service) gin.HandlerFunc {
@@ -81,6 +85,8 @@ func APICreateShare(svc *shares.Service) gin.HandlerFunc {
 			Token:                    req.Token,
 			Password:                 req.Password,
 			ExpiresAt:                expiresAt,
+			AllowPreview:             req.AllowPreview,
+			AllowDownload:            req.AllowDownload,
 			BurnAfterRead:            req.BurnAfterRead,
 			EncryptedShareKey:        req.EncryptedShareKey,
 			EncryptedFileKeyForShare: req.EncryptedFileKeyForShare,
@@ -115,6 +121,8 @@ func APICreateShare(svc *shares.Service) gin.HandlerFunc {
 			"fileId":            share.FileID,
 			"token":             share.Token,
 			"encryptedShareKey": base64.StdEncoding.EncodeToString(share.EncryptedShareKey),
+			"allowPreview":      share.AllowPreview,
+			"allowDownload":     share.AllowDownload,
 			"burnAfterRead":     share.BurnAfterRead,
 			"accessCount":       share.AccessCount,
 			"maxAccessCount":    share.MaxAccessCount,
@@ -160,7 +168,7 @@ func APIUpdateShare(svc *shares.Service) gin.HandlerFunc {
 			return
 		}
 
-		share, validationErrors, err := svc.UpdateShareForUser(c.Request.Context(), shareID, userID.(string), expiresAt, req.Password, req.RequirePassword, req.BurnAfterRead)
+		share, validationErrors, err := svc.UpdateShareForUser(c.Request.Context(), shareID, userID.(string), expiresAt, req.Password, req.RequirePassword, req.BurnAfterRead, req.AllowPreview, req.AllowDownload)
 		if err != nil {
 			switch err {
 			case shares.ErrUnauthorized:
@@ -189,6 +197,8 @@ func APIUpdateShare(svc *shares.Service) gin.HandlerFunc {
 			"fileId":            share.FileID,
 			"token":             share.Token,
 			"encryptedShareKey": base64.StdEncoding.EncodeToString(share.EncryptedShareKey),
+			"allowPreview":      share.AllowPreview,
+			"allowDownload":     share.AllowDownload,
 			"burnAfterRead":     share.BurnAfterRead,
 			"accessCount":       share.AccessCount,
 			"maxAccessCount":    share.MaxAccessCount,
@@ -235,6 +245,8 @@ func APIGetShareForFile(svc *shares.Service) gin.HandlerFunc {
 			"fileId":            share.FileID,
 			"token":             share.Token,
 			"encryptedShareKey": base64.StdEncoding.EncodeToString(share.EncryptedShareKey),
+			"allowPreview":      share.AllowPreview,
+			"allowDownload":     share.AllowDownload,
 			"burnAfterRead":     share.BurnAfterRead,
 			"accessCount":       share.AccessCount,
 			"maxAccessCount":    share.MaxAccessCount,
@@ -245,6 +257,48 @@ func APIGetShareForFile(svc *shares.Service) gin.HandlerFunc {
 			"isExpired":         expired,
 			"createdAt":         share.CreatedAt,
 		})
+	}
+}
+
+func APIListShares(svc *shares.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, ok := c.Get("user_id")
+		if !ok {
+			apierror.Unauthorized(c)
+			return
+		}
+
+		items, err := svc.ListSharesForUser(c.Request.Context(), userID.(string))
+		if err != nil {
+			_ = c.Error(errs.WithStack(err))
+			apierror.Internal(c, "Share list failed")
+			return
+		}
+
+		result := make([]gin.H, 0, len(items))
+		for _, share := range items {
+			status, expired := shareStatus(share.Share)
+			result = append(result, gin.H{
+				"id":                share.ID,
+				"fileId":            share.FileID,
+				"vaultId":           share.FileVaultID,
+				"parentFolderId":    share.FileFolderID,
+				"encryptedMetadata": base64.StdEncoding.EncodeToString(share.EncryptedFileMetadata),
+				"encryptedFileKey":  base64.StdEncoding.EncodeToString(share.EncryptedFileKey),
+				"allowPreview":      share.AllowPreview,
+				"allowDownload":     share.AllowDownload,
+				"burnAfterRead":     share.BurnAfterRead,
+				"accessCount":       share.AccessCount,
+				"maxAccessCount":    share.MaxAccessCount,
+				"expiresAt":         share.ExpiresAt,
+				"hasPassword":       share.PasswordHash != nil,
+				"status":            status,
+				"isExpired":         expired,
+				"createdAt":         share.CreatedAt,
+				"updatedAt":         share.UpdatedAt,
+			})
+		}
+		c.JSON(http.StatusOK, gin.H{"shares": result})
 	}
 }
 
@@ -282,6 +336,8 @@ func APIGetShareCryptoRecord(svc *shares.Service) gin.HandlerFunc {
 			"id":                share.ID,
 			"token":             share.Token,
 			"encryptedShareKey": base64.StdEncoding.EncodeToString(share.EncryptedShareKey),
+			"allowPreview":      share.AllowPreview,
+			"allowDownload":     share.AllowDownload,
 			"burnAfterRead":     share.BurnAfterRead,
 			"hasPassword":       share.PasswordHash != nil,
 		})
@@ -324,6 +380,8 @@ func APIRevokeShare(svc *shares.Service) gin.HandlerFunc {
 			"fileId":            share.FileID,
 			"token":             share.Token,
 			"encryptedShareKey": base64.StdEncoding.EncodeToString(share.EncryptedShareKey),
+			"allowPreview":      share.AllowPreview,
+			"allowDownload":     share.AllowDownload,
 			"burnAfterRead":     share.BurnAfterRead,
 			"accessCount":       share.AccessCount,
 			"maxAccessCount":    share.MaxAccessCount,
@@ -373,6 +431,8 @@ func APIActivateShare(svc *shares.Service) gin.HandlerFunc {
 			"fileId":            share.FileID,
 			"token":             share.Token,
 			"encryptedShareKey": base64.StdEncoding.EncodeToString(share.EncryptedShareKey),
+			"allowPreview":      share.AllowPreview,
+			"allowDownload":     share.AllowDownload,
 			"burnAfterRead":     share.BurnAfterRead,
 			"accessCount":       share.AccessCount,
 			"maxAccessCount":    share.MaxAccessCount,
