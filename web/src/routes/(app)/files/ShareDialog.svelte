@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
-	import { Copy, ExternalLink, Link2, ShieldOff } from '@lucide/svelte';
+	import { Copy, ExternalLink, Link2, ShieldOff, Trash2 } from '@lucide/svelte';
 	import axios from 'axios';
+	import Button from '#lib/components/Button.svelte';
 	import Drawer from '#lib/components/Drawer.svelte';
 	import FileTypeIcon from '#lib/components/FileTypeIcon.svelte';
 	import { api } from '#lib/api.ts';
@@ -43,6 +44,7 @@
 	let saving = $state(false);
 	let error = $state('');
 	let confirmRevoke = $state(false);
+	let confirmDelete = $state(false);
 
 	function toLocalDateTime(value: string | null): string {
 		if (!value) return '';
@@ -199,6 +201,25 @@
 		}
 	}
 
+	async function deleteShare(): Promise<void> {
+		if (!share || saving) return;
+		saving = true;
+		error = '';
+		let deleted = false;
+
+		try {
+			await api.delete(`/api/shares/${encodeURIComponent(share.id)}`);
+			deleted = true;
+			toast.success('Share link deleted. The file remains in your vault.');
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : 'Could not delete this share link.';
+		} finally {
+			saving = false;
+		}
+
+		if (deleted) onClose();
+	}
+
 	async function copyLink(): Promise<void> {
 		if (!link) return;
 		try {
@@ -233,6 +254,9 @@
 		link = '';
 	});
 </script>
+
+{#snippet revokeIcon()}<ShieldOff class="size-4" aria-hidden="true" />{/snippet}
+{#snippet deleteIcon()}<Trash2 class="size-4" aria-hidden="true" />{/snippet}
 
 <Drawer open={true} label={`Share ${entry.name}`} title="Share" {onClose}>
 	<div class="grid gap-6">
@@ -351,32 +375,77 @@
 								Anyone with this link will lose access immediately.
 							</p>
 							<div class="flex gap-2">
-								<button
-									class="cursor-pointer rounded-md border border-(--border) px-3 py-2 text-sm"
-									type="button"
+								<Button
+									text="Cancel"
+									variant="secondary"
 									disabled={saving}
-									onclick={() => (confirmRevoke = false)}>Cancel</button
-								>
-								<button
-									class="inline-flex cursor-pointer items-center gap-2 rounded-md border border-red-500/50 px-3 py-2 text-sm text-red-400 disabled:cursor-wait disabled:opacity-50"
-									type="button"
-									disabled={saving}
+									onclick={() => (confirmRevoke = false)}
+								/>
+								<Button
+									text="Confirm revoke"
+									variant="danger-outline"
+									icon={revokeIcon}
+									busy={saving}
+									busyText="Revoking…"
 									onclick={() => void changeShareStatus('revoke')}
-								>
-									<ShieldOff class="size-4" aria-hidden="true" />Confirm revoke
-								</button>
+								/>
 							</div>
 						</div>
 					{:else}
-						<button
-							class="inline-flex cursor-pointer items-center gap-2 text-sm text-(--muted) hover:text-red-400"
-							type="button"
+						<Button
+							text="Revoke link"
+							variant="secondary"
+							icon={revokeIcon}
+							class="w-fit"
 							onclick={() => (confirmRevoke = true)}
-						>
-							<ShieldOff class="size-4" aria-hidden="true" />Revoke link
-						</button>
+						/>
 					{/if}
 				</div>
+			{/if}
+
+			{#if share}
+				<section class="grid gap-3 border-b border-(--border) pb-5">
+					<div>
+						<h3 class="m-0 text-sm font-semibold">Delete share link</h3>
+						<p class="m-0 mt-1 text-xs leading-5 text-(--muted)">
+							Permanently remove this link and its settings. The file stays in your vault.
+						</p>
+					</div>
+					{#if confirmDelete}
+						<p class="m-0 text-sm text-(--muted)">
+							Anyone with the URL will lose access. To share again, create a new link. This can’t be
+							undone.
+						</p>
+						<div class="flex justify-end gap-2">
+							<Button
+								text="Cancel"
+								variant="secondary"
+								disabled={saving}
+								onclick={() => (confirmDelete = false)}
+							/>
+							<Button
+								text="Delete link"
+								variant="danger-outline"
+								icon={deleteIcon}
+								busy={saving}
+								busyText="Deleting…"
+								onclick={() => void deleteShare()}
+							/>
+						</div>
+					{:else}
+						<Button
+							text="Delete link"
+							variant="danger-outline"
+							icon={deleteIcon}
+							class="w-fit"
+							disabled={saving}
+							onclick={() => {
+								confirmRevoke = false;
+								confirmDelete = true;
+							}}
+						/>
+					{/if}
+				</section>
 			{/if}
 		{/if}
 

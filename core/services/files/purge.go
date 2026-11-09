@@ -105,10 +105,15 @@ func (s *Service) purgeDeletedFilesBatch(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	purgedFileIDs := make([]string, 0, len(purgedFiles))
 	for _, file := range purgedFiles {
+		purgedFileIDs = append(purgedFileIDs, file.ID)
 		if err := s.storageRepo.DecreaseUsedStorage(ctx, tx, file.UserID, totalStoredSize(file)); err != nil {
 			return 0, err
 		}
+	}
+	if err := s.shareRepo.DeleteLinksForFiles(ctx, tx, purgedFileIDs); err != nil {
+		return 0, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return 0, err
