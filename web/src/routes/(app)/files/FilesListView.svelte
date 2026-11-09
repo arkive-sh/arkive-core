@@ -176,7 +176,7 @@
 		style={`min-width: ${showDimensions ? '940px' : '800px'}`}
 	>
 		<thead
-			class="grid border-b border-(--border) bg-(--surface-highest) text-xs font-semibold tracking-wide text-(--muted)"
+			class="grid border-b border-(--border) bg-transparent text-xs font-semibold tracking-wide text-(--muted)"
 		>
 			{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
 				<tr class="grid w-full" style={`grid-template-columns: ${activeGridColumns}`}>
@@ -221,7 +221,7 @@
 					<tr
 						data-index={virtualRow.index}
 						data-file-entry
-						class={`absolute top-0 left-0 grid h-11.25 w-full transition-colors hover:bg-(--surface-highest) ${actionLabel ? 'cursor-pointer' : ''} ${selectedIds.has(fileManagerEntryKey(row.original)) ? 'bg-(--surface-highest)' : 'bg-(--surface-raised)'} ${focusFileId === row.original.id ? 'ring-2 ring-inset ring-(--accent)' : ''}`}
+						class={`absolute top-0 left-0 grid h-11.25 w-full transition-colors hover:bg-(--surface-highest) ${actionLabel ? 'cursor-pointer' : ''} ${selectedIds.has(fileManagerEntryKey(row.original)) ? 'bg-(--surface-highest)' : 'bg-transparent'} ${focusFileId === row.original.id ? 'ring-2 ring-inset ring-(--accent)' : ''}`}
 						style={`grid-template-columns: ${activeGridColumns}; transform: translateY(${virtualRow.start - rowScrollMargin}px)`}
 						oncontextmenu={isDraftFolder
 							? undefined
