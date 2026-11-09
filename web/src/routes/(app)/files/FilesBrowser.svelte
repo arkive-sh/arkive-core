@@ -150,9 +150,9 @@
 </script>
 
 <div class="min-h-full bg-(--bg) py-6 pb-8">
-	<div class="mx-auto grid w-[min(1440px,calc(100%-40px))] gap-5 max-[960px]:w-[calc(100%-24px)]">
+	<div class="mx-auto grid w-[min(1440px,calc(100%-40px))] gap-4 max-[960px]:w-[calc(100%-24px)]">
 		<header
-			class="flex items-center justify-between gap-4 rounded-md border border-(--border) bg-(--surface-raised) px-3 py-2.5 max-[640px]:flex-col max-[640px]:items-stretch"
+			class="flex items-center justify-between gap-4 border-b border-(--border) pb-3 max-[640px]:flex-col max-[640px]:items-stretch"
 		>
 			<h1 class="sr-only">{folderName || 'Files'}</h1>
 			<div class="flex min-w-0 flex-1 items-center gap-2 max-[640px]:w-full">
@@ -177,9 +177,7 @@
 					</button>
 				{/if}
 				{#if showSelectionToolbar}
-					<div
-						class="inline-flex max-w-full flex-wrap items-center gap-1 rounded-md border border-(--border) bg-(--surface) p-1"
-					>
+					<div class="inline-flex max-w-full flex-wrap items-center gap-1">
 						{#if rows.length && viewMode === 'grid' && !allRowsSelected}
 							<button
 								class="inline-flex h-8 cursor-pointer items-center rounded px-2 text-sm text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)"
@@ -261,35 +259,28 @@
 			</div>
 		</header>
 		{#if !unlocked}
-			<section
-				class="rounded-md border border-(--border) bg-(--surface-raised) px-5 py-8 text-(--muted)"
-				role="status"
-			>
+			<section class="border-b border-(--border-soft) py-8 text-(--muted)" role="status">
 				Unlock the vault from the header to view your files.
 			</section>
 		{:else if query.isPending}
-			<section
-				class="rounded-md border border-(--border) bg-(--surface-raised) px-5 py-8 text-(--muted)"
-				role="status"
-			>
+			<section class="border-b border-(--border-soft) py-8 text-(--muted)" role="status">
 				Loading files…
 			</section>
 		{:else if query.isError && !query.data}
-			<section
-				class="rounded-md border border-(--border) bg-(--surface-raised) px-5 py-8 text-red-400"
-				role="alert"
-			>
+			<section class="border-b border-(--border-soft) py-8 text-red-400" role="alert">
 				{query.error instanceof Error ? query.error.message : 'Could not load files.'}
 			</section>
 		{:else if query.data}
 			<FileUploader {unlocked} {onFilesDropped}>
 				<section
-					class="overflow-hidden rounded-md border border-(--border) bg-(--surface-raised)"
+					class="min-w-0"
 					aria-label="Files and folders"
 					oncontextmenu={onShowBackgroundContextMenu}
 				>
 					{#if !entriesReady}
-						<div class="px-5 py-8 text-(--muted)" role="status">Decrypting file details…</div>
+						<div class="border-b border-(--border-soft) py-8 text-(--muted)" role="status">
+							Decrypting file details…
+						</div>
 					{:else if viewMode === 'grid'}
 						<FilesGridView
 							rows={displayedRows}
@@ -340,7 +331,7 @@
 						<div
 							bind:this={sentinel}
 							data-upload-click-ignore
-							class="flex flex-col items-center gap-2 border-t border-(--border-soft) px-5 py-3 text-sm text-(--muted)"
+							class="flex flex-col items-center gap-2 border-t border-(--border-soft) py-3 text-sm text-(--muted)"
 						>
 							{#if query.isFetchNextPageError}<p class="m-0 text-red-400" role="alert">
 									{query.error instanceof Error
@@ -356,7 +347,7 @@
 							>
 						</div>
 					{:else if entriesReady}
-						<footer class="border-t border-(--border-soft) px-5 py-3 text-sm text-(--muted)">
+						<footer class="border-t border-(--border-soft) py-3 text-sm text-(--muted)">
 							{rows.length}
 							{rows.length === 1 ? 'item' : 'items'}
 						</footer>
