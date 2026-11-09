@@ -14,6 +14,7 @@ type Cursor struct {
 	DeletedAt time.Time
 	Type      string
 	ID        string
+	Inclusive bool
 }
 
 func New() *Repository {
@@ -29,9 +30,11 @@ func (r *Repository) ListEntriesPage(ctx context.Context, db database.PgExecutor
 	var cursorTime any
 	var cursorTypeOrder any
 	var cursorID any
+	cursorInclusive := false
 	if cursor != nil {
 		cursorTime = cursor.DeletedAt
 		cursorID = cursor.ID
+		cursorInclusive = cursor.Inclusive
 		if cursor.Type == "folder" {
 			cursorTypeOrder = 0
 		} else {
@@ -100,9 +103,9 @@ func (r *Repository) ListEntriesPage(ctx context.Context, db database.PgExecutor
 	AND ($4::timestamptz IS NULL
 		OR deleted_at < $4
 		OR (deleted_at = $4 AND entry_type_order > $5)
-		OR (deleted_at = $4 AND entry_type_order = $5 AND id > $6::uuid))
+		OR (deleted_at = $4 AND entry_type_order = $5 AND (id > $6::uuid OR ($8 AND id = $6::uuid))))
 	ORDER BY deleted_at DESC, entry_type_order ASC, id ASC
-	LIMIT $7`, userID, cutoff, parentID, cursorTime, cursorTypeOrder, cursorID, limit)
+	LIMIT $7`, userID, cutoff, parentID, cursorTime, cursorTypeOrder, cursorID, limit, cursorInclusive)
 	if err != nil {
 		return nil, err
 	}
@@ -129,6 +132,66 @@ func (r *Repository) ListEntriesPage(ctx context.Context, db database.PgExecutor
 		return nil, err
 	}
 	return entries, nil
+}
+
+func (r *Repository) GetTrashFileCursor(ctx context.Context, db database.PgExecutor, userID string, cutoff time.Time, parentFolderID, fileID string) (*Cursor, error) {
+	var parentID any
+	if parentFolderID != "" {
+		parentID = parentFolderID
+	}
+	var cursor Cursor
+	err := db.QueryRow(ctx, `SELECT deleted_at
+		FROM files
+		WHERE id = $1 AND user_id = $2
+			AND deleted_at > $3 AND purged_at IS NULL AND purge_requested_at IS NULL
+			AND (($4::uuid IS NULL AND folder_id IS NULL) OR folder_id = $4::uuid)`,
+		fileID, userID, cutoff, parentID).Scan(&cursor.DeletedAt)
+	if err != nil {
+		return nil, err
+	}
+	cursor.Type = "file"
+	cursor.ID = fileID
+	cursor.Inclusive = true
+	return &cursor, nil
+}
+
+func (r *Repository) GetFolderPath(ctx context.Context, db database.PgExecutor, userID, folderID string) ([]models.Folder, error) {
+	rows, err := db.Query(ctx, `WITH RECURSIVE path AS (
+		SELECT id, user_id, vault_id, parent_folder_id, encrypted_name, encrypted_metadata, updated_at, 0 AS depth
+		FROM folders
+		WHERE id = $1 AND user_id = $2 AND purged_at IS NULL AND purge_requested_at IS NULL
+		UNION ALL
+		SELECT parent.id, parent.user_id, parent.vault_id, parent.parent_folder_id,
+			parent.encrypted_name, parent.encrypted_metadata, parent.updated_at, path.depth + 1
+		FROM folders parent
+		JOIN path ON parent.id = path.parent_folder_id AND parent.user_id = path.user_id
+		WHERE parent.purged_at IS NULL AND parent.purge_requested_at IS NULL AND path.depth < 100
+	)
+	SELECT id::text, user_id, vault_id, parent_folder_id::text, encrypted_name, encrypted_metadata, updated_at
+	FROM path
+	ORDER BY depth DESC`, folderID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	path := []models.Folder{}
+	for rows.Next() {
+		var folder models.Folder
+		if err := rows.Scan(
+			&folder.ID,
+			&folder.UserID,
+			&folder.VaultID,
+			&folder.ParentFolderID,
+			&folder.EncryptedName,
+			&folder.EncryptedMetadata,
+			&folder.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		path = append(path, folder)
+	}
+	return path, rows.Err()
 }
 
 func (r *Repository) LockTrashFiles(ctx context.Context, db database.PgExecutor, userID string, cutoff time.Time, fileIDs []string) (int, error) {

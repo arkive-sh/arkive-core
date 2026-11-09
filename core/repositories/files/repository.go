@@ -367,17 +367,29 @@ func (r *Repository) ListByFolder(ctx context.Context, db database.PgExecutor, u
 
 func (r *Repository) ListByFolderAfter(ctx context.Context, db database.PgExecutor, userID string, folderID *string, limit int, afterCreatedAt *time.Time, afterID *string, inclusive bool) ([]models.File, error) {
 	query := `SELECT
-		id, folder_id, encrypted_metadata, encrypted_file_key, created_at, updated_at
-	FROM
-		files
+		file.id, file.folder_id, file.encrypted_metadata, file.encrypted_file_key, file.created_at, file.updated_at,
+		EXISTS (
+			SELECT 1
+			FROM share_snapshot_files snapshot
+			JOIN share_items item ON item.id = snapshot.share_item_id
+			JOIN share_links link ON link.id = item.share_link_id
+			WHERE snapshot.file_id = file.id
+				AND link.owner_user_id = file.user_id
+				AND link.status = 'active'
+				AND link.revoked_at IS NULL
+				AND link.consumed_at IS NULL
+				AND (link.expires_at IS NULL OR link.expires_at > now())
+				AND (link.max_access_count IS NULL OR link.access_count < link.max_access_count)
+		) AS is_shared
+	FROM files file
 	WHERE
-		user_id = $1
-		AND upload_status = 'complete'
-		AND expires_at IS NULL
-		AND deleted_at IS NULL
+		file.user_id = $1
+		AND file.upload_status = 'complete'
+		AND file.expires_at IS NULL
+		AND file.deleted_at IS NULL
 		AND (
-			($2::uuid IS NULL AND folder_id IS NULL)
-			OR folder_id = $2
+			($2::uuid IS NULL AND file.folder_id IS NULL)
+			OR file.folder_id = $2
 		)`
 	args := []any{userID, folderID, limit}
 	if afterCreatedAt != nil {
@@ -406,6 +418,7 @@ func (r *Repository) ListByFolderAfter(ctx context.Context, db database.PgExecut
 			&file.EncryptedFileKey,
 			&file.CreatedAt,
 			&file.UpdatedAt,
+			&file.IsShared,
 		); err != nil {
 			return nil, err
 		}

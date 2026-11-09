@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { page } from '$app/state';
+	import { resolve } from '$app/paths';
+	import { tick } from 'svelte';
 	import { Copy, Download, ExternalLink, Eye, EyeOff, Settings, X } from '@lucide/svelte';
 	import axios from 'axios';
 	import { api } from '#lib/api.ts';
@@ -39,6 +42,12 @@
 	let loading = $state(true);
 	let error = $state('');
 	let requestID = 0;
+	const focusFileId = $derived(page.url.searchParams.get('focus_file'));
+	const focusedShareId = $derived(
+		shares.find((share) => share.entry.id === focusFileId && canOpen(share.record))?.record.id ??
+			shares.find((share) => share.entry.id === focusFileId)?.record.id ??
+			null,
+	);
 
 	async function loadShares(): Promise<void> {
 		const request = ++requestID;
@@ -134,6 +143,15 @@
 		return !share.isTrashed && !share.isExpired && share.status === 'active';
 	}
 
+	function fileLocation(share: ListedShare): string {
+		const route = resolve(share.record.isTrashed ? '/(app)/trash' : '/(app)');
+		const folder = share.record.parentFolderId
+			? `folder_id=${encodeURIComponent(share.record.parentFolderId)}&`
+			: '';
+
+		return `${route}?${folder}focus_file=${encodeURIComponent(share.entry.id)}`;
+	}
+
 	async function resolveShareURL(shareID: string): Promise<string> {
 		const { data } = await api.get<ShareCryptoRecord>(
 			`/api/shares/${encodeURIComponent(shareID)}/crypto-record`,
@@ -189,6 +207,24 @@
 	$effect(() => {
 		if ($vaultUnlocked) void loadShares();
 	});
+
+	$effect(() => {
+		const id = focusedShareId;
+		if (!id || loading) return;
+
+		let canceled = false;
+		void tick().then(() => {
+			if (canceled) return;
+			const target = Array.from(document.querySelectorAll<HTMLElement>('[data-share-id]')).find(
+				(element) => element.dataset.shareId === id,
+			);
+			target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+		});
+
+		return () => {
+			canceled = true;
+		};
+	});
 </script>
 
 <svelte:head>
@@ -227,7 +263,8 @@
 				{#each shares as share (share.record.id)}
 					{@const busy = actionInProgress?.id === share.record.id}
 					<li
-						class={`grid gap-4 border-b border-(--border) p-4 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_7rem_9rem_10rem_9rem] lg:items-center lg:gap-4 lg:px-4 lg:py-3 ${share.record.isTrashed ? 'opacity-60' : ''}`}
+						data-share-id={share.record.id}
+						class={`grid gap-4 border-b border-(--border) p-4 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_7rem_9rem_10rem_9rem] lg:items-center lg:gap-4 lg:px-4 lg:py-3 ${share.record.isTrashed ? 'opacity-60' : ''} ${focusedShareId === share.record.id ? 'rounded ring-2 ring-(--accent)' : ''}`}
 					>
 						<div class="flex min-w-0 items-center gap-3">
 							<FileTypeIcon
@@ -235,8 +272,11 @@
 								mime={share.entry.type}
 								className="size-5 shrink-0"
 							/>
-							<span class="min-w-0 truncate font-medium" title={share.entry.name}
-								>{share.entry.name}</span
+							<a
+								class="min-w-0 truncate font-medium hover:underline focus-visible:rounded focus-visible:outline-2 focus-visible:outline-(--accent)"
+								href={fileLocation(share)}
+								title={`Show ${share.entry.name} in ${share.record.isTrashed ? 'Trash' : 'Files'}`}
+								>{share.entry.name}</a
 							>
 						</div>
 						<div class="grid min-w-0 gap-2 lg:contents">

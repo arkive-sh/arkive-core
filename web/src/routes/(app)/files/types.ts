@@ -29,6 +29,7 @@ export interface FileManagerEntry {
 	encryptedFileKey?: string;
 	dimensions?: MediaDimensions;
 	thumbnail?: ThumbnailSource;
+	isShared?: boolean;
 }
 
 export function fileManagerEntryKey(entry: Pick<FileManagerEntry, 'id' | 'kind'>): string {

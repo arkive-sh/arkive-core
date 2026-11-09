@@ -15,9 +15,10 @@ import (
 )
 
 type trashEntriesResponse struct {
-	Entries    []models.TrashEntry `json:"entries"`
-	NextCursor *string             `json:"nextCursor"`
-	HasMore    bool                `json:"hasMore"`
+	Path       []folderEntrySummary `json:"path"`
+	Entries    []models.TrashEntry  `json:"entries"`
+	NextCursor *string              `json:"nextCursor"`
+	HasMore    bool                 `json:"hasMore"`
 }
 
 type trashSelectionRequest struct {
@@ -47,6 +48,7 @@ func APIListTrash(folderService *folderssvc.Service) gin.HandlerFunc {
 			UserID:         userID.(string),
 			ParentFolderID: c.Query("parentFolderId"),
 			Cursor:         c.Query("cursor"),
+			SeekEntryID:    c.Query("seekEntryId"),
 			Limit:          limit,
 		})
 		if err != nil {
@@ -54,11 +56,16 @@ func APIListTrash(folderService *folderssvc.Service) gin.HandlerFunc {
 				apierror.InvalidPayload(c)
 				return
 			}
+			if errors.Is(err, folderssvc.ErrEntryNotFound) {
+				apierror.Write(c, http.StatusNotFound, "entry_not_found", "That entry is no longer in Trash.", nil)
+				return
+			}
 			_ = c.Error(errs.WithStack(err))
 			apierror.Internal(c, "Trash listing failed")
 			return
 		}
 		c.JSON(http.StatusOK, trashEntriesResponse{
+			Path:       folderEntrySummaries(result.Path),
 			Entries:    result.Entries,
 			NextCursor: result.NextCursor,
 			HasMore:    result.HasMore,

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { createInfiniteQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { RotateCcw, Trash2, X } from '@lucide/svelte';
@@ -16,6 +17,13 @@
 	import type { PageProps } from './$types';
 
 	const PAGE_SIZE = 50;
+	type ApiFolder = {
+		ID: string;
+		ParentFolderID: string | null;
+		EncryptedName: string;
+		EncryptedMetadata: string;
+		UpdatedAt: string;
+	};
 	type ApiTrashEntry = {
 		type: 'file' | 'folder';
 		id: string;
@@ -26,7 +34,12 @@
 		deletedAt: string;
 		isContainer?: boolean;
 	};
-	type TrashPage = { entries: ApiTrashEntry[]; nextCursor: string | null; hasMore: boolean };
+	type TrashPage = {
+		path: ApiFolder[];
+		entries: ApiTrashEntry[];
+		nextCursor: string | null;
+		hasMore: boolean;
+	};
 	type LoadedTrashPage = TrashPage & { folderId: string | null };
 	type SelectionResult = { fileIds: string[]; folderIds: string[] };
 	type BreadcrumbItem = { id: string; label: string; onSelect?: () => void };
@@ -34,10 +47,15 @@
 	let { data }: PageProps = $props();
 	const queryClient = useQueryClient();
 	const selectedIds = new SvelteSet<string>();
+	const requestedFolderId = $derived(page.url.searchParams.get('folder_id') || null);
+	const focusFileId = $derived(page.url.searchParams.get('focus_file'));
 	let folderPath = $state<FileManagerEntry[]>([]);
-	const currentFolderId = $derived(folderPath.at(-1)?.id ?? null);
+	let folderPathReady = $state(false);
+	const currentFolderId = $derived(
+		folderPath.at(-1)?.id ?? (folderPathReady ? null : requestedFolderId),
+	);
 	const query = createInfiniteQuery(() => ({
-		queryKey: ['trash', currentFolderId],
+		queryKey: ['trash', currentFolderId, focusFileId],
 		enabled: $vaultUnlocked,
 		initialPageParam: null as string | null,
 		queryFn: async ({ pageParam, signal }): Promise<LoadedTrashPage> => {
@@ -46,6 +64,10 @@
 					limit: PAGE_SIZE,
 					cursor: pageParam ?? undefined,
 					parentFolderId: currentFolderId ?? undefined,
+					seekEntryId:
+						pageParam === null && currentFolderId === requestedFolderId
+							? (focusFileId ?? undefined)
+							: undefined,
 				},
 				signal,
 			});
@@ -85,7 +107,14 @@
 	const selectableCount = $derived(entries.filter((entry) => entry.selectable !== false).length);
 	const allSelected = $derived(selectableCount > 0 && selectedEntries.length === selectableCount);
 	const breadcrumbItems = $derived<BreadcrumbItem[]>([
-		{ id: 'trash', label: 'Trash', onSelect: () => (folderPath = []) },
+		{
+			id: 'trash',
+			label: 'Trash',
+			onSelect: () => {
+				folderPath = [];
+				folderPathReady = true;
+			},
+		},
 		...folderPath.map((folder, index) => ({
 			id: folder.id,
 			label: folder.name,
@@ -204,9 +233,28 @@
 		hydratedPageCount = pages.length;
 		for (const page of newPages) {
 			hydrationQueue = hydrationQueue.then(async () => {
+				const decryptedPath =
+					page === pages[0] && page.path.length > 0
+						? await Promise.all(
+								page.path.map((folder) =>
+									decryptEntry({
+										type: 'folder',
+										id: folder.ID,
+										parentFolderId: folder.ParentFolderID,
+										encryptedName: folder.EncryptedName,
+										encryptedMetadata: folder.EncryptedMetadata,
+										deletedAt: folder.UpdatedAt,
+									}),
+								),
+							)
+						: null;
 				const decrypted = await Promise.all(page.entries.map(decryptEntry));
 
 				if (generation !== hydrationGeneration || !$vaultUnlocked) return;
+				if (decryptedPath) {
+					folderPath = decryptedPath;
+					folderPathReady = true;
+				}
 				entries = [...entries, ...decrypted];
 				entriesReady = true;
 			});
@@ -269,6 +317,7 @@
 
 		if (!folder) return;
 		folderPath = [...folderPath, folder];
+		folderPathReady = true;
 		closeContextMenu();
 	}
 
@@ -494,7 +543,7 @@
 				{:else if viewMode === 'grid'}
 					<FilesGridView
 						rows={entries}
-						focusFileId={null}
+						{focusFileId}
 						{selectedIds}
 						selectionEnabled={true}
 						previewEnabled={false}
@@ -516,7 +565,7 @@
 				{:else}
 					<FilesListView
 						rows={entries}
-						focusFileId={null}
+						{focusFileId}
 						{selectedIds}
 						selectionEnabled={true}
 						previewEnabled={false}
