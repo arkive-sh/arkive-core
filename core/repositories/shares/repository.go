@@ -99,6 +99,20 @@ func (r *Repository) CreateShareSnapshotFile(ctx context.Context, db database.Pg
 	return err
 }
 
+func (r *Repository) DeleteLinksForFiles(ctx context.Context, db database.PgExecutor, fileIDs []string) error {
+	if len(fileIDs) == 0 {
+		return nil
+	}
+	_, err := db.Exec(ctx, `DELETE FROM share_links
+		WHERE id IN (
+			SELECT si.share_link_id
+			FROM share_items si
+			LEFT JOIN share_snapshot_files ssf ON ssf.share_item_id = si.id
+			WHERE si.file_id = ANY($1::uuid[]) OR ssf.file_id = ANY($1::uuid[])
+		)`, fileIDs)
+	return err
+}
+
 func (r *Repository) GetShareByToken(ctx context.Context, db database.PgExecutor, token string) (models.Share, error) {
 	var share models.Share
 	query := `SELECT
@@ -497,7 +511,8 @@ func (r *Repository) ListSharesForUser(ctx context.Context, db database.PgExecut
 		f.user_id,
 		f.folder_id,
 		f.encrypted_metadata,
-		f.encrypted_file_key
+		f.encrypted_file_key,
+		f.deleted_at
 	FROM
 		share_links sl
 	JOIN
@@ -508,7 +523,7 @@ func (r *Repository) ListSharesForUser(ctx context.Context, db database.PgExecut
 		files f ON f.id = ssf.file_id
 	WHERE
 		sl.owner_user_id = $1
-		AND f.deleted_at IS NULL
+		AND f.purged_at IS NULL
 	ORDER BY
 		sl.created_at DESC`, ownerUserID)
 	if err != nil {
@@ -545,6 +560,7 @@ func (r *Repository) ListSharesForUser(ctx context.Context, db database.PgExecut
 			&share.FileFolderID,
 			&share.EncryptedFileMetadata,
 			&share.EncryptedFileKey,
+			&share.FileDeletedAt,
 		); err != nil {
 			return nil, err
 		}

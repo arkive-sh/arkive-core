@@ -30,6 +30,7 @@ type ShareWithFile struct {
 	FileUpdatedAt         time.Time
 	FileVaultID           string
 	FileFolderID          *string
+	FileDeletedAt         *time.Time
 	EncryptedFileMetadata []byte
 	EncryptedFileKey      []byte
 }

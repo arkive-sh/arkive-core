@@ -285,6 +285,7 @@ func APIListShares(svc *shares.Service) gin.HandlerFunc {
 				"parentFolderId":    share.FileFolderID,
 				"encryptedMetadata": base64.StdEncoding.EncodeToString(share.EncryptedFileMetadata),
 				"encryptedFileKey":  base64.StdEncoding.EncodeToString(share.EncryptedFileKey),
+				"isTrashed":         share.FileDeletedAt != nil,
 				"allowPreview":      share.AllowPreview,
 				"allowDownload":     share.AllowDownload,
 				"burnAfterRead":     share.BurnAfterRead,

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Copy, Download, ExternalLink, Eye, EyeOff, Share2, X } from '@lucide/svelte';
+	import { Copy, Download, ExternalLink, Eye, EyeOff, Settings, X } from '@lucide/svelte';
 	import axios from 'axios';
 	import { api } from '#lib/api.ts';
 	import FileTypeIcon from '#lib/components/FileTypeIcon.svelte';
@@ -27,6 +27,7 @@
 		isExpired: boolean;
 		createdAt: string;
 		updatedAt: string;
+		isTrashed: boolean;
 	};
 	type ShareCryptoRecord = { token: string; encryptedShareKey: string };
 	type ListedShare = { record: ApiShare; entry: FileManagerEntry };
@@ -100,6 +101,7 @@
 	}
 
 	function statusLabel(share: ApiShare): string {
+		if (share.isTrashed) return 'In Trash';
 		if (share.isExpired || share.status === 'expired') return 'Expired';
 		if (share.status === 'burned') return 'Used';
 		if (share.status === 'revoked') return 'Revoked';
@@ -108,6 +110,7 @@
 	}
 
 	function statusClass(share: ApiShare): string {
+		if (share.isTrashed) return 'border-(--border) bg-(--surface-raised) text-(--muted)';
 		if (share.isExpired || share.status === 'expired')
 			return 'border-amber-500/40 bg-amber-500/10 text-amber-300';
 		if (share.status === 'burned') return 'border-(--border) bg-(--surface-raised) text-(--muted)';
@@ -128,7 +131,7 @@
 	}
 
 	function canOpen(share: ApiShare): boolean {
-		return !share.isExpired && share.status === 'active';
+		return !share.isTrashed && !share.isExpired && share.status === 'active';
 	}
 
 	async function resolveShareURL(shareID: string): Promise<string> {
@@ -140,7 +143,7 @@
 	}
 
 	async function copyLink(share: ListedShare): Promise<void> {
-		if (actionInProgress) return;
+		if (share.record.isTrashed || actionInProgress) return;
 		actionInProgress = { id: share.record.id, kind: 'copy' };
 
 		try {
@@ -224,7 +227,7 @@
 				{#each shares as share (share.record.id)}
 					{@const busy = actionInProgress?.id === share.record.id}
 					<li
-						class="grid gap-4 border-b border-(--border) p-4 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_7rem_9rem_10rem_9rem] lg:items-center lg:gap-4 lg:px-4 lg:py-3"
+						class={`grid gap-4 border-b border-(--border) p-4 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_7rem_9rem_10rem_9rem] lg:items-center lg:gap-4 lg:px-4 lg:py-3 ${share.record.isTrashed ? 'opacity-60' : ''}`}
 					>
 						<div class="flex min-w-0 items-center gap-3">
 							<FileTypeIcon
@@ -304,8 +307,11 @@
 							<button
 								class="grid size-10 shrink-0 cursor-pointer place-items-center rounded border border-(--border) hover:bg-(--surface-raised) disabled:cursor-wait disabled:opacity-60"
 								type="button"
-								disabled={actionInProgress !== null}
-								aria-label={`${busy && actionInProgress?.kind === 'copy' ? 'Preparing' : 'Copy'} link for ${share.entry.name}`}
+								disabled={share.record.isTrashed || actionInProgress !== null}
+								title={share.record.isTrashed
+									? 'Restore the file to use this link'
+									: 'Copy share link'}
+								aria-label={`${busy && actionInProgress?.kind === 'copy' ? 'Preparing' : 'Copy'} link for ${share.entry.name}${share.record.isTrashed ? ' (file is in Trash)' : ''}`}
 								onclick={() => void copyLink(share)}
 							>
 								<Copy class="size-4" aria-hidden="true" />
@@ -314,7 +320,10 @@
 								class="grid size-10 shrink-0 cursor-pointer place-items-center rounded border border-(--border) hover:bg-(--surface-raised) disabled:cursor-not-allowed disabled:opacity-50"
 								type="button"
 								disabled={!canOpen(share.record) || actionInProgress !== null}
-								aria-label={`${busy && actionInProgress?.kind === 'open' ? 'Opening' : 'Open'} share for ${share.entry.name}${canOpen(share.record) ? '' : ' (active links only)'}`}
+								aria-label={`${busy && actionInProgress?.kind === 'open' ? 'Opening' : 'Open'} share for ${share.entry.name}${share.record.isTrashed ? ' (file is in Trash)' : canOpen(share.record) ? '' : ' (active links only)'}`}
+								title={share.record.isTrashed
+									? 'Restore the file to use this link'
+									: 'Open share link'}
 								aria-busy={busy && actionInProgress?.kind === 'open'}
 								onclick={() => openLink(share)}
 							>
@@ -323,11 +332,14 @@
 							<button
 								class="grid size-10 shrink-0 cursor-pointer place-items-center rounded border border-(--border) hover:bg-(--surface-raised) disabled:cursor-not-allowed disabled:opacity-50"
 								type="button"
-								disabled={actionInProgress !== null}
-								aria-label={`Manage link for ${share.entry.name}`}
+								disabled={share.record.isTrashed || actionInProgress !== null}
+								title={share.record.isTrashed
+									? 'Restore the file to manage this link'
+									: 'Manage share link'}
+								aria-label={`Manage link for ${share.entry.name}${share.record.isTrashed ? ' (restore the file first)' : ''}`}
 								onclick={() => (selectedShare = share)}
 							>
-								<Share2 class="size-4" aria-hidden="true" />
+								<Settings class="size-4" aria-hidden="true" />
 							</button>
 						</div>
 					</li>

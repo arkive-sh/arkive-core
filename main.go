@@ -11,6 +11,7 @@ import (
 	filerepo "arkive/core/repositories/files"
 	foldersrepo "arkive/core/repositories/folders"
 	settingsrepo "arkive/core/repositories/settings"
+	sharerepo "arkive/core/repositories/shares"
 	storagerepo "arkive/core/repositories/storage"
 	uploadrepo "arkive/core/repositories/uploads"
 	usersrepo "arkive/core/repositories/users"
@@ -62,6 +63,7 @@ func main() {
 		db,
 		storageRepo,
 		fileRepo,
+		sharerepo.New(),
 		storageProvider,
 		filessvc.Config{
 			DownloadExpire:      3 * time.Hour,

@@ -7,6 +7,7 @@ import (
 	"arkive/core/database"
 	"arkive/core/models"
 	filerepo "arkive/core/repositories/files"
+	sharerepo "arkive/core/repositories/shares"
 	storagerepo "arkive/core/repositories/storage"
 	"arkive/pkg/storage"
 )
@@ -15,6 +16,7 @@ type Service struct {
 	db                  database.PgPool
 	storageRepo         *storagerepo.Repository
 	fileRepo            *filerepo.Repository
+	shareRepo           *sharerepo.Repository
 	storage             storage.Provider
 	downloadExpire      time.Duration
 	shareDownloadExpire time.Duration
@@ -29,6 +31,7 @@ func NewService(
 	db database.PgPool,
 	storageRepo *storagerepo.Repository,
 	fileRepo *filerepo.Repository,
+	shareRepo *sharerepo.Repository,
 	storageProvider storage.Provider,
 	cfg Config,
 ) *Service {
@@ -36,6 +39,7 @@ func NewService(
 		db:                  db,
 		storageRepo:         storageRepo,
 		fileRepo:            fileRepo,
+		shareRepo:           shareRepo,
 		storage:             storageProvider,
 		downloadExpire:      cfg.DownloadExpire,
 		shareDownloadExpire: cfg.ShareDownloadExpire,
