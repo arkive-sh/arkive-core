@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"arkive/core/models"
+	sharerepo "arkive/core/repositories/shares"
 	files "arkive/core/services/files"
 	"arkive/pkg/storage"
 	"arkive/pkg/validation"
@@ -58,6 +59,12 @@ type MultipartUploadCompleteInput struct {
 	SearchTokens      []models.FileSearchToken
 	HasThumbnail      bool
 	ThumbnailSize     int64
+	ShareEntries      []UploadShareEntry
+}
+
+type UploadShareEntry struct {
+	ShareID                  string
+	EncryptedFileKeyForShare []byte
 }
 
 type UploadPartRecordInput struct {
@@ -649,6 +656,26 @@ func (s *Service) CompleteMultipartUploadSession(ctx context.Context, userID, up
 	if err := s.fileRepo.InsertSearchTokensForFile(ctx, tx, userID, userID, file.ID, searchTokens); err != nil {
 		_ = tx.Rollback(ctx)
 		return err
+	}
+	if len(input.ShareEntries) > 100 {
+		_ = tx.Rollback(ctx)
+		return ErrInvalidInput
+	}
+	for _, entry := range input.ShareEntries {
+		if strings.TrimSpace(entry.ShareID) == "" || len(entry.EncryptedFileKeyForShare) == 0 {
+			_ = tx.Rollback(ctx)
+			return ErrInvalidInput
+		}
+		count, err := s.shareRepo.AddFolderShareEntries(ctx, tx, entry.ShareID,
+			[]sharerepo.FolderShareFileEntry{{ID: file.ID, EncryptedFileKeyForShare: entry.EncryptedFileKeyForShare}}, nil)
+		if err != nil {
+			_ = tx.Rollback(ctx)
+			return err
+		}
+		if count > 1 {
+			_ = tx.Rollback(ctx)
+			return ErrInvalidInput
+		}
 	}
 	return tx.Commit(ctx)
 }

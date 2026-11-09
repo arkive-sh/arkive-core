@@ -17,9 +17,8 @@
 		type FileManagerEntry,
 	} from './types';
 
-	const GRID_COLUMNS =
-		'3rem minmax(220px, 2fr) minmax(160px, 1.2fr) minmax(90px, 0.75fr) minmax(150px, 1fr)';
-	const GRID_COLUMNS_WITH_DIMENSIONS = `${GRID_COLUMNS} minmax(120px, 0.8fr)`;
+	const ENTRY_COLUMNS =
+		'minmax(220px, 2fr) minmax(160px, 1.2fr) minmax(90px, 0.75fr) minmax(150px, 1fr)';
 
 	let {
 		rows,
@@ -68,7 +67,9 @@
 		onPreviewPdf: (entry: FileManagerEntry) => void;
 		onPreviewText: (entry: FileManagerEntry) => void;
 	} = $props();
-	const activeGridColumns = $derived(showDimensions ? GRID_COLUMNS_WITH_DIMENSIONS : GRID_COLUMNS);
+	const activeGridColumns = $derived(
+		`${selectionEnabled ? '3rem' : '0px'} ${ENTRY_COLUMNS}${showDimensions ? ' minmax(120px, 0.8fr)' : ''}`,
+	);
 	let selectAllCheckbox = $state<HTMLInputElement>();
 	let tableBody = $state<HTMLTableSectionElement>();
 	const allSelected = $derived(loadedCount > 0 && selectedCount === loadedCount);
@@ -180,7 +181,10 @@
 		>
 			{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
 				<tr class="grid w-full" style={`grid-template-columns: ${activeGridColumns}`}>
-					<th class="flex items-center px-4 py-3 first:pl-5" scope="col">
+					<th
+						class={selectionEnabled ? 'flex items-center px-4 py-3 first:pl-5' : 'w-0 p-0'}
+						scope="col"
+					>
 						{#if selectionEnabled}<input
 								bind:this={selectAllCheckbox}
 								class="size-4 cursor-pointer accent-(--accent)"
@@ -230,7 +234,7 @@
 									onShowContextMenu(row.original, event.clientX, event.clientY);
 								}}
 					>
-						<td class="flex items-center px-4 py-1.5 first:pl-5">
+						<td class={selectionEnabled ? 'flex items-center px-4 py-1.5 first:pl-5' : 'w-0 p-0'}>
 							{#if actionLabel}
 								<button
 									class="absolute inset-0 z-0 m-0 cursor-pointer appearance-none border-0 bg-transparent p-0 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--accent)"

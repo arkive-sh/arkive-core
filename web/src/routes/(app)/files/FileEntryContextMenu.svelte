@@ -4,6 +4,7 @@
 		AudioLines,
 		CloudUpload,
 		Download,
+		Eye,
 		Share2,
 		ClipboardPaste,
 		Film,
@@ -21,8 +22,10 @@
 	import { isPdfFile, isTextFile, type FileManagerEntry } from './types';
 
 	type Props = {
-		mode?: 'files' | 'trash';
+		mode?: 'files' | 'trash' | 'public';
 		canMutateEntry?: boolean;
+		allowPreview?: boolean;
+		allowDownload?: boolean;
 		clipboardCount?: number;
 		open: boolean;
 		entry: FileManagerEntry | null;
@@ -53,6 +56,8 @@
 	let {
 		mode = 'files',
 		canMutateEntry = true,
+		allowPreview = true,
+		allowDownload = true,
 		clipboardCount = 0,
 		open,
 		entry,
@@ -145,8 +150,8 @@
 		onDownload(selected);
 	}
 
-	function shareFile(): void {
-		if (!entry || entry.kind !== 'file') return;
+	function shareEntry(): void {
+		if (!entry) return;
 		const selected = entry;
 		onClose();
 		onShare?.(selected);
@@ -178,6 +183,15 @@
 		const selected = entry;
 		onClose();
 		onPreviewText(selected);
+	}
+
+	function previewPublicEntry(): void {
+		if (!entry || entry.kind !== 'file') return;
+		const selected = entry;
+		onClose();
+		if (isImageFile(selected.name, selected.type)) onPreviewImage(selected);
+		else if (isMediaMimeType(selected.type)) onPreviewMedia(selected);
+		else if (isPdfFile(selected)) onPreviewPdf(selected);
 	}
 
 	function confirmDelete(): void {
@@ -259,7 +273,42 @@
 		role="menu"
 		aria-label={entry ? `${entry.name} actions` : 'Files actions'}
 	>
-		{#if mode === 'trash'}
+		{#if mode === 'public'}
+			{#if entry?.kind === 'folder'}
+				<button
+					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
+					type="button"
+					role="menuitem"
+					onclick={openFolder}
+				>
+					<FolderOpen class="size-4 text-(--muted)" aria-hidden="true" />
+					<span>Open folder</span>
+				</button>
+			{:else if entry?.kind === 'file'}
+				{#if allowPreview && (isImageFile(entry.name, entry.type) || isMediaMimeType(entry.type) || isPdfFile(entry))}
+					<button
+						class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
+						type="button"
+						role="menuitem"
+						onclick={previewPublicEntry}
+					>
+						<Eye class="size-4 text-(--muted)" aria-hidden="true" />
+						<span>Preview</span>
+					</button>
+				{/if}
+				{#if allowDownload}
+					<button
+						class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
+						type="button"
+						role="menuitem"
+						onclick={downloadFile}
+					>
+						<Download class="size-4 text-(--muted)" aria-hidden="true" />
+						<span>Download</span>
+					</button>
+				{/if}
+			{/if}
+		{:else if mode === 'trash'}
 			{#if entry?.kind === 'folder'}
 				<button
 					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
@@ -365,18 +414,18 @@
 					<span>Open folder</span>
 				</button>
 			{/if}
+			{#if mode === 'files' && entry}
+				<button
+					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
+					type="button"
+					role="menuitem"
+					onclick={shareEntry}
+				>
+					<Share2 class="size-4 text-(--muted)" aria-hidden="true" />
+					<span>Share</span>
+				</button>
+			{/if}
 			{#if entry?.kind === 'file'}
-				{#if mode === 'files'}
-					<button
-						class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
-						type="button"
-						role="menuitem"
-						onclick={shareFile}
-					>
-						<Share2 class="size-4 text-(--muted)" aria-hidden="true" />
-						<span>Share</span>
-					</button>
-				{/if}
 				{#if isImageFile(entry.name, entry.type)}
 					<button
 						class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"

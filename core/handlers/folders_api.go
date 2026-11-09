@@ -19,11 +19,18 @@ import (
 
 type createFolderRequest struct {
 	// The client assigns this before encryption so it can authenticate the folder ID.
-	ID                string               `json:"id"`
-	ParentFolderID    *string              `json:"parentFolderId"`
-	EncryptedName     string               `json:"encryptedName"`
-	EncryptedMetadata string               `json:"encryptedMetadata"`
-	SearchTokens      []searchTokenRequest `json:"searchTokens"`
+	ID                string                          `json:"id"`
+	ParentFolderID    *string                         `json:"parentFolderId"`
+	EncryptedName     string                          `json:"encryptedName"`
+	EncryptedMetadata string                          `json:"encryptedMetadata"`
+	SearchTokens      []searchTokenRequest            `json:"searchTokens"`
+	ShareEntries      []createFolderShareEntryRequest `json:"shareEntries"`
+}
+
+type createFolderShareEntryRequest struct {
+	ShareID           string `json:"shareId"`
+	EncryptedName     string `json:"encryptedName"`
+	EncryptedMetadata string `json:"encryptedMetadata"`
 }
 
 type moveEntriesRequest struct {
@@ -49,11 +56,12 @@ type deleteEntriesRequest struct {
 }
 
 type renameEntryRequest struct {
-	Type              string               `json:"type"`
-	ID                string               `json:"id"`
-	EncryptedName     string               `json:"encryptedName"`
-	EncryptedMetadata string               `json:"encryptedMetadata"`
-	SearchTokens      []searchTokenRequest `json:"searchTokens"`
+	Type              string                          `json:"type"`
+	ID                string                          `json:"id"`
+	EncryptedName     string                          `json:"encryptedName"`
+	EncryptedMetadata string                          `json:"encryptedMetadata"`
+	SearchTokens      []searchTokenRequest            `json:"searchTokens"`
+	ShareEntries      []createFolderShareEntryRequest `json:"shareEntries"`
 }
 
 type createFolderResponse struct {
@@ -130,6 +138,11 @@ func APICreateFolder(folderService *folderssvc.Service) gin.HandlerFunc {
 			apierror.InvalidPayload(c)
 			return
 		}
+		shareEntries, err := decodeFolderShareEntries(req.ShareEntries)
+		if err != nil {
+			apierror.InvalidPayload(c)
+			return
+		}
 
 		folder, err := folderService.CreateFolder(c.Request.Context(), folderssvc.CreateFolderInput{
 			ID:                req.ID,
@@ -139,6 +152,7 @@ func APICreateFolder(folderService *folderssvc.Service) gin.HandlerFunc {
 			EncryptedName:     encryptedName,
 			EncryptedMetadata: encryptedMetadata,
 			SearchTokens:      searchTokens,
+			ShareEntries:      shareEntries,
 		})
 		if err != nil {
 			switch err {
@@ -163,6 +177,30 @@ func APICreateFolder(folderService *folderssvc.Service) gin.HandlerFunc {
 		}
 		c.JSON(http.StatusCreated, gin.H{"folder": resp})
 	}
+}
+
+func decodeFolderShareEntries(input []createFolderShareEntryRequest) ([]folderssvc.CreateFolderShareEntry, error) {
+	if len(input) > 100 {
+		return nil, folderssvc.ErrInvalidInput
+	}
+	entries := make([]folderssvc.CreateFolderShareEntry, 0, len(input))
+	seen := make(map[string]struct{}, len(input))
+	for _, item := range input {
+		shareID := strings.TrimSpace(item.ShareID)
+		name, nameErr := base64.StdEncoding.DecodeString(strings.TrimSpace(item.EncryptedName))
+		metadata, metadataErr := base64.StdEncoding.DecodeString(strings.TrimSpace(item.EncryptedMetadata))
+		if shareID == "" || nameErr != nil || metadataErr != nil || len(name) == 0 || len(metadata) == 0 {
+			return nil, folderssvc.ErrInvalidInput
+		}
+		if _, exists := seen[shareID]; exists {
+			return nil, folderssvc.ErrInvalidInput
+		}
+		seen[shareID] = struct{}{}
+		entries = append(entries, folderssvc.CreateFolderShareEntry{
+			ShareID: shareID, EncryptedName: name, EncryptedMetadata: metadata,
+		})
+	}
+	return entries, nil
 }
 
 func APIListRootFolderEntries(folderService *folderssvc.Service) gin.HandlerFunc {
@@ -417,12 +455,18 @@ func APIRenameEntry(folderService *folderssvc.Service, filesService *filessvc.Se
 				apierror.InvalidPayload(c)
 				return
 			}
+			shareEntries, decodeErr := decodeFolderShareEntries(req.ShareEntries)
+			if decodeErr != nil {
+				apierror.InvalidPayload(c)
+				return
+			}
 			if err := folderService.RenameFolder(c.Request.Context(), folderssvc.RenameFolderInput{
 				UserID:            userID.(string),
 				FolderID:          strings.TrimSpace(req.ID),
 				EncryptedName:     encryptedName,
 				EncryptedMetadata: encryptedMetadata,
 				SearchTokens:      searchTokens,
+				ShareEntries:      shareEntries,
 			}); err != nil {
 				switch {
 				case errors.Is(err, folderssvc.ErrInvalidInput):

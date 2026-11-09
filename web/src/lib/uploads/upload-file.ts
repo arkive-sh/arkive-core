@@ -18,6 +18,11 @@ import {
 	prepareUpload,
 } from '../vault/uploads';
 import { fileChunkAAD } from '../vault/aad';
+import {
+	getFolderShareScopes,
+	wrapFolderForShareScopes,
+	wrapUploadFileKeyForScopes,
+} from '#lib/shares/folder-share.ts';
 
 const PRESIGN_BATCH_SIZE = 8;
 
@@ -58,6 +63,7 @@ interface UploadCompleteRequest {
 	searchTokens: SearchTokenEntry[];
 	hasThumbnail: boolean;
 	thumbnailSize: number;
+	shareEntries: Array<{ shareId: string; encryptedFileKeyForShare: string }>;
 }
 
 interface PendingUploadStart {
@@ -291,9 +297,20 @@ export async function createUploadFolder(
 		field: 'name',
 		weight: 10,
 	}));
+	const shareScopes = parentFolderId ? await getFolderShareScopes(parentFolderId) : [];
+	const shareEntries = await wrapFolderForShareScopes(
+		{
+			vaultId,
+			folderId,
+			parentFolderId,
+			encryptedName,
+			encryptedMetadata,
+		},
+		shareScopes,
+	);
 	const { data } = await api.post<{ folder: { id: string } }>(
 		'/api/folders',
-		{ id: folderId, parentFolderId, encryptedName, encryptedMetadata, searchTokens },
+		{ id: folderId, parentFolderId, encryptedName, encryptedMetadata, searchTokens, shareEntries },
 		{ signal },
 	);
 
@@ -517,6 +534,8 @@ export async function uploadFile(
 			weight: 10 as const,
 		}));
 		checkAborted(signal);
+		const shareScopes = folderId ? await getFolderShareScopes(folderId) : [];
+		const shareEntries = await wrapUploadFileKeyForScopes(uploadToken, started.fileId, shareScopes);
 		const finalized = await finalizeUpload(
 			uploadToken,
 			started.vaultId,
@@ -544,6 +563,7 @@ export async function uploadFile(
 			searchTokens,
 			hasThumbnail: !!uploadedThumbnail,
 			thumbnailSize: uploadedThumbnail?.encryptedSize ?? 0,
+			shareEntries,
 		};
 
 		if (useBatchEndpoint) {

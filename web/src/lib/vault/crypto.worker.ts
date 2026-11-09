@@ -5,7 +5,18 @@ import { EncryptionService } from './encryption-service';
 import { HashService } from './hash-service';
 import { formatRecoveryKey, parseRecoveryKey } from './recovery-key';
 import { ENCRYPTION_VERSION } from './crypto-format';
-import { VAULT_MASTER_KEY_AAD, recoveryMasterKeyAAD } from './aad';
+import {
+	VAULT_MASTER_KEY_AAD,
+	fileKeyAAD,
+	fileMetadataAAD,
+	folderMetadataAAD,
+	folderNameAAD,
+	recoveryMasterKeyAAD,
+	shareFileKeyAAD,
+	shareFolderMetadataAAD,
+	shareFolderNameAAD,
+	shareKeyAAD,
+} from './aad';
 import type { VaultWorkerCalls, VaultWorkerMethod } from './types';
 
 type WorkerInput<K extends VaultWorkerMethod> = VaultWorkerCalls[K]['params'];
@@ -350,6 +361,250 @@ async function handlePrepareShare(params: WorkerInput<'prepareShare'>) {
 		shareKey = clearBytes(shareKey);
 		encryptedShareKey = clearBytes(encryptedShareKey);
 		encryptedFileKeyForShare = clearBytes(encryptedFileKeyForShare);
+	}
+}
+
+async function handlePrepareFolderShare(params: WorkerInput<'prepareFolderShare'>) {
+	if (!unlockedMasterKey) throw new Error('Vault is locked');
+	const generation = vaultGeneration;
+	let encryptedName;
+	let encryptedMetadata;
+	let name;
+	let metadata;
+	let shareKey;
+	let encryptedShareKey;
+	let shareName;
+	let shareMetadata;
+
+	try {
+		encryptedName = fromBase64(params.encryptedName);
+		encryptedMetadata = fromBase64(params.encryptedMetadata);
+		name = await decryption.decrypt(
+			encryptedName,
+			unlockedMasterKey,
+			aadBytes(folderNameAAD(params.vaultId, params.folderId, params.parentFolderId)),
+		);
+		metadata = await decryption.decrypt(
+			encryptedMetadata,
+			unlockedMasterKey,
+			aadBytes(folderMetadataAAD(params.vaultId, params.folderId, params.parentFolderId)),
+		);
+		shareKey = randomBytes(32);
+		encryptedShareKey = await encryption.wrapKey(
+			shareKey,
+			unlockedMasterKey,
+			aadBytes(shareKeyAAD(params.token)),
+		);
+		shareName = await encryption.encrypt(
+			name,
+			shareKey,
+			aadBytes(shareFolderNameAAD(params.folderId, params.token)),
+		);
+		shareMetadata = await encryption.encrypt(
+			metadata,
+			shareKey,
+			aadBytes(shareFolderMetadataAAD(params.folderId, params.token)),
+		);
+		assertVaultGeneration(generation);
+
+		return {
+			encryptedShareKey: toBase64(encryptedShareKey),
+			encryptedFolderName: toBase64(shareName),
+			encryptedFolderMetadata: toBase64(shareMetadata),
+			shareSecret: shareKey.slice(),
+			cryptoVersion: ENCRYPTION_VERSION,
+		};
+	} finally {
+		encryptedName = clearBytes(encryptedName);
+		encryptedMetadata = clearBytes(encryptedMetadata);
+		name = clearBytes(name);
+		metadata = clearBytes(metadata);
+		shareKey = clearBytes(shareKey);
+		encryptedShareKey = clearBytes(encryptedShareKey);
+		shareName = clearBytes(shareName);
+		shareMetadata = clearBytes(shareMetadata);
+	}
+}
+
+async function handleWrapFileKeyForShare(params: WorkerInput<'wrapFileKeyForShare'>) {
+	if (!unlockedMasterKey) throw new Error('Vault is locked');
+	let shareSecret;
+	let encryptedFileKey;
+	let fileKey;
+	let wrapped;
+
+	try {
+		if (!params.shareSecret) throw new Error('Share secret is unavailable');
+		shareSecret = toUint8Array(params.shareSecret);
+		params.shareSecret = null;
+		encryptedFileKey = fromBase64(params.encryptedFileKey);
+		fileKey = await decryption.unwrapKey(
+			encryptedFileKey,
+			unlockedMasterKey,
+			aadBytes(fileKeyAAD(params.vaultId, params.fileId, params.parentFolderId)),
+		);
+		wrapped = await encryption.wrapKey(
+			fileKey,
+			shareSecret,
+			aadBytes(shareFileKeyAAD(params.fileId, params.token)),
+		);
+
+		return { encryptedFileKeyForShare: toBase64(wrapped) };
+	} finally {
+		params.shareSecret = null;
+		shareSecret = clearBytes(shareSecret);
+		encryptedFileKey = clearBytes(encryptedFileKey);
+		fileKey = clearBytes(fileKey);
+		wrapped = clearBytes(wrapped);
+	}
+}
+
+async function handleWrapUploadFileKeyForShare(params: WorkerInput<'wrapUploadFileKeyForShare'>) {
+	const fileKey = activeUploads.get(String(params.uploadToken || ''))?.fileKey;
+
+	if (!fileKey) throw new Error('Upload context is missing');
+	let shareSecret;
+	let wrapped;
+
+	try {
+		if (!params.shareSecret) throw new Error('Share secret is unavailable');
+		shareSecret = toUint8Array(params.shareSecret);
+		params.shareSecret = null;
+		wrapped = await encryption.wrapKey(
+			fileKey,
+			shareSecret,
+			aadBytes(shareFileKeyAAD(params.fileId, params.token)),
+		);
+
+		return { encryptedFileKeyForShare: toBase64(wrapped) };
+	} finally {
+		params.shareSecret = null;
+		shareSecret = clearBytes(shareSecret);
+		wrapped = clearBytes(wrapped);
+	}
+}
+
+async function handleWrapFolderForShare(params: WorkerInput<'wrapFolderForShare'>) {
+	if (!unlockedMasterKey) throw new Error('Vault is locked');
+	const generation = vaultGeneration;
+	let shareSecret;
+	let encryptedName;
+	let encryptedMetadata;
+	let name;
+	let metadata;
+	let wrappedName;
+	let wrappedMetadata;
+
+	try {
+		if (!params.shareSecret) throw new Error('Share secret is unavailable');
+		shareSecret = toUint8Array(params.shareSecret);
+		params.shareSecret = null;
+		encryptedName = fromBase64(params.encryptedName);
+		encryptedMetadata = fromBase64(params.encryptedMetadata);
+		name = await decryption.decrypt(
+			encryptedName,
+			unlockedMasterKey,
+			aadBytes(folderNameAAD(params.vaultId, params.folderId, params.parentFolderId)),
+		);
+		metadata = await decryption.decrypt(
+			encryptedMetadata,
+			unlockedMasterKey,
+			aadBytes(folderMetadataAAD(params.vaultId, params.folderId, params.parentFolderId)),
+		);
+		wrappedName = await encryption.encrypt(
+			name,
+			shareSecret,
+			aadBytes(shareFolderNameAAD(params.folderId, params.token)),
+		);
+		wrappedMetadata = await encryption.encrypt(
+			metadata,
+			shareSecret,
+			aadBytes(shareFolderMetadataAAD(params.folderId, params.token)),
+		);
+		assertVaultGeneration(generation);
+
+		return { encryptedName: toBase64(wrappedName), encryptedMetadata: toBase64(wrappedMetadata) };
+	} finally {
+		params.shareSecret = null;
+		shareSecret = clearBytes(shareSecret);
+		encryptedName = clearBytes(encryptedName);
+		encryptedMetadata = clearBytes(encryptedMetadata);
+		name = clearBytes(name);
+		metadata = clearBytes(metadata);
+		wrappedName = clearBytes(wrappedName);
+		wrappedMetadata = clearBytes(wrappedMetadata);
+	}
+}
+
+async function handleOpenPublicShareFolder(params: WorkerInput<'openPublicShareFolder'>) {
+	let shareSecret;
+	let encryptedName;
+	let encryptedMetadata;
+	let name;
+	let metadata;
+
+	try {
+		if (!params.shareSecret) throw new Error('Share secret is unavailable');
+		shareSecret = toUint8Array(params.shareSecret);
+		params.shareSecret = null;
+		encryptedName = fromBase64(params.encryptedName);
+		encryptedMetadata = fromBase64(params.encryptedMetadata);
+		name = await decryption.decrypt(
+			encryptedName,
+			shareSecret,
+			aadBytes(shareFolderNameAAD(params.folderId, params.token)),
+		);
+		metadata = await decryption.decrypt(
+			encryptedMetadata,
+			shareSecret,
+			aadBytes(shareFolderMetadataAAD(params.folderId, params.token)),
+		);
+
+		return { nameBytes: name.slice(), metadataBytes: metadata.slice() };
+	} finally {
+		params.shareSecret = null;
+		shareSecret = clearBytes(shareSecret);
+		encryptedName = clearBytes(encryptedName);
+		encryptedMetadata = clearBytes(encryptedMetadata);
+		name = clearBytes(name);
+		metadata = clearBytes(metadata);
+	}
+}
+
+async function handleOpenPublicShareFileMetadata(
+	params: WorkerInput<'openPublicShareFileMetadata'>,
+) {
+	let shareSecret;
+	let encryptedFileKey;
+	let encryptedMetadata;
+	let fileKey;
+	let metadata;
+
+	try {
+		if (!params.shareSecret) throw new Error('Share secret is unavailable');
+		shareSecret = toUint8Array(params.shareSecret);
+		params.shareSecret = null;
+		encryptedFileKey = fromBase64(params.encryptedFileKeyForShare);
+		encryptedMetadata = fromBase64(params.encryptedMetadata);
+		fileKey = await decryption.unwrapKey(
+			encryptedFileKey,
+			shareSecret,
+			aadBytes(shareFileKeyAAD(params.fileId, params.token)),
+		);
+		metadata = await decryption.decrypt(
+			encryptedMetadata,
+			fileKey,
+			aadBytes(fileMetadataAAD(params.vaultId, params.fileId)),
+		);
+
+		return { metadataBytes: metadata.slice() };
+	} finally {
+		params.shareSecret = null;
+		shareSecret = clearBytes(shareSecret);
+		encryptedFileKey = clearBytes(encryptedFileKey);
+		encryptedMetadata = clearBytes(encryptedMetadata);
+		fileKey = clearBytes(fileKey);
+		metadata = clearBytes(metadata);
 	}
 }
 
@@ -1053,6 +1308,12 @@ const messageHandlers: WorkerHandlers = {
 	lockVault: handleLockVault,
 	preparePasswordReset: handlePreparePasswordReset,
 	prepareShare: handlePrepareShare,
+	prepareFolderShare: handlePrepareFolderShare,
+	wrapFileKeyForShare: handleWrapFileKeyForShare,
+	wrapUploadFileKeyForShare: handleWrapUploadFileKeyForShare,
+	wrapFolderForShare: handleWrapFolderForShare,
+	openPublicShareFolder: handleOpenPublicShareFolder,
+	openPublicShareFileMetadata: handleOpenPublicShareFileMetadata,
 	openShareKey: handleOpenShareKey,
 	prepareUpload: handlePrepareUpload,
 	rewrapFileKey: handleRewrapFileKey,

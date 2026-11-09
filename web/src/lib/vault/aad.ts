@@ -40,6 +40,14 @@ export function shareFileKeyAAD(fileId: string, token: string): string {
 	return `arkive:share-file-key:v1:${fileId}:${token}`;
 }
 
+export function shareFolderNameAAD(folderId: string, token: string): string {
+	return `arkive:share-folder-name:v1:${folderId}:${token}`;
+}
+
+export function shareFolderMetadataAAD(folderId: string, token: string): string {
+	return `arkive:share-folder-metadata:v1:${folderId}:${token}`;
+}
+
 export function folderNameAAD(
 	vaultId: string,
 	folderId: string,

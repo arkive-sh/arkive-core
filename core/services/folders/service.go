@@ -14,6 +14,7 @@ import (
 	"arkive/core/models"
 	filerepo "arkive/core/repositories/files"
 	foldersrepo "arkive/core/repositories/folders"
+	sharerepo "arkive/core/repositories/shares"
 	trashrepo "arkive/core/repositories/trash"
 	filessvc "arkive/core/services/files"
 	"arkive/pkg/validation"
@@ -31,15 +32,17 @@ type Service struct {
 	folderRepo *foldersrepo.Repository
 	fileRepo   *filerepo.Repository
 	trashRepo  *trashrepo.Repository
+	shareRepo  *sharerepo.Repository
 	filesSvc   *filessvc.Service
 }
 
-func NewService(db database.PgPool, folderRepo *foldersrepo.Repository, fileRepo *filerepo.Repository, filesSvc *filessvc.Service) *Service {
+func NewService(db database.PgPool, folderRepo *foldersrepo.Repository, fileRepo *filerepo.Repository, shareRepo *sharerepo.Repository, filesSvc *filessvc.Service) *Service {
 	return &Service{
 		db:         db,
 		folderRepo: folderRepo,
 		fileRepo:   fileRepo,
 		trashRepo:  trashrepo.New(),
+		shareRepo:  shareRepo,
 		filesSvc:   filesSvc,
 	}
 }
@@ -97,6 +100,29 @@ func (s *Service) CreateFolder(ctx context.Context, input CreateFolderInput) (mo
 	}
 	if err := s.folderRepo.InsertSearchTokensForFolder(ctx, tx, userID, folder.VaultID, folder.ID, searchTokens); err != nil {
 		return models.Folder{}, err
+	}
+	if len(input.ShareEntries) > 100 {
+		return models.Folder{}, ErrInvalidInput
+	}
+	seenShares := make(map[string]struct{}, len(input.ShareEntries))
+	for _, entry := range input.ShareEntries {
+		shareID := strings.TrimSpace(entry.ShareID)
+		if shareID == "" || len(entry.EncryptedName) == 0 || len(entry.EncryptedMetadata) == 0 {
+			return models.Folder{}, ErrInvalidInput
+		}
+		if _, exists := seenShares[shareID]; exists {
+			return models.Folder{}, ErrInvalidInput
+		}
+		seenShares[shareID] = struct{}{}
+		count, err := s.shareRepo.AddFolderShareEntries(ctx, tx, shareID, nil, []sharerepo.FolderShareFolderEntry{{
+			ID: folder.ID, EncryptedName: entry.EncryptedName, EncryptedMetadata: entry.EncryptedMetadata,
+		}})
+		if err != nil {
+			return models.Folder{}, err
+		}
+		if count != 1 {
+			return models.Folder{}, ErrNotFound
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return models.Folder{}, err
@@ -466,6 +492,29 @@ func (s *Service) RenameFolder(ctx context.Context, input RenameFolderInput) err
 	}
 	if err := s.folderRepo.ReplaceSearchTokensForFolder(ctx, tx, userID, folder.VaultID, folderID, searchTokens); err != nil {
 		return err
+	}
+	if len(input.ShareEntries) > 100 {
+		return ErrInvalidInput
+	}
+	seenShares := make(map[string]struct{}, len(input.ShareEntries))
+	for _, entry := range input.ShareEntries {
+		shareID := strings.TrimSpace(entry.ShareID)
+		if shareID == "" || len(entry.EncryptedName) == 0 || len(entry.EncryptedMetadata) == 0 {
+			return ErrInvalidInput
+		}
+		if _, exists := seenShares[shareID]; exists {
+			return ErrInvalidInput
+		}
+		seenShares[shareID] = struct{}{}
+		count, err := s.shareRepo.AddFolderShareEntries(ctx, tx, shareID, nil, []sharerepo.FolderShareFolderEntry{{
+			ID: folderID, EncryptedName: entry.EncryptedName, EncryptedMetadata: entry.EncryptedMetadata,
+		}})
+		if err != nil {
+			return err
+		}
+		if count != 1 {
+			return ErrNotFound
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return err

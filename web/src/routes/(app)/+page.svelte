@@ -22,6 +22,7 @@
 	import { useTransferManager, type UploadItem } from '#lib/transfers/manager.ts';
 	import { waitUntilReady } from '#lib/vault/session.ts';
 	import { vaultUnlocked } from '#lib/vault/state.ts';
+	import { addEntriesToFolderShares, getFolderShareScopes } from '#lib/shares/folder-share.ts';
 	import type { PageProps } from './$types';
 
 	// shortcut: browsers without File System Access cannot download; add another streaming file sink when supporting them.
@@ -166,6 +167,7 @@
 	}
 
 	function openShare(fileId: string): void {
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve adds the base route before the query string.
 		void goto(`${resolve('/(app)/shares')}?focus_file=${encodeURIComponent(fileId)}`);
 	}
 
@@ -307,6 +309,26 @@
 						)),
 					})),
 			);
+
+			if (targetFolderId) {
+				const scopes = await getFolderShareScopes(targetFolderId);
+				await addEntriesToFolderShares(
+					data.user.id,
+					scopes,
+					files.map((file) => ({
+						id: file.id,
+						name: 'file',
+						parentFolderId: targetFolderId,
+						encryptedFileKey: file.encryptedFileKey,
+					})),
+					folders.map((folder) => ({
+						...folder,
+						name: entries.find((entry) => entry.id === folder.id)?.name ?? 'folder',
+						parentFolderId: targetFolderId,
+					})),
+					{ includeFolderRoots: true },
+				);
+			}
 			await api.post('/api/entries/move', { targetFolderId, files, folders });
 			const alreadyThere = cutEntries.length - entries.length;
 			cutEntries = [];
@@ -744,7 +766,7 @@
 	onPreviewPdf={previewPdf}
 	onPreviewText={previewText}
 	onProperties={(entry) => (propertiesEntry = entry)}
-	onShareEntry={(entry) => (shareEntry = entry.kind === 'file' ? entry : null)}
+	onShareEntry={(entry) => (shareEntry = entry)}
 	onCloseShare={() => (shareEntry = null)}
 	onDeleteEntry={requestDelete}
 	onCutEntry={cutEntry}

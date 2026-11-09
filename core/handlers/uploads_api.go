@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"strconv"
@@ -67,13 +68,19 @@ type uploadPartPresignBatchRequest struct {
 }
 
 type uploadCompleteRequest struct {
-	EncryptedMetadata string               `json:"encryptedMetadata"`
-	EncryptedFileKey  string               `json:"encryptedFileKey"`
-	EncryptedManifest string               `json:"encryptedManifest"`
-	EncryptedHash     string               `json:"encryptedHash"`
-	SearchTokens      []searchTokenRequest `json:"searchTokens"`
-	HasThumbnail      bool                 `json:"hasThumbnail"`
-	ThumbnailSize     int64                `json:"thumbnailSize"`
+	EncryptedMetadata string                    `json:"encryptedMetadata"`
+	EncryptedFileKey  string                    `json:"encryptedFileKey"`
+	EncryptedManifest string                    `json:"encryptedManifest"`
+	EncryptedHash     string                    `json:"encryptedHash"`
+	SearchTokens      []searchTokenRequest      `json:"searchTokens"`
+	HasThumbnail      bool                      `json:"hasThumbnail"`
+	ThumbnailSize     int64                     `json:"thumbnailSize"`
+	ShareEntries      []uploadShareEntryRequest `json:"shareEntries"`
+}
+
+type uploadShareEntryRequest struct {
+	ShareID                  string `json:"shareId"`
+	EncryptedFileKeyForShare string `json:"encryptedFileKeyForShare"`
 }
 
 type uploadBatchCompleteRequest struct {
@@ -432,9 +439,14 @@ func APIUploadComplete(svc *uploads.Service) gin.HandlerFunc {
 			return
 		}
 
+		shareEntries, err := decodeUploadShareEntries(req.ShareEntries)
+		if err != nil {
+			apierror.InvalidPayload(c)
+			return
+		}
 		if err := svc.CompleteMultipartUploadSession(
 			c.Request.Context(), userID.(string), uploadSessionID,
-			uploadCompleteInput(req, searchTokens)); err != nil {
+			uploadCompleteInput(req, searchTokens, shareEntries)); err != nil {
 			var limitErr *uploads.StorageLimitExceededError
 			switch err {
 			case uploads.ErrUnauthorized:
@@ -467,7 +479,8 @@ func APIUploadComplete(svc *uploads.Service) gin.HandlerFunc {
 }
 
 func uploadCompleteInput(req uploadCompleteRequest,
-	searchTokens []models.FileSearchToken) uploads.MultipartUploadCompleteInput {
+	searchTokens []models.FileSearchToken,
+	shareEntries []uploads.UploadShareEntry) uploads.MultipartUploadCompleteInput {
 	return uploads.MultipartUploadCompleteInput{
 		EncryptedMetadata: req.EncryptedMetadata,
 		EncryptedFileKey:  req.EncryptedFileKey,
@@ -476,7 +489,29 @@ func uploadCompleteInput(req uploadCompleteRequest,
 		SearchTokens:      searchTokens,
 		HasThumbnail:      req.HasThumbnail,
 		ThumbnailSize:     req.ThumbnailSize,
+		ShareEntries:      shareEntries,
 	}
+}
+
+func decodeUploadShareEntries(input []uploadShareEntryRequest) ([]uploads.UploadShareEntry, error) {
+	if len(input) > 100 {
+		return nil, uploads.ErrInvalidInput
+	}
+	entries := make([]uploads.UploadShareEntry, 0, len(input))
+	seen := make(map[string]struct{}, len(input))
+	for _, item := range input {
+		shareID := strings.TrimSpace(item.ShareID)
+		key, err := base64.StdEncoding.DecodeString(strings.TrimSpace(item.EncryptedFileKeyForShare))
+		if shareID == "" || err != nil || len(key) == 0 {
+			return nil, uploads.ErrInvalidInput
+		}
+		if _, exists := seen[shareID]; exists {
+			return nil, uploads.ErrInvalidInput
+		}
+		seen[shareID] = struct{}{}
+		entries = append(entries, uploads.UploadShareEntry{ShareID: shareID, EncryptedFileKeyForShare: key})
+	}
+	return entries, nil
 }
 
 func APIUploadBatchComplete(svc *uploads.Service) gin.HandlerFunc {
@@ -508,10 +543,16 @@ func APIUploadBatchComplete(svc *uploads.Service) gin.HandlerFunc {
 				results = append(results, result)
 				continue
 			}
+			shareEntries, err := decodeUploadShareEntries(item.uploadCompleteRequest.ShareEntries)
+			if err != nil {
+				result.Error = err.Error()
+				results = append(results, result)
+				continue
+			}
 
 			err = svc.CompleteMultipartUploadSession(
 				c.Request.Context(), userID.(string), item.UploadSessionID,
-				uploadCompleteInput(item.uploadCompleteRequest, searchTokens))
+				uploadCompleteInput(item.uploadCompleteRequest, searchTokens, shareEntries))
 			if err != nil {
 				result.Error = err.Error()
 			} else {

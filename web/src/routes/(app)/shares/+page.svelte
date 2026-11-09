@@ -2,26 +2,30 @@
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { tick } from 'svelte';
-	import { Copy, Download, ExternalLink, Eye, EyeOff, Settings, X } from '@lucide/svelte';
+	import { Copy, Download, ExternalLink, Eye, EyeOff, Folder, Settings, X } from '@lucide/svelte';
 	import axios from 'axios';
 	import { api } from '#lib/api.ts';
 	import FileTypeIcon from '#lib/components/FileTypeIcon.svelte';
 	import Tooltip from '#lib/components/Tooltip.svelte';
 	import { decryptShareURL } from '#lib/share-link.ts';
 	import { toast } from '#lib/toast.ts';
-	import { decryptSearchFile } from '#lib/vault/search.ts';
+	import { decryptSearchFile, decryptSearchFolder } from '#lib/vault/search.ts';
 	import { vaultUnlocked } from '#lib/vault/state.ts';
-	import type { EncryptedSearchFile } from '#lib/vault/types.ts';
+	import type { EncryptedSearchFile, EncryptedSearchFolder } from '#lib/vault/types.ts';
 	import ShareDialog from '../files/ShareDialog.svelte';
 	import type { FileManagerEntry } from '../files/types';
 
 	type ApiShare = {
 		id: string;
+		itemType: 'file' | 'folder';
 		fileId: string;
+		folderId: string;
 		vaultId: string;
 		parentFolderId: string | null;
 		encryptedMetadata: string;
 		encryptedFileKey: string;
+		encryptedFolderName: string;
+		encryptedFolderMetadata: string;
 		allowPreview: boolean;
 		allowDownload: boolean;
 		burnAfterRead: boolean;
@@ -58,6 +62,41 @@
 			const { data } = await api.get<{ shares: ApiShare[] }>('/api/shares');
 			const decrypted = await Promise.all(
 				data.shares.map(async (record) => {
+					if (record.itemType === 'folder') {
+						const folder: EncryptedSearchFolder = {
+							id: record.folderId,
+							parentFolderId: record.parentFolderId,
+							vaultId: record.vaultId,
+							encryptedName: record.encryptedFolderName,
+							encryptedMetadata: record.encryptedFolderMetadata,
+							score: 0,
+							url: '',
+						};
+						let name = `Folder ${record.folderId.slice(0, 8)}`;
+
+						try {
+							const result = await decryptSearchFolder(folder);
+
+							if (typeof result.name.name === 'string') name = result.name.name;
+						} catch {
+							// Keep the link manageable if its encrypted folder name cannot be opened.
+						}
+
+						return {
+							record,
+							entry: {
+								id: record.folderId,
+								kind: 'folder',
+								name,
+								type: 'Folder',
+								size: null,
+								updatedAt: record.updatedAt,
+								parentFolderId: record.parentFolderId,
+								encryptedName: record.encryptedFolderName,
+								encryptedMetadata: record.encryptedFolderMetadata,
+							},
+						} satisfies ListedShare;
+					}
 					const file: EncryptedSearchFile = {
 						id: record.fileId,
 						folderId: record.parentFolderId,
@@ -210,6 +249,7 @@
 
 	$effect(() => {
 		const id = focusedShareId;
+
 		if (!id || loading) return;
 
 		let canceled = false;
@@ -267,17 +307,23 @@
 						class={`grid gap-4 border-b border-(--border) p-4 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_7rem_9rem_10rem_9rem] lg:items-center lg:gap-4 lg:px-4 lg:py-3 ${share.record.isTrashed ? 'opacity-60' : ''} ${focusedShareId === share.record.id ? 'rounded ring-2 ring-(--accent)' : ''}`}
 					>
 						<div class="flex min-w-0 items-center gap-3">
-							<FileTypeIcon
-								name={share.entry.name}
-								mime={share.entry.type}
-								className="size-5 shrink-0"
-							/>
+							{#if share.entry.kind === 'folder'}
+								<Folder class="size-5 shrink-0 text-sky-400" aria-hidden="true" />
+							{:else}
+								<FileTypeIcon
+									name={share.entry.name}
+									mime={share.entry.type}
+									className="size-5 shrink-0"
+								/>
+							{/if}
+							<!-- eslint-disable svelte/no-navigation-without-resolve -- fileLocation resolves the route before adding its query string. -->
 							<a
 								class="min-w-0 truncate font-medium hover:underline focus-visible:rounded focus-visible:outline-2 focus-visible:outline-(--accent)"
 								href={fileLocation(share)}
 								title={`Show ${share.entry.name} in ${share.record.isTrashed ? 'Trash' : 'Files'}`}
 								>{share.entry.name}</a
 							>
+							<!-- eslint-enable svelte/no-navigation-without-resolve -->
 						</div>
 						<div class="grid min-w-0 gap-2 lg:contents">
 							<div

@@ -224,8 +224,23 @@ func (s *Service) PermanentlyDeleteTrash(ctx context.Context, input PermanentlyD
 
 func (s *Service) PurgeExpiredTrashFolders(ctx context.Context) (int, error) {
 	cutoff := time.Now().Add(-filessvc.TrashRetention)
-	count, err := s.trashRepo.MarkExpiredFoldersPurged(ctx, s.db, cutoff)
-	return int(count), err
+	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	count, err := s.trashRepo.MarkExpiredFoldersPurged(ctx, tx, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	if err := s.shareRepo.DeleteLinksForPurgedFolders(ctx, tx); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return int(count), nil
 }
 
 type trashSelection struct {

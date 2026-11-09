@@ -2,6 +2,7 @@ import { normalizeAAD, toWorkerBytes } from './bytes';
 import { fileKeyAAD, fileManifestAAD, fileMetadataAAD, shareFileKeyAAD, shareKeyAAD } from './aad';
 import type {
 	PublicShareCryptoRecord,
+	ShareFolderRecord,
 	ShareFileRecord,
 	VaultAAD,
 	VaultBytes,
@@ -22,6 +23,93 @@ export function prepareShare(
 		shareKeyAad: shareKeyAAD(token),
 		shareFileKeyAad: shareFileKeyAAD(record.fileId, token),
 	});
+}
+
+export function prepareFolderShare(
+	record: ShareFolderRecord,
+	token: string,
+): Promise<VaultWorkerCalls['prepareFolderShare']['result']> {
+	return callVaultWorker('prepareFolderShare', { ...record, token });
+}
+
+export async function wrapFileKeyForShare(
+	record: ShareFileRecord,
+	token: string,
+	shareSecret: Uint8Array<ArrayBuffer>,
+): Promise<string> {
+	const secret = toWorkerBytes(shareSecret);
+	const result = await callVaultWorker(
+		'wrapFileKeyForShare',
+		{
+			encryptedFileKey: record.encryptedFileKey,
+			vaultId: record.vaultId,
+			fileId: record.fileId,
+			parentFolderId: record.folderId,
+			token,
+			shareSecret: secret,
+		},
+		[secret],
+	);
+
+	return result.encryptedFileKeyForShare;
+}
+
+export async function wrapUploadFileKeyForShare(
+	uploadToken: string,
+	fileId: string,
+	token: string,
+	shareSecret: Uint8Array<ArrayBuffer>,
+): Promise<string> {
+	const secret = toWorkerBytes(shareSecret);
+	const result = await callVaultWorker(
+		'wrapUploadFileKeyForShare',
+		{ uploadToken, fileId, token, shareSecret: secret },
+		[secret],
+	);
+
+	return result.encryptedFileKeyForShare;
+}
+
+export async function wrapFolderForShare(
+	record: ShareFolderRecord,
+	token: string,
+	shareSecret: Uint8Array<ArrayBuffer>,
+): Promise<{ encryptedName: string; encryptedMetadata: string }> {
+	const secret = toWorkerBytes(shareSecret);
+
+	return callVaultWorker('wrapFolderForShare', { ...record, token, shareSecret: secret }, [secret]);
+}
+
+export async function openPublicShareFolder(
+	folderId: string,
+	token: string,
+	encryptedName: string,
+	encryptedMetadata: string,
+	shareSecret: Uint8Array<ArrayBuffer>,
+): Promise<{ nameBytes: Uint8Array; metadataBytes: Uint8Array }> {
+	const secret = toWorkerBytes(shareSecret);
+	shareSecret.fill(0);
+
+	return callVaultWorker(
+		'openPublicShareFolder',
+		{ folderId, token, encryptedName, encryptedMetadata, shareSecret: secret },
+		[secret],
+	);
+}
+
+export async function openPublicShareFileMetadata(
+	record: Pick<
+		PublicShareCryptoRecord,
+		'token' | 'fileId' | 'vaultId' | 'encryptedFileKeyForShare' | 'encryptedMetadata'
+	>,
+	shareSecret: Uint8Array<ArrayBuffer>,
+): Promise<{ metadataBytes: Uint8Array }> {
+	const secret = toWorkerBytes(shareSecret);
+	shareSecret.fill(0);
+
+	return callVaultWorker('openPublicShareFileMetadata', { ...record, shareSecret: secret }, [
+		secret,
+	]);
 }
 
 export function openShareKey(
