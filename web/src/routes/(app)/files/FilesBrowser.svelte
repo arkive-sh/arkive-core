@@ -55,6 +55,7 @@
 		onClearClipboard,
 		onDeleteSelected,
 		onOpenFolder,
+		onOpenShares,
 		onShowContextMenu,
 		onShowBackgroundContextMenu,
 		onPreviewImage,
@@ -103,6 +104,7 @@
 		onClearClipboard: () => void;
 		onDeleteSelected: () => void;
 		onOpenFolder: (id: string) => void;
+		onOpenShares: (id: string) => void;
 		onShowContextMenu: (entry: FileManagerEntry | null, x: number, y: number) => void;
 		onShowBackgroundContextMenu: (event: MouseEvent) => void;
 		onPreviewImage: (entry: FileManagerEntry, trigger: HTMLElement) => void;
@@ -303,6 +305,7 @@
 							{onCancelNewFolder}
 							{onToggleSelection}
 							{onOpenFolder}
+							{onOpenShares}
 							{onShowContextMenu}
 							{onPreviewImage}
 							{onPreviewMedia}
@@ -324,6 +327,7 @@
 							{onToggleSelection}
 							{onToggleAll}
 							{onOpenFolder}
+							{onOpenShares}
 							{onShowContextMenu}
 							{onPreviewImage}
 							{onPreviewMedia}

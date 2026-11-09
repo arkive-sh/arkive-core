@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
@@ -41,12 +42,38 @@ func (s *Service) ListTrash(ctx context.Context, input ListTrashInput) (ListTras
 		}
 		parentFolderID = validatedParentID
 	}
+	cutoff := time.Now().Add(-filessvc.TrashRetention)
 	cursor, err := decodeTrashCursor(input.Cursor)
 	if err != nil {
 		return ListTrashResult{}, ErrInvalidInput
 	}
+	if strings.TrimSpace(input.SeekEntryID) != "" {
+		if cursor != nil {
+			return ListTrashResult{}, ErrInvalidInput
+		}
+		fileID, err := validateUUIDValue(input.SeekEntryID)
+		if err != nil {
+			return ListTrashResult{}, ErrInvalidInput
+		}
+		cursor, err = s.trashRepo.GetTrashFileCursor(ctx, s.db, userID, cutoff, parentFolderID, fileID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ListTrashResult{}, ErrEntryNotFound
+			}
+			return ListTrashResult{}, err
+		}
+	}
 
-	cutoff := time.Now().Add(-filessvc.TrashRetention)
+	var path []models.Folder
+	if parentFolderID != "" && strings.TrimSpace(input.SeekEntryID) != "" {
+		path, err = s.trashRepo.GetFolderPath(ctx, s.db, userID, parentFolderID)
+		if err != nil {
+			return ListTrashResult{}, err
+		}
+		if len(path) == 0 || path[0].ParentFolderID != nil {
+			return ListTrashResult{}, ErrEntryNotFound
+		}
+	}
 	entries, err := s.trashRepo.ListEntriesPage(ctx, s.db, userID, cutoff, parentFolderID, cursor, input.Limit+1)
 	if err != nil {
 		return ListTrashResult{}, err
@@ -55,7 +82,7 @@ func (s *Service) ListTrash(ctx context.Context, input ListTrashInput) (ListTras
 	if hasMore {
 		entries = entries[:input.Limit]
 	}
-	result := ListTrashResult{Entries: entries, HasMore: hasMore}
+	result := ListTrashResult{Path: path, Entries: entries, HasMore: hasMore}
 	if hasMore && len(entries) > 0 {
 		encoded, err := encodeTrashCursor(entries[len(entries)-1])
 		if err != nil {

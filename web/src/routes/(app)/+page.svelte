@@ -165,6 +165,10 @@
 		void goto(resolve('/(app)') + urlFor(id));
 	}
 
+	function openShare(fileId: string): void {
+		void goto(`${resolve('/(app)/shares')}?focus_file=${encodeURIComponent(fileId)}`);
+	}
+
 	function stageUploadFiles(files: UploadItem[]): void {
 		if (!$vaultUnlocked || !files.length) return;
 		selectedUploadFiles = files;
@@ -685,6 +689,7 @@
 	onClearClipboard={() => (cutEntries = [])}
 	onDeleteSelected={() => requestDelete()}
 	onOpenFolder={openFolder}
+	onOpenShares={openShare}
 	onShowContextMenu={showContextMenu}
 	onShowBackgroundContextMenu={showBackgroundContextMenu}
 	onPreviewImage={previewImage}

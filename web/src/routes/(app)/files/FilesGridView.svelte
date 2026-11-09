@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onDestroy, tick } from 'svelte';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-	import { Folder } from '@lucide/svelte';
+	import { Folder, Share2 } from '@lucide/svelte';
 	import { createWindowVirtualizer } from '@tanstack/svelte-virtual';
 	import { get } from 'svelte/store';
 	import { formatBytes } from '#lib/utils/format.ts';
@@ -35,6 +35,7 @@
 		onCancelNewFolder,
 		onToggleSelection,
 		onOpenFolder,
+		onOpenShares,
 		onShowContextMenu,
 		onPreviewImage,
 		onPreviewMedia,
@@ -56,6 +57,7 @@
 		onCancelNewFolder: () => void;
 		onToggleSelection: (entry: FileManagerEntry) => void;
 		onOpenFolder: (id: string) => void;
+		onOpenShares?: (id: string) => void;
 		onShowContextMenu: (entry: FileManagerEntry | null, x: number, y: number) => void;
 		onPreviewImage: (entry: FileManagerEntry, trigger: HTMLElement) => void;
 		onPreviewMedia: (entry: FileManagerEntry) => void;
@@ -451,6 +453,17 @@
 												style={`font-size: ${nameFontSize}px`}>{entry.name}</span
 											>
 										</div>
+										{#if entry.isShared}
+											<button
+												class="relative z-10 ml-2 grid size-7 shrink-0 cursor-pointer place-items-center rounded text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)"
+												type="button"
+												title="Open this file’s share"
+												aria-label={`Open share for ${entry.name}`}
+												onclick={() => onOpenShares?.(entry.id)}
+											>
+												<Share2 class="size-4" aria-hidden="true" />
+											</button>
+										{/if}
 									</div>
 									{#if showType}<span
 											class="truncate font-mono leading-tight text-(--muted)"

@@ -106,10 +106,12 @@ type ListTrashInput struct {
 	UserID         string
 	ParentFolderID string
 	Cursor         string
+	SeekEntryID    string
 	Limit          int
 }
 
 type ListTrashResult struct {
+	Path       []models.Folder
 	Entries    []models.TrashEntry
 	NextCursor *string
 	HasMore    bool

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { Folder } from '@lucide/svelte';
+	import { Folder, Share2 } from '@lucide/svelte';
 	import { createTable, FlexRender, tableFeatures, type ColumnDef } from '@tanstack/svelte-table';
 	import { createWindowVirtualizer } from '@tanstack/svelte-virtual';
 	import { get } from 'svelte/store';
@@ -38,6 +38,7 @@
 		onToggleSelection,
 		onToggleAll,
 		onOpenFolder,
+		onOpenShares,
 		onShowContextMenu,
 		onPreviewImage,
 		onPreviewMedia,
@@ -60,6 +61,7 @@
 		onToggleSelection: (entry: FileManagerEntry) => void;
 		onToggleAll: () => void;
 		onOpenFolder: (id: string) => void;
+		onOpenShares?: (id: string) => void;
 		onShowContextMenu: (entry: FileManagerEntry | null, x: number, y: number) => void;
 		onPreviewImage: (entry: FileManagerEntry, trigger: HTMLElement) => void;
 		onPreviewMedia: (entry: FileManagerEntry) => void;
@@ -269,45 +271,6 @@
 												><FlexRender {cell} /></span
 											>
 										</span>
-									{:else if cell.column.id === 'name' && isImageFile(row.original.name, row.original.type)}
-										<span
-											class="inline-flex min-w-0 max-w-full items-center gap-2 text-left font-medium"
-										>
-											<FileTypeIcon
-												name={row.original.name}
-												mime={row.original.type}
-												className="size-4 shrink-0"
-											/>
-											<span class="min-w-0 truncate" title={row.original.name}
-												><FlexRender {cell} /></span
-											>
-										</span>
-									{:else if cell.column.id === 'name' && isMediaMimeType(row.original.type)}
-										<span
-											class="inline-flex min-w-0 max-w-full items-center gap-2 text-left font-medium"
-										>
-											<FileTypeIcon
-												name={row.original.name}
-												mime={row.original.type}
-												className="size-4 shrink-0"
-											/>
-											<span class="min-w-0 truncate" title={row.original.name}
-												><FlexRender {cell} /></span
-											>
-										</span>
-									{:else if cell.column.id === 'name' && isPdfFile(row.original)}
-										<span
-											class="inline-flex min-w-0 max-w-full items-center gap-2 text-left font-medium"
-										>
-											<FileTypeIcon
-												name={row.original.name}
-												mime={row.original.type}
-												className="size-4 shrink-0"
-											/>
-											<span class="min-w-0 truncate" title={row.original.name}
-												><FlexRender {cell} /></span
-											>
-										</span>
 									{:else if cell.column.id === 'name'}
 										<span class="inline-flex min-w-0 max-w-full items-center gap-2 font-medium">
 											<FileTypeIcon
@@ -336,6 +299,17 @@
 											class="block min-w-0 truncate font-mono text-xs text-(--muted)"
 											title={cell.getValue() as string}>{cell.getValue() as string}</span
 										>
+									{/if}
+									{#if cell.column.id === 'name' && row.original.isShared}
+										<button
+											class="relative z-10 ml-2 grid size-7 shrink-0 cursor-pointer place-items-center rounded text-(--muted) hover:bg-(--surface) hover:text-(--text)"
+											type="button"
+											title="Open this file’s share"
+											aria-label={`Open share for ${row.original.name}`}
+											onclick={() => onOpenShares?.(row.original.id)}
+										>
+											<Share2 class="size-4" aria-hidden="true" />
+										</button>
 									{/if}
 								</td>
 							{/if}

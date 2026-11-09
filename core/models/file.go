@@ -23,4 +23,5 @@ type File struct {
 	PurgedAt            *time.Time
 	TombstonePurgedAt   *time.Time
 	SearchScore         int64
+	IsShared            bool
 }

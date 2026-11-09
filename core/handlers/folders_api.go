@@ -84,6 +84,7 @@ type fileEntrySummary struct {
 	EncryptedMetadata []byte
 	EncryptedFileKey  []byte
 	UpdatedAt         time.Time
+	IsShared          bool
 }
 
 // Cursor pages avoid a total count and return only fields used by the file browser.
@@ -250,6 +251,7 @@ func fileEntrySummaries(files []models.File) []fileEntrySummary {
 			EncryptedMetadata: file.EncryptedMetadata,
 			EncryptedFileKey:  file.EncryptedFileKey,
 			UpdatedAt:         file.UpdatedAt,
+			IsShared:          file.IsShared,
 		}
 	}
 	return entries
