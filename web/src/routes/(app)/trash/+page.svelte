@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { SvelteSet } from 'svelte/reactivity';
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { SvelteSet, SvelteURLSearchParams } from 'svelte/reactivity';
 	import { createInfiniteQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { RotateCcw, Trash2, X } from '@lucide/svelte';
 	import { api } from '#lib/api.ts';
@@ -50,10 +52,7 @@
 	const requestedFolderId = $derived(page.url.searchParams.get('folder_id') || null);
 	const focusFileId = $derived(page.url.searchParams.get('focus_file'));
 	let folderPath = $state<FileManagerEntry[]>([]);
-	let folderPathReady = $state(false);
-	const currentFolderId = $derived(
-		folderPath.at(-1)?.id ?? (folderPathReady ? null : requestedFolderId),
-	);
+	const currentFolderId = $derived(requestedFolderId);
 	const query = createInfiniteQuery(() => ({
 		queryKey: ['trash', currentFolderId, focusFileId],
 		enabled: $vaultUnlocked,
@@ -64,10 +63,7 @@
 					limit: PAGE_SIZE,
 					cursor: pageParam ?? undefined,
 					parentFolderId: currentFolderId ?? undefined,
-					seekEntryId:
-						pageParam === null && currentFolderId === requestedFolderId
-							? (focusFileId ?? undefined)
-							: undefined,
+					seekEntryId: pageParam === null ? (focusFileId ?? undefined) : undefined,
 				},
 				signal,
 			});
@@ -110,17 +106,24 @@
 		{
 			id: 'trash',
 			label: 'Trash',
-			onSelect: () => {
-				folderPath = [];
-				folderPathReady = true;
-			},
+			onSelect: () => navigateToFolder(null),
 		},
 		...folderPath.map((folder, index) => ({
 			id: folder.id,
 			label: folder.name,
-			onSelect: () => (folderPath = folderPath.slice(0, index + 1)),
+			onSelect:
+				index < folderPath.length - 1 ? () => navigateToFolder(folder.id) : undefined,
 		})),
 	]);
+
+	function navigateToFolder(folderId: string | null): void {
+		const params = new SvelteURLSearchParams();
+
+		if (folderId) params.set('folder_id', folderId);
+		const query = params.toString();
+		closeContextMenu();
+		void goto(`${resolve('/(app)/trash')}${query ? `?${query}` : ''}`);
+	}
 
 	async function decryptEntry(entry: ApiTrashEntry): Promise<FileManagerEntry> {
 		try {
@@ -198,7 +201,9 @@
 			hydrationQueue = Promise.resolve();
 			entries = [];
 			entriesReady = false;
+			folderPath = [];
 			selectedIds.clear();
+			closeContextMenu();
 		}
 
 		if (!$vaultUnlocked) {
@@ -208,6 +213,7 @@
 			hydrationQueue = Promise.resolve();
 			entries = [];
 			entriesReady = false;
+			folderPath = [];
 			selectedIds.clear();
 			selectedTargets = [];
 			permanentDeleteContainer = null;
@@ -234,7 +240,7 @@
 		for (const page of newPages) {
 			hydrationQueue = hydrationQueue.then(async () => {
 				const decryptedPath =
-					page === pages[0] && page.path.length > 0
+					page === pages[0]
 						? await Promise.all(
 								page.path.map((folder) =>
 									decryptEntry({
@@ -253,7 +259,6 @@
 				if (generation !== hydrationGeneration || !$vaultUnlocked) return;
 				if (decryptedPath) {
 					folderPath = decryptedPath;
-					folderPathReady = true;
 				}
 				entries = [...entries, ...decrypted];
 				entriesReady = true;
@@ -316,9 +321,7 @@
 		const folder = entries.find((entry) => entry.kind === 'folder' && entry.id === id);
 
 		if (!folder) return;
-		folderPath = [...folderPath, folder];
-		folderPathReady = true;
-		closeContextMenu();
+		navigateToFolder(folder.id);
 	}
 
 	function openContextMenu(entry: FileManagerEntry | null, x: number, y: number): void {
@@ -439,28 +442,27 @@
 </svelte:head>
 
 <div class="min-h-full bg-(--bg) py-6 pb-8">
-	<div class="mx-auto grid w-[min(1440px,calc(100%-40px))] gap-5 max-[960px]:w-[calc(100%-24px)]">
+	<div class="mx-auto grid w-[min(1440px,calc(100%-40px))] gap-4 max-[960px]:w-[calc(100%-24px)]">
 		<header
-			class="flex items-center justify-between gap-4 rounded-md border border-(--border) bg-(--surface-raised) px-3 py-2.5 max-[640px]:flex-col max-[640px]:items-stretch"
+			class="flex items-center justify-between gap-4 border-b border-(--border) pb-3 max-[640px]:flex-wrap"
 		>
-			<div class="flex min-w-0 flex-1 items-center gap-2 max-[640px]:w-full">
-				<Trash2 class="size-4 shrink-0 text-(--muted)" aria-hidden="true" />
+			{#if folderPath.length > 0}
 				<div class="min-w-0 flex-1">
 					<Breadcrumbs items={breadcrumbItems} label="Trash path" />
 				</div>
-			</div>
+			{/if}
 			<div
-				class="flex shrink-0 flex-wrap items-center justify-end gap-2 max-[640px]:w-full max-[640px]:justify-between"
+				class="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2 max-[640px]:w-full"
 			>
 				{#if selectedEntries.length > 0 || (viewMode === 'grid' && selectableCount > 0)}
 					<div
-						class="inline-flex max-w-full flex-wrap items-center gap-1 rounded-md border border-(--border) bg-(--surface) p-1"
+						class="inline-flex max-w-full flex-wrap items-center gap-1"
 					>
 						{#if viewMode === 'grid' && !allSelected}
 							<button
 								class="inline-flex h-8 cursor-pointer items-center rounded px-2 text-sm text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)"
 								type="button"
-								onclick={toggleAll}>Select loaded</button
+								onclick={toggleAll}>Select all</button
 							>
 						{/if}
 						{#if selectedEntries.length}
@@ -505,39 +507,39 @@
 
 		{#if !$vaultUnlocked}
 			<section
-				class="rounded-md border border-(--border) bg-(--surface-raised) px-5 py-8 text-(--muted)"
+				class="border-b border-(--border-soft) py-8 text-(--muted)"
 				role="status"
 			>
 				Unlock the vault from the header to view Trash.
 			</section>
 		{:else if query.isPending}
 			<section
-				class="rounded-md border border-(--border) bg-(--surface-raised) px-5 py-8 text-(--muted)"
+				class="border-b border-(--border-soft) py-8 text-(--muted)"
 				role="status"
 			>
 				Loading Trash…
 			</section>
 		{:else if query.isError && !query.data}
 			<section
-				class="rounded-md border border-(--border) bg-(--surface-raised) px-5 py-8 text-red-400"
+				class="border-b border-(--border-soft) py-8 text-red-400"
 				role="alert"
 			>
 				{query.error instanceof Error ? query.error.message : 'Could not load Trash.'}
 			</section>
 		{:else if !entriesReady}
 			<section
-				class="rounded-md border border-(--border) bg-(--surface-raised) px-5 py-8 text-(--muted)"
+				class="border-b border-(--border-soft) py-8 text-(--muted)"
 				role="status"
 			>
 				Decrypting Trash entries…
 			</section>
 		{:else}
 			<section
-				class="overflow-hidden rounded-md border border-(--border) bg-(--surface-raised)"
+				class="min-w-0"
 				aria-label="Trash entries"
 			>
 				{#if entries.length === 0}
-					<div class="px-5 py-8 text-center text-sm text-(--muted)" role="status">
+					<div class="border-b border-(--border-soft) py-8 text-center text-sm text-(--muted)" role="status">
 						{currentFolderId ? 'This folder is empty.' : 'Trash is empty.'}
 					</div>
 				{:else if viewMode === 'grid'}
