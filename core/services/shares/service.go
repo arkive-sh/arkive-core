@@ -10,6 +10,7 @@ import (
 	"arkive/core/database"
 	"arkive/core/models"
 	filerepo "arkive/core/repositories/files"
+	folderrepo "arkive/core/repositories/folders"
 	sharerepo "arkive/core/repositories/shares"
 	"arkive/pkg/tokens"
 	"arkive/pkg/validation"
@@ -24,13 +25,15 @@ const (
 )
 
 type Service struct {
-	db        database.PgPool
-	fileRepo  *filerepo.Repository
-	shareRepo *sharerepo.Repository
+	db         database.PgPool
+	fileRepo   *filerepo.Repository
+	folderRepo *folderrepo.Repository
+	shareRepo  *sharerepo.Repository
 }
 
 type CreateInput struct {
 	FileID                   string
+	FolderID                 string
 	OwnerUserID              string
 	Token                    string
 	Password                 string
@@ -40,29 +43,36 @@ type CreateInput struct {
 	BurnAfterRead            bool
 	EncryptedShareKey        string
 	EncryptedFileKeyForShare string
+	EncryptedFolderName      string
+	EncryptedFolderMetadata  string
 }
 
-func NewService(db database.PgPool, fileRepo *filerepo.Repository, shareRepo *sharerepo.Repository) *Service {
+func NewService(db database.PgPool, fileRepo *filerepo.Repository, folderRepo *folderrepo.Repository, shareRepo *sharerepo.Repository) *Service {
 	return &Service{
-		db:        db,
-		fileRepo:  fileRepo,
-		shareRepo: shareRepo,
+		db:         db,
+		fileRepo:   fileRepo,
+		folderRepo: folderRepo,
+		shareRepo:  shareRepo,
 	}
 }
 
 func (s *Service) CreateShare(ctx context.Context, input CreateInput) (models.Share, validation.Errors, error) {
 	input.FileID = strings.TrimSpace(input.FileID)
+	input.FolderID = strings.TrimSpace(input.FolderID)
 	input.OwnerUserID = strings.TrimSpace(input.OwnerUserID)
 	input.Token = strings.TrimSpace(input.Token)
 	input.Password = strings.TrimSpace(input.Password)
 	input.EncryptedShareKey = strings.TrimSpace(input.EncryptedShareKey)
 	input.EncryptedFileKeyForShare = strings.TrimSpace(input.EncryptedFileKeyForShare)
+	input.EncryptedFolderName = strings.TrimSpace(input.EncryptedFolderName)
+	input.EncryptedFolderMetadata = strings.TrimSpace(input.EncryptedFolderMetadata)
 
 	validationErrors := validation.New()
 	if input.OwnerUserID == "" {
 		return models.Share{}, nil, ErrUnauthorized
 	}
-	if input.FileID == "" {
+	isFolder := input.FolderID != ""
+	if (input.FileID == "") != isFolder {
 		validationErrors.Add("fileId", ErrFileIDRequired.Error())
 	}
 	if input.Token != "" && !isTokenValid(input.Token) {
@@ -74,6 +84,9 @@ func (s *Service) CreateShare(ctx context.Context, input CreateInput) (models.Sh
 	if !input.AllowPreview && !input.AllowDownload {
 		validationErrors.Add("permissions", "preview or download must be enabled")
 	}
+	if isFolder && input.BurnAfterRead {
+		validationErrors.Add("burnAfterRead", "one-time links are only supported for file shares")
+	}
 	if input.Password != "" {
 		if message := sharePasswordValidationMessage(input.Password); message != "" {
 			validationErrors.Add("password", message)
@@ -82,8 +95,11 @@ func (s *Service) CreateShare(ctx context.Context, input CreateInput) (models.Sh
 	if input.EncryptedShareKey == "" {
 		validationErrors.Add("encryptedShareKey", "encrypted share key is required")
 	}
-	if input.EncryptedFileKeyForShare == "" {
+	if !isFolder && input.EncryptedFileKeyForShare == "" {
 		validationErrors.Add("encryptedFileKeyForShare", "encrypted file key for share is required")
+	}
+	if isFolder && (input.EncryptedFolderName == "" || input.EncryptedFolderMetadata == "") {
+		validationErrors.Add("encryptedFolder", "encrypted folder name and metadata are required")
 	}
 	if validationErrors.HasAny() {
 		return models.Share{}, validationErrors, nil
@@ -93,29 +109,56 @@ func (s *Service) CreateShare(ctx context.Context, input CreateInput) (models.Sh
 	if err != nil || len(encryptedShareKey) == 0 {
 		validationErrors.Add("encryptedShareKey", "encrypted share key must be base64")
 	}
-	encryptedFileKeyForShare, err := base64.StdEncoding.DecodeString(input.EncryptedFileKeyForShare)
-	if err != nil || len(encryptedFileKeyForShare) == 0 {
-		validationErrors.Add("encryptedFileKeyForShare", "encrypted file key for share must be base64")
+	var encryptedFileKeyForShare, encryptedFolderName, encryptedFolderMetadata []byte
+	if !isFolder {
+		encryptedFileKeyForShare, err = base64.StdEncoding.DecodeString(input.EncryptedFileKeyForShare)
+		if err != nil || len(encryptedFileKeyForShare) == 0 {
+			validationErrors.Add("encryptedFileKeyForShare", "encrypted file key for share must be base64")
+		}
+	} else {
+		encryptedFolderName, err = base64.StdEncoding.DecodeString(input.EncryptedFolderName)
+		if err != nil || len(encryptedFolderName) == 0 {
+			validationErrors.Add("encryptedFolderName", "encrypted folder name must be base64")
+		}
+		encryptedFolderMetadata, err = base64.StdEncoding.DecodeString(input.EncryptedFolderMetadata)
+		if err != nil || len(encryptedFolderMetadata) == 0 {
+			validationErrors.Add("encryptedFolderMetadata", "encrypted folder metadata must be base64")
+		}
 	}
 	if validationErrors.HasAny() {
 		return models.Share{}, validationErrors, nil
 	}
 
-	file, err := s.fileRepo.GetFileForUser(ctx, s.db, input.FileID, input.OwnerUserID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return models.Share{}, nil, ErrNotFound
+	itemType := "file"
+	if isFolder {
+		itemType = "folder"
+		if _, err := s.folderRepo.GetForUser(ctx, s.db, input.OwnerUserID, input.FolderID); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return models.Share{}, nil, ErrNotFound
+			}
+			return models.Share{}, nil, err
 		}
-		return models.Share{}, nil, err
-	}
-	if file.UploadStatus != FileStatusComplete {
-		return models.Share{}, nil, ErrInvalidInput
-	}
-
-	if _, err := s.shareRepo.GetShareForFile(ctx, s.db, input.FileID); err == nil {
-		return models.Share{}, nil, ErrShareExists
-	} else if !errors.Is(err, pgx.ErrNoRows) {
-		return models.Share{}, nil, err
+		if _, err := s.shareRepo.GetShareForFolderForUser(ctx, s.db, input.FolderID, input.OwnerUserID); err == nil {
+			return models.Share{}, nil, ErrShareExists
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return models.Share{}, nil, err
+		}
+	} else {
+		file, err := s.fileRepo.GetFileForUser(ctx, s.db, input.FileID, input.OwnerUserID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return models.Share{}, nil, ErrNotFound
+			}
+			return models.Share{}, nil, err
+		}
+		if file.UploadStatus != FileStatusComplete {
+			return models.Share{}, nil, ErrInvalidInput
+		}
+		if _, err := s.shareRepo.GetShareForFile(ctx, s.db, input.FileID); err == nil {
+			return models.Share{}, nil, ErrShareExists
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return models.Share{}, nil, err
+		}
 	}
 
 	token := input.Token
@@ -145,6 +188,10 @@ func (s *Service) CreateShare(ctx context.Context, input CreateInput) (models.Sh
 	if err != nil {
 		return models.Share{}, nil, err
 	}
+	status := ShareStatusActive
+	if isFolder {
+		status = "provisioning"
+	}
 	shareLinkID, err := s.shareRepo.CreateShareLink(ctx, tx, sharerepo.CreateShareLinkInput{
 		OwnerUserID:       input.OwnerUserID,
 		Token:             token,
@@ -155,7 +202,7 @@ func (s *Service) CreateShare(ctx context.Context, input CreateInput) (models.Sh
 		ExpiresAt:         input.ExpiresAt,
 		BurnAfterRead:     input.BurnAfterRead,
 		MaxAccessCount:    shareMaxAccessCount(input.BurnAfterRead),
-		Status:            ShareStatusActive,
+		Status:            status,
 	})
 	if err != nil {
 		_ = tx.Rollback(ctx)
@@ -163,22 +210,32 @@ func (s *Service) CreateShare(ctx context.Context, input CreateInput) (models.Sh
 	}
 	shareItemID, err := s.shareRepo.CreateShareItem(ctx, tx, sharerepo.CreateShareItemInput{
 		ShareLinkID:  shareLinkID,
-		ItemType:     "file",
+		ItemType:     itemType,
 		FileID:       input.FileID,
+		FolderID:     input.FolderID,
 		DisplayOrder: 0,
 	})
 	if err != nil {
 		_ = tx.Rollback(ctx)
 		return models.Share{}, nil, err
 	}
-	if err := s.shareRepo.CreateShareSnapshotFile(ctx, tx, sharerepo.CreateShareSnapshotFileInput{
-		ShareItemID:              shareItemID,
-		FileID:                   input.FileID,
-		EncryptedFileKeyForShare: encryptedFileKeyForShare,
-		DisplayOrder:             0,
-	}); err != nil {
-		_ = tx.Rollback(ctx)
-		return models.Share{}, nil, err
+	if isFolder {
+		if err := s.shareRepo.CreateFolderShareEntry(ctx, tx, shareLinkID, sharerepo.FolderShareFolderEntry{
+			ID: input.FolderID, EncryptedName: encryptedFolderName, EncryptedMetadata: encryptedFolderMetadata,
+		}); err != nil {
+			_ = tx.Rollback(ctx)
+			return models.Share{}, nil, err
+		}
+	} else {
+		if err := s.shareRepo.CreateShareSnapshotFile(ctx, tx, sharerepo.CreateShareSnapshotFileInput{
+			ShareItemID:              shareItemID,
+			FileID:                   input.FileID,
+			EncryptedFileKeyForShare: encryptedFileKeyForShare,
+			DisplayOrder:             0,
+		}); err != nil {
+			_ = tx.Rollback(ctx)
+			return models.Share{}, nil, err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return models.Share{}, nil, err
@@ -198,6 +255,138 @@ func (s *Service) GetPublicShareRecord(ctx context.Context, token string) (model
 	return s.shareRepo.GetPublicShareRecord(ctx, s.db, token)
 }
 
+func (s *Service) GetPublicFolderShareRecord(ctx context.Context, token string) (models.PublicShareRecord, error) {
+	return s.shareRepo.GetPublicFolderShareRecord(ctx, s.db, token)
+}
+
+func (s *Service) GetPublicFolderShareFileRecord(ctx context.Context, token, fileID string) (models.PublicShareRecord, error) {
+	fileID, validFileID := validation.NormalizeUUID(fileID)
+	if !isTokenValid(token) || !validFileID {
+		return models.PublicShareRecord{}, ErrInvalidInput
+	}
+	return s.shareRepo.GetPublicFolderShareFileRecord(ctx, s.db, token, fileID)
+}
+
+func (s *Service) ListPublicFolderShareEntries(ctx context.Context, token, folderID, cursor string, pageSize int) ([]models.PublicFolderShareEntry, string, error) {
+	folderID, validFolderID := validation.NormalizeUUID(folderID)
+	if !isTokenValid(token) || !validFolderID || len(cursor) > 64 {
+		return nil, "", ErrInvalidInput
+	}
+	if cursor != "" {
+		var validCursor bool
+		cursor, validCursor = validation.NormalizeUUID(cursor)
+		if !validCursor {
+			return nil, "", ErrInvalidInput
+		}
+	}
+	if pageSize <= 0 {
+		pageSize = 50
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	return s.shareRepo.ListFolderShareEntries(ctx, s.db, token, folderID, pageSize, cursor)
+}
+
+func (s *Service) AddFolderShareEntries(ctx context.Context, shareID, ownerUserID string, files []sharerepo.FolderShareFileEntry, folders []sharerepo.FolderShareFolderEntry) error {
+	shareID, validShareID := validation.NormalizeUUID(shareID)
+	ownerUserID = strings.TrimSpace(ownerUserID)
+	if !validShareID || ownerUserID == "" || len(files)+len(folders) == 0 || len(files)+len(folders) > 250 {
+		return ErrInvalidInput
+	}
+	share, err := s.shareRepo.GetShareForUser(ctx, s.db, shareID, ownerUserID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if share.ItemType != "folder" || (share.Status != "active" && share.Status != "provisioning" && share.Status != ShareStatusRevoked) {
+		return ErrInvalidInput
+	}
+	seen := make(map[string]struct{}, len(files)+len(folders))
+	for index := range files {
+		id, validID := validation.NormalizeUUID(files[index].ID)
+		if !validID || len(files[index].EncryptedFileKeyForShare) == 0 {
+			return ErrInvalidInput
+		}
+		files[index].ID = id
+		if _, ok := seen["file:"+id]; ok {
+			return ErrInvalidInput
+		}
+		seen["file:"+id] = struct{}{}
+	}
+	for index := range folders {
+		id, validID := validation.NormalizeUUID(folders[index].ID)
+		if !validID || len(folders[index].EncryptedName) == 0 || len(folders[index].EncryptedMetadata) == 0 {
+			return ErrInvalidInput
+		}
+		folders[index].ID = id
+		if _, ok := seen["folder:"+id]; ok {
+			return ErrInvalidInput
+		}
+		seen["folder:"+id] = struct{}{}
+	}
+	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	count, err := s.shareRepo.AddFolderShareEntries(ctx, tx, shareID, files, folders)
+	if err != nil {
+		return err
+	}
+	if count != len(files)+len(folders) {
+		return ErrNotFound
+	}
+	return tx.Commit(ctx)
+}
+
+func (s *Service) CompleteFolderShareSetup(ctx context.Context, shareID, ownerUserID string) error {
+	shareID, validShareID := validation.NormalizeUUID(shareID)
+	ownerUserID = strings.TrimSpace(ownerUserID)
+	if !validShareID || ownerUserID == "" {
+		return ErrInvalidInput
+	}
+	share, err := s.shareRepo.GetShareForUser(ctx, s.db, shareID, ownerUserID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if share.ItemType != "folder" || share.Status != "provisioning" {
+		return ErrInvalidInput
+	}
+	activated, err := s.shareRepo.ActivateFolderShare(ctx, s.db, share.ID, share.OwnerUserID)
+	if err != nil {
+		return err
+	}
+	if !activated {
+		return ErrSetupIncomplete
+	}
+	return nil
+}
+
+func (s *Service) ListFolderShareScopes(ctx context.Context, ownerUserID, folderID string) ([]models.Share, error) {
+	ownerUserID = strings.TrimSpace(ownerUserID)
+	if ownerUserID == "" {
+		return nil, ErrUnauthorized
+	}
+	var validFolderID bool
+	folderID, validFolderID = validation.NormalizeUUID(folderID)
+	if !validFolderID {
+		return nil, ErrInvalidInput
+	}
+	if _, err := s.folderRepo.GetForUser(ctx, s.db, ownerUserID, folderID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return s.shareRepo.ListFolderShareScopes(ctx, s.db, ownerUserID, folderID)
+}
+
 func (s *Service) GetShareForFileForUser(ctx context.Context, fileID, ownerUserID string) (models.Share, error) {
 	fileID = strings.TrimSpace(fileID)
 	ownerUserID = strings.TrimSpace(ownerUserID)
@@ -208,6 +397,18 @@ func (s *Service) GetShareForFileForUser(ctx context.Context, fileID, ownerUserI
 		return models.Share{}, ErrInvalidInput
 	}
 	return s.shareRepo.GetShareForFileForUser(ctx, s.db, fileID, ownerUserID)
+}
+
+func (s *Service) GetShareForFolderForUser(ctx context.Context, folderID, ownerUserID string) (models.Share, error) {
+	folderID = strings.TrimSpace(folderID)
+	ownerUserID = strings.TrimSpace(ownerUserID)
+	if ownerUserID == "" {
+		return models.Share{}, ErrUnauthorized
+	}
+	if folderID == "" {
+		return models.Share{}, ErrInvalidInput
+	}
+	return s.shareRepo.GetShareForFolderForUser(ctx, s.db, folderID, ownerUserID)
 }
 
 func (s *Service) GetShareForUser(ctx context.Context, shareID, ownerUserID string) (models.Share, error) {

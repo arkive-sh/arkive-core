@@ -70,7 +70,7 @@ func main() {
 			ShareDownloadExpire: 30 * time.Minute,
 		},
 	)
-	folderService := folderssvc.NewService(db, folderRepo, fileRepo, filesService)
+	folderService := folderssvc.NewService(db, folderRepo, fileRepo, sharerepo.New(), filesService)
 	deletedFileCleanupCron, err := jobs.StartDeletedFileCleanup(filesService, folderService)
 	if err != nil {
 		log.Fatalf("deleted file cleanup cron failed: %v", err)
@@ -85,6 +85,7 @@ func main() {
 		settingsRepo,
 		uploadrepo.New(),
 		usersrepo.New(),
+		sharerepo.New(),
 		storageProvider,
 		uploads.Config{
 			UploadExpires:       time.Duration(settingssvc.DefaultUploadSettings().StaleUploadHours) * time.Hour,

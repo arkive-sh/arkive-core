@@ -1,20 +1,26 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
-	import { Copy, ExternalLink, Link2, ShieldOff, Trash2 } from '@lucide/svelte';
+	import { Copy, ExternalLink, Folder, Link2, ShieldOff, Trash2 } from '@lucide/svelte';
 	import axios from 'axios';
 	import Button from '#lib/components/Button.svelte';
 	import Drawer from '#lib/components/Drawer.svelte';
 	import FileTypeIcon from '#lib/components/FileTypeIcon.svelte';
 	import { api } from '#lib/api.ts';
 	import { buildShareURL, decryptShareURL } from '#lib/share-link.ts';
+	import {
+		addEntriesToFolderShares,
+		clearFolderShareScopeCache,
+	} from '#lib/shares/folder-share.ts';
 	import { toast } from '#lib/toast.ts';
 	import { toBase64Url } from '#lib/vault/bytes.ts';
-	import { prepareShare } from '#lib/vault/shares.ts';
+	import { openShareKey, prepareFolderShare, prepareShare } from '#lib/vault/shares.ts';
 	import type { FileManagerEntry } from './types';
 
 	type ShareRecord = {
 		id: string;
+		itemType: 'file' | 'folder';
 		fileId: string;
+		folderId: string;
 		token: string;
 		encryptedShareKey: string;
 		allowPreview: boolean;
@@ -22,7 +28,7 @@
 		burnAfterRead: boolean;
 		expiresAt: string | null;
 		hasPassword: boolean;
-		status: 'active' | 'revoked' | 'expired' | 'burned';
+		status: 'active' | 'revoked' | 'expired' | 'burned' | 'provisioning';
 		isExpired: boolean;
 	};
 
@@ -86,14 +92,24 @@
 		loading = true;
 		error = '';
 		try {
+			const endpoint = entry.kind === 'folder' ? '/api/folders' : '/api/files';
 			const { data } = await api.get<ShareRecord>(
-				`/api/files/${encodeURIComponent(entry.id)}/share`,
+				`${endpoint}/${encodeURIComponent(entry.id)}/share`,
 			);
 			share = data;
 			allowPreview = data.allowPreview;
 			allowDownload = data.allowDownload;
 			expiresAt = toLocalDateTime(data.expiresAt);
 			await restoreLink(data);
+			if (data.status === 'provisioning' && entry.kind === 'folder') {
+				const { shareSecret } = await openShareKey(data.encryptedShareKey, data.token);
+
+				try {
+					await prepareFolderShareContents(data, shareSecret);
+				} finally {
+					shareSecret.fill(0);
+				}
+			}
 		} catch (cause) {
 			if (axios.isAxiosError(cause) && cause.response?.status === 404) {
 				share = null;
@@ -120,7 +136,7 @@
 
 			return;
 		}
-		if (!share && !entry.encryptedFileKey) {
+		if (!share && entry.kind === 'file' && !entry.encryptedFileKey) {
 			error = 'The encrypted file key is not loaded yet. Close this dialog and try again.';
 
 			return;
@@ -147,29 +163,64 @@
 				const random = crypto.getRandomValues(new Uint8Array(32));
 				const token = toBase64Url(random);
 				random.fill(0);
-				const prepared = await prepareShare(
-					{
-						vaultId,
-						fileId: entry.id,
-						folderId: entry.parentFolderId ?? null,
-						encryptedFileKey: entry.encryptedFileKey!,
-					},
-					token,
-				);
+				if (entry.kind === 'folder' && (!entry.encryptedName || !entry.encryptedMetadata)) {
+					throw new Error(
+						'The encrypted folder details are not loaded yet. Close this dialog and try again.',
+					);
+				}
+				const prepared =
+					entry.kind === 'file'
+						? await prepareShare(
+								{
+									vaultId,
+									fileId: entry.id,
+									folderId: entry.parentFolderId ?? null,
+									encryptedFileKey: entry.encryptedFileKey!,
+								},
+								token,
+							)
+						: await prepareFolderShare(
+								{
+									vaultId,
+									folderId: entry.id,
+									parentFolderId: entry.parentFolderId ?? null,
+									encryptedName: entry.encryptedName!,
+									encryptedMetadata: entry.encryptedMetadata!,
+								},
+								token,
+							);
 
 				try {
-					const { data } = await api.post<ShareRecord>(
-						`/api/files/${encodeURIComponent(entry.id)}/share`,
+					const endpoint = entry.kind === 'folder' ? '/api/folders' : '/api/files';
+					const { data: created } = await api.post<ShareRecord>(
+						`${endpoint}/${encodeURIComponent(entry.id)}/share`,
 						{
 							token,
 							expiresAt: expiryValue(),
 							allowPreview,
 							allowDownload,
 							encryptedShareKey: prepared.encryptedShareKey,
-							encryptedFileKeyForShare: prepared.encryptedFileKeyForShare,
+							...('encryptedFileKeyForShare' in prepared
+								? { encryptedFileKeyForShare: prepared.encryptedFileKeyForShare }
+								: {
+										encryptedFolderName: prepared.encryptedFolderName,
+										encryptedFolderMetadata: prepared.encryptedFolderMetadata,
+									}),
 						},
 					);
-					share = data;
+
+					if (entry.kind === 'folder') {
+						try {
+							await prepareFolderShareContents(created, prepared.shareSecret);
+						} catch (cause) {
+							await api.delete(`/api/shares/${encodeURIComponent(created.id)}`).catch(() => {});
+
+							throw cause;
+						}
+					} else {
+						share = created;
+					}
+					clearFolderShareScopeCache();
 					link = buildShareURL(window.location.origin, token, prepared.shareSecret);
 					toast.success('Encrypted share link created.');
 				} finally {
@@ -183,6 +234,24 @@
 		}
 	}
 
+	async function prepareFolderShareContents(
+		record: ShareRecord,
+		secret: Uint8Array<ArrayBuffer>,
+	): Promise<void> {
+		await addEntriesToFolderShares(
+			vaultId,
+			[{ id: record.id, token: record.token, encryptedShareKey: record.encryptedShareKey }],
+			[],
+			[entry],
+		);
+		const { data } = await api.post<ShareRecord>(
+			`/api/shares/${encodeURIComponent(record.id)}/complete-folder-setup`,
+		);
+		share = data;
+		link = buildShareURL(window.location.origin, record.token, secret);
+		clearFolderShareScopeCache();
+	}
+
 	async function changeShareStatus(action: 'revoke' | 'activate'): Promise<void> {
 		if (!share || saving) return;
 		saving = true;
@@ -192,6 +261,7 @@
 				`/api/shares/${encodeURIComponent(share.id)}/${action}`,
 			);
 			share = data;
+			clearFolderShareScopeCache();
 			confirmRevoke = false;
 			toast.success(action === 'revoke' ? 'Share link revoked.' : 'Share link reactivated.');
 		} catch (cause) {
@@ -209,8 +279,9 @@
 
 		try {
 			await api.delete(`/api/shares/${encodeURIComponent(share.id)}`);
+			clearFolderShareScopeCache();
 			deleted = true;
-			toast.success('Share link deleted. The file remains in your vault.');
+			toast.success('Share link deleted. The item remains in your vault.');
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : 'Could not delete this share link.';
 		} finally {
@@ -261,7 +332,11 @@
 <Drawer open={true} label={`Share ${entry.name}`} title="Share" {onClose}>
 	<div class="grid gap-6">
 		<div class="flex min-w-0 items-center gap-3 border-b border-(--border) pb-4">
-			<FileTypeIcon name={entry.name} mime={entry.type} className="size-5 shrink-0" />
+			{#if entry.kind === 'folder'}
+				<Folder class="size-5 shrink-0 text-sky-400" aria-hidden="true" />
+			{:else}
+				<FileTypeIcon name={entry.name} mime={entry.type} className="size-5 shrink-0" />
+			{/if}
 			<span class="min-w-0 truncate text-sm font-medium" title={entry.name}>{entry.name}</span>
 		</div>
 

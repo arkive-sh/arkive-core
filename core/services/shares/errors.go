@@ -17,6 +17,7 @@ var (
 	ErrShareExists        = errors.New("share already exists")
 	ErrPasswordHashFailed = errors.New("password hashing failed")
 	ErrAlreadyConsumed    = errors.New("share already consumed")
+	ErrSetupIncomplete    = errors.New("folder share is not fully prepared")
 
 	ErrFileIDRequired     = errors.New("file id is required")
 	ErrPasswordRequired   = errors.New("password is required")

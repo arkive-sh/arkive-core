@@ -111,8 +111,7 @@
 		...folderPath.map((folder, index) => ({
 			id: folder.id,
 			label: folder.name,
-			onSelect:
-				index < folderPath.length - 1 ? () => navigateToFolder(folder.id) : undefined,
+			onSelect: index < folderPath.length - 1 ? () => navigateToFolder(folder.id) : undefined,
 		})),
 	]);
 
@@ -122,6 +121,7 @@
 		if (folderId) params.set('folder_id', folderId);
 		const query = params.toString();
 		closeContextMenu();
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve adds the base route before the query string.
 		void goto(`${resolve('/(app)/trash')}${query ? `?${query}` : ''}`);
 	}
 
@@ -455,9 +455,7 @@
 				class="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2 max-[640px]:w-full"
 			>
 				{#if selectedEntries.length > 0 || (viewMode === 'grid' && selectableCount > 0)}
-					<div
-						class="inline-flex max-w-full flex-wrap items-center gap-1"
-					>
+					<div class="inline-flex max-w-full flex-wrap items-center gap-1">
 						{#if viewMode === 'grid' && !allSelected}
 							<button
 								class="inline-flex h-8 cursor-pointer items-center rounded px-2 text-sm text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)"
@@ -506,40 +504,28 @@
 		</header>
 
 		{#if !$vaultUnlocked}
-			<section
-				class="border-b border-(--border-soft) py-8 text-(--muted)"
-				role="status"
-			>
+			<section class="border-b border-(--border-soft) py-8 text-(--muted)" role="status">
 				Unlock the vault from the header to view Trash.
 			</section>
 		{:else if query.isPending}
-			<section
-				class="border-b border-(--border-soft) py-8 text-(--muted)"
-				role="status"
-			>
+			<section class="border-b border-(--border-soft) py-8 text-(--muted)" role="status">
 				Loading Trash…
 			</section>
 		{:else if query.isError && !query.data}
-			<section
-				class="border-b border-(--border-soft) py-8 text-red-400"
-				role="alert"
-			>
+			<section class="border-b border-(--border-soft) py-8 text-red-400" role="alert">
 				{query.error instanceof Error ? query.error.message : 'Could not load Trash.'}
 			</section>
 		{:else if !entriesReady}
-			<section
-				class="border-b border-(--border-soft) py-8 text-(--muted)"
-				role="status"
-			>
+			<section class="border-b border-(--border-soft) py-8 text-(--muted)" role="status">
 				Decrypting Trash entries…
 			</section>
 		{:else}
-			<section
-				class="min-w-0"
-				aria-label="Trash entries"
-			>
+			<section class="min-w-0" aria-label="Trash entries">
 				{#if entries.length === 0}
-					<div class="border-b border-(--border-soft) py-8 text-center text-sm text-(--muted)" role="status">
+					<div
+						class="border-b border-(--border-soft) py-8 text-center text-sm text-(--muted)"
+						role="status"
+					>
 						{currentFolderId ? 'This folder is empty.' : 'Trash is empty.'}
 					</div>
 				{:else if viewMode === 'grid'}

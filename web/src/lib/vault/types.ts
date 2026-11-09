@@ -53,6 +53,14 @@ export interface ShareFileRecord {
 	encryptedFileKey: string;
 }
 
+export interface ShareFolderRecord {
+	vaultId: string;
+	folderId: string;
+	parentFolderId: string | null;
+	encryptedName: string;
+	encryptedMetadata: string;
+}
+
 export interface FileCryptoRecord extends ShareFileRecord {
 	encryptedMetadata: string;
 	encryptedManifest: string;
@@ -118,6 +126,56 @@ export interface VaultWorkerCalls {
 			shareSecret: Uint8Array<ArrayBuffer>;
 			cryptoVersion: number;
 		};
+	};
+	prepareFolderShare: {
+		params: ShareFolderRecord & { token: string };
+		result: {
+			encryptedShareKey: string;
+			encryptedFolderName: string;
+			encryptedFolderMetadata: string;
+			shareSecret: Uint8Array<ArrayBuffer>;
+			cryptoVersion: number;
+		};
+	};
+	wrapFileKeyForShare: {
+		params: {
+			encryptedFileKey: string;
+			vaultId: string;
+			fileId: string;
+			parentFolderId: string | null;
+			token: string;
+			shareSecret: VaultBytes | null;
+		};
+		result: { encryptedFileKeyForShare: string };
+	};
+	wrapUploadFileKeyForShare: {
+		params: { uploadToken: string; token: string; fileId: string; shareSecret: VaultBytes | null };
+		result: { encryptedFileKeyForShare: string };
+	};
+	wrapFolderForShare: {
+		params: ShareFolderRecord & { token: string; shareSecret: VaultBytes | null };
+		result: { encryptedName: string; encryptedMetadata: string };
+	};
+	openPublicShareFolder: {
+		params: {
+			folderId: string;
+			token: string;
+			shareSecret: VaultBytes | null;
+			encryptedName: string;
+			encryptedMetadata: string;
+		};
+		result: { nameBytes: Uint8Array; metadataBytes: Uint8Array };
+	};
+	openPublicShareFileMetadata: {
+		params: {
+			fileId: string;
+			vaultId: string;
+			token: string;
+			shareSecret: VaultBytes | null;
+			encryptedFileKeyForShare: string;
+			encryptedMetadata: string;
+		};
+		result: { metadataBytes: Uint8Array };
 	};
 	openShareKey: {
 		params: { encryptedShareKey: string; shareKeyAad: string };

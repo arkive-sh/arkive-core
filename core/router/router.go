@@ -9,6 +9,7 @@ import (
 	"arkive/core/middleware"
 	authrepo "arkive/core/repositories/auth"
 	filerepo "arkive/core/repositories/files"
+	foldersrepo "arkive/core/repositories/folders"
 	sessionrepo "arkive/core/repositories/session"
 	settingsrepo "arkive/core/repositories/settings"
 	sharerepo "arkive/core/repositories/shares"
@@ -39,7 +40,7 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 	})
 	settingsRepo := settingsrepo.New()
 	setupService := setup.NewService(db, authRepo, usersRepo, settingsRepo, cfg.OpaqueServerSetup)
-	shareService := shares.NewService(db, filerepo.New(), sharerepo.New())
+	shareService := shares.NewService(db, filerepo.New(), foldersrepo.New(), sharerepo.New())
 	syncService := syncsvc.NewService(db, syncrepo.New())
 
 	localStorageRoutes := r.Group("/local-storage")
@@ -77,6 +78,8 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 		api.GET("/health", handlers.Health(db))
 		api.GET("/public/shares/:token", handlers.APIPublicShareRecord(shareService, filesService, cfg.CookieSecret))
 		api.POST("/public/shares/:token/consume", handlers.APIPublicShareConsume(shareService, filesService, cfg.CookieSecret))
+		api.GET("/public/shares/:token/folders/:folderID/entries", handlers.APIPublicShareFolderEntries(shareService, cfg.CookieSecret))
+		api.GET("/public/shares/:token/files/:fileID", handlers.APIPublicShareFolderFile(shareService, filesService, cfg.CookieSecret))
 		api.POST("/search", middleware.RequireSessionJSON(authService), handlers.APISearch(filesService, folderService))
 	}
 
@@ -114,19 +117,24 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 		apiShares.POST("/:id/revoke", handlers.APIRevokeShare(shareService))
 		apiShares.POST("/:id/activate", handlers.APIActivateShare(shareService))
 		apiShares.GET("/:id/crypto-record", handlers.APIGetShareCryptoRecord(shareService))
+		apiShares.POST("/:id/folder-entries", middleware.LimitBody(8<<20), handlers.APIAddFolderShareEntries(shareService))
+		apiShares.POST("/:id/complete-folder-setup", handlers.APICompleteFolderShareSetup(shareService))
 		apiShares.DELETE("/:id", handlers.APIDeleteShare(shareService))
 	}
 
 	apiFolders := api.Group("")
 	apiFolders.Use(middleware.RequireSessionJSON(authService))
 	{
-		apiFolders.POST("/folders", handlers.APICreateFolder(folderService))
+		apiFolders.POST("/folders", middleware.LimitBody(2<<20), handlers.APICreateFolder(folderService))
+		apiFolders.GET("/folders/:id/share", handlers.APIGetShareForFolder(shareService))
+		apiFolders.POST("/folders/:id/share", middleware.LimitBody(64<<10), handlers.APICreateFolderShare(shareService))
+		apiFolders.GET("/folders/:id/share-scopes", handlers.APIListFolderShareScopes(shareService))
 		apiFolders.GET("/folders/root/entries", handlers.APIListRootFolderEntries(folderService))
 		apiFolders.GET("/folders/:id/entries", handlers.APIListFolderEntries(folderService))
 		apiFolders.POST("/entries/delete", handlers.APIDeleteEntries(folderService))
 		// Allow the service's 1,000-entry move limit while bounding JSON/base64 allocation in the handler.
 		apiFolders.POST("/entries/move", middleware.LimitBody(8<<20), handlers.APIMoveEntries(folderService))
-		apiFolders.POST("/entries/rename", handlers.APIRenameEntry(folderService, filesService))
+		apiFolders.POST("/entries/rename", middleware.LimitBody(2<<20), handlers.APIRenameEntry(folderService, filesService))
 	}
 
 	apiTrash := api.Group("/trash")

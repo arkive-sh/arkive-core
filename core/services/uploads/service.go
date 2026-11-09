@@ -11,6 +11,7 @@ import (
 	filerepo "arkive/core/repositories/files"
 	folderrepo "arkive/core/repositories/folders"
 	settingsrepo "arkive/core/repositories/settings"
+	sharerepo "arkive/core/repositories/shares"
 	storagerepo "arkive/core/repositories/storage"
 	uploadrepo "arkive/core/repositories/uploads"
 	usersrepo "arkive/core/repositories/users"
@@ -35,6 +36,7 @@ type Service struct {
 	settingsRepo  *settingsrepo.Repository
 	uploadRepo    *uploadrepo.Repository
 	userRepo      *usersrepo.Repository
+	shareRepo     *sharerepo.Repository
 	storage       storage.Provider
 	uploadExpires time.Duration
 }
@@ -53,6 +55,7 @@ func NewService(
 	settingsRepo *settingsrepo.Repository,
 	uploadRepo *uploadrepo.Repository,
 	userRepo *usersrepo.Repository,
+	shareRepo *sharerepo.Repository,
 	storageProvider storage.Provider,
 	cfg Config,
 ) *Service {
@@ -64,6 +67,7 @@ func NewService(
 		settingsRepo:  settingsRepo,
 		uploadRepo:    uploadRepo,
 		userRepo:      userRepo,
+		shareRepo:     shareRepo,
 		storage:       storageProvider,
 		uploadExpires: cfg.UploadExpires,
 	}

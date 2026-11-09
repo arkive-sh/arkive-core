@@ -118,6 +118,26 @@ func APIPublicShareRecord(shareService *shares.Service, filesService *filessvc.S
 			apierror.Write(c, http.StatusNotFound, "share_not_found", "Share not found", nil)
 			return
 		}
+		if share.ItemType == "folder" {
+			record, err := shareService.GetPublicFolderShareRecord(c.Request.Context(), token)
+			if err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					apierror.Write(c, http.StatusNotFound, "share_not_found", "Share not found", nil)
+					return
+				}
+				_ = c.Error(errs.WithStack(err))
+				apierror.Internal(c, "Share record failed")
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"itemType": "folder", "shareId": record.ShareID, "token": record.Token,
+				"folderId": record.FolderID, "vaultId": record.VaultID,
+				"encryptedFolderName":     base64.StdEncoding.EncodeToString(record.EncryptedFolderName),
+				"encryptedFolderMetadata": base64.StdEncoding.EncodeToString(record.EncryptedFolderMetadata),
+				"allowPreview":            share.AllowPreview, "allowDownload": share.AllowDownload,
+			})
+			return
+		}
 
 		file, err := filesService.GetFileForShare(c.Request.Context(), share.FileID)
 		if err != nil {
@@ -152,6 +172,7 @@ func APIPublicShareRecord(shareService *shares.Service, filesService *filessvc.S
 		}
 
 		c.JSON(http.StatusOK, gin.H{
+			"itemType":                 "file",
 			"shareId":                  record.ShareID,
 			"token":                    record.Token,
 			"fileId":                   record.FileID,
@@ -169,6 +190,140 @@ func APIPublicShareRecord(shareService *shares.Service, filesService *filessvc.S
 			"burnAfterRead":            share.BurnAfterRead,
 		})
 	}
+}
+
+func APIPublicShareFolderEntries(shareService *shares.Service, cookieSecret string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		share, ok := loadAuthorizedPublicShare(c, shareService, cookieSecret)
+		if !ok {
+			return
+		}
+		if share.ItemType != "folder" {
+			apierror.Write(c, http.StatusNotFound, "share_not_found", "Share not found", nil)
+			return
+		}
+		pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "50"))
+		entries, next, err := shareService.ListPublicFolderShareEntries(
+			c.Request.Context(), share.Token, c.Param("folderID"), c.Query("cursor"), pageSize)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, shares.ErrNotFound) {
+				apierror.Write(c, http.StatusNotFound, "folder_not_found", "Folder not found", nil)
+				return
+			}
+			if errors.Is(err, shares.ErrInvalidInput) {
+				apierror.InvalidPayload(c)
+				return
+			}
+			_ = c.Error(errs.WithStack(err))
+			apierror.Internal(c, "Folder listing failed")
+			return
+		}
+		folders := make([]gin.H, 0, len(entries))
+		files := make([]gin.H, 0, len(entries))
+		for _, entry := range entries {
+			if entry.ItemType == "folder" {
+				folders = append(folders, gin.H{
+					"id": entry.ID, "parentFolderId": entry.ParentFolderID, "vaultId": entry.VaultID,
+					"encryptedName":     base64.StdEncoding.EncodeToString(entry.EncryptedName),
+					"encryptedMetadata": base64.StdEncoding.EncodeToString(entry.EncryptedMetadata),
+					"updatedAt":         entry.UpdatedAt,
+				})
+			} else {
+				files = append(files, gin.H{
+					"id": entry.ID, "folderId": entry.ParentFolderID, "vaultId": entry.VaultID,
+					"encryptedMetadata":        base64.StdEncoding.EncodeToString(entry.EncryptedFileMetadata),
+					"encryptedFileKeyForShare": base64.StdEncoding.EncodeToString(entry.EncryptedFileKeyForShare),
+					"updatedAt":                entry.UpdatedAt,
+				})
+			}
+		}
+		c.JSON(http.StatusOK, gin.H{"folders": folders, "files": files, "nextCursor": next})
+	}
+}
+
+func APIPublicShareFolderFile(shareService *shares.Service, filesService *filessvc.Service, cookieSecret string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		share, ok := loadAuthorizedPublicShare(c, shareService, cookieSecret)
+		if !ok {
+			return
+		}
+		if share.ItemType != "folder" {
+			apierror.Write(c, http.StatusNotFound, "share_not_found", "Share not found", nil)
+			return
+		}
+		record, err := shareService.GetPublicFolderShareFileRecord(c.Request.Context(), share.Token, c.Param("fileID"))
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				apierror.Write(c, http.StatusNotFound, "file_not_found", "File not found", nil)
+				return
+			}
+			if errors.Is(err, shares.ErrInvalidInput) {
+				apierror.InvalidPayload(c)
+				return
+			}
+			_ = c.Error(errs.WithStack(err))
+			apierror.Internal(c, "Share file lookup failed")
+			return
+		}
+		file, err := filesService.GetFileForShare(c.Request.Context(), record.FileID)
+		if err != nil {
+			apierror.Write(c, http.StatusNotFound, "file_not_found", "File not found", nil)
+			return
+		}
+		sourceURL, err := filesService.PresignShareSourceForFile(c.Request.Context(), file)
+		if err != nil {
+			_ = c.Error(errs.WithStack(err))
+			apierror.Internal(c, "Share source failed")
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"itemType": "file", "shareId": record.ShareID, "token": record.Token,
+			"fileId": record.FileID, "vaultId": record.VaultID,
+			"encryptionVersion": record.EncryptionVersion, "chunkSize": record.ChunkSize,
+			"totalChunks":              record.TotalChunks,
+			"encryptedHash":            base64.StdEncoding.EncodeToString(record.EncryptedHash),
+			"encryptedMetadata":        base64.StdEncoding.EncodeToString(record.EncryptedMetadata),
+			"encryptedManifest":        base64.StdEncoding.EncodeToString(record.EncryptedManifest),
+			"encryptedFileKeyForShare": base64.StdEncoding.EncodeToString(record.EncryptedFileKeyForShare),
+			"sourceUrl":                sourceURL, "allowPreview": share.AllowPreview,
+			"allowDownload": share.AllowDownload,
+		})
+	}
+}
+
+func loadAuthorizedPublicShare(c *gin.Context, shareService *shares.Service, cookieSecret string) (models.Share, bool) {
+	token := strings.TrimSpace(c.Param("token"))
+	if token == "" {
+		apierror.Write(c, http.StatusNotFound, "share_not_found", "Share not found", nil)
+		return models.Share{}, false
+	}
+	share, err := shareService.GetShareByToken(c.Request.Context(), token)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			apierror.Write(c, http.StatusNotFound, "share_not_found", "Share not found", nil)
+			return models.Share{}, false
+		}
+		_ = c.Error(errs.WithStack(err))
+		apierror.Internal(c, "Share lookup failed")
+		return models.Share{}, false
+	}
+	if share.Status == "burned" {
+		apierror.Write(c, http.StatusGone, "share_consumed", "Share has already been used", nil)
+		return models.Share{}, false
+	}
+	if share.Status != shares.ShareStatusActive || (share.ExpiresAt != nil && !share.ExpiresAt.After(time.Now())) {
+		apierror.Write(c, http.StatusNotFound, "share_not_found", "Share not found", nil)
+		return models.Share{}, false
+	}
+	if share.PasswordHash != nil && !hasShareAccess(c, share, cookieSecret) {
+		apierror.Write(c, http.StatusForbidden, "forbidden", "Share access denied", nil)
+		return models.Share{}, false
+	}
+	if !share.AllowPreview && !share.AllowDownload {
+		apierror.Write(c, http.StatusForbidden, "forbidden", "Share access denied", nil)
+		return models.Share{}, false
+	}
+	return share, true
 }
 
 func APIPublicShareConsume(shareService *shares.Service, filesService *filessvc.Service, cookieSecret string) gin.HandlerFunc {

@@ -37,6 +37,13 @@ type CreateFolderInput struct {
 	EncryptedName     []byte
 	EncryptedMetadata []byte
 	SearchTokens      []models.FileSearchToken
+	ShareEntries      []CreateFolderShareEntry
+}
+
+type CreateFolderShareEntry struct {
+	ShareID           string
+	EncryptedName     []byte
+	EncryptedMetadata []byte
 }
 
 type ListEntriesPageInput struct {
@@ -78,6 +85,7 @@ type RenameFolderInput struct {
 	EncryptedName     []byte
 	EncryptedMetadata []byte
 	SearchTokens      []models.FileSearchToken
+	ShareEntries      []CreateFolderShareEntry
 }
 
 type ResolveDeleteScopeInput struct {
