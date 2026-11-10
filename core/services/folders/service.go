@@ -780,6 +780,17 @@ func (s *Service) DeleteEntries(ctx context.Context, input DeleteEntriesInput) (
 		}
 		deletedFolders = int(affected)
 	}
+	if input.Permanent {
+		queuedFiles, queuedFolders, err := s.trashRepo.QueuePermanentDelete(
+			ctx, tx, userID, time.Now().Add(-filessvc.TrashRetention), scope.FileIDs, scope.FolderIDs,
+		)
+		if err != nil {
+			return DeleteEntriesResult{}, err
+		}
+		if queuedFiles != int64(len(scope.FileIDs)) || queuedFolders != int64(len(scope.FolderIDs)) {
+			return DeleteEntriesResult{}, ErrNotFound
+		}
+	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return DeleteEntriesResult{}, err

@@ -53,6 +53,7 @@ type moveFolderRequest struct {
 type deleteEntriesRequest struct {
 	FileIDs   []string `json:"fileIds"`
 	FolderIDs []string `json:"folderIds"`
+	Permanent bool     `json:"permanent"`
 }
 
 type renameEntryRequest struct {
@@ -375,6 +376,7 @@ func APIDeleteEntries(folderService *folderssvc.Service) gin.HandlerFunc {
 			UserID:    userID.(string),
 			FileIDs:   req.FileIDs,
 			FolderIDs: req.FolderIDs,
+			Permanent: req.Permanent,
 		})
 		if err != nil {
 			switch {

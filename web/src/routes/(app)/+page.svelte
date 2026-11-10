@@ -23,6 +23,7 @@
 	import { waitUntilReady } from '#lib/vault/session.ts';
 	import { vaultUnlocked } from '#lib/vault/state.ts';
 	import { addEntriesToFolderShares, getFolderShareScopes } from '#lib/shares/folder-share.ts';
+	import { createFilesPageKeyboardHandler } from './files/keyboard';
 	import type { PageProps } from './$types';
 
 	// shortcut: browsers without File System Access cannot download; add another streaming file sink when supporting them.
@@ -40,8 +41,10 @@
 	let uploadConfirmOpen = $state(false);
 	let uploadStatus = $state('');
 	let deleteDialogOpen = $state(false);
+	let permanentDeleteDialogOpen = $state(false);
 	let deleting = $state(false);
 	let deleteTargets = $state<FileManagerEntry[]>([]);
+	let permanentDeleteTargets = $state<FileManagerEntry[]>([]);
 	let cutEntries = $state<FileManagerEntry[]>([]);
 	let movingEntries = $state(false);
 	let newFolderActive = $state(false);
@@ -164,6 +167,12 @@
 		// The route is fixed; folder and view state live in its query string.
 		// eslint-disable-next-line svelte/no-navigation-without-resolve
 		void goto(resolve('/(app)') + urlFor(id));
+	}
+
+	function navigateToParentFolder(): void {
+		const parentFolderId = breadcrumbs.at(-2)?.id ?? null;
+		// eslint-disable-next-line svelte/no-navigation-without-resolve
+		void goto(resolve('/(app)') + urlFor(parentFolderId));
 	}
 
 	function openShare(fileId: string): void {
@@ -407,72 +416,6 @@
 		}
 	}
 
-	function handleFileManagerKeydown(event: KeyboardEvent): void {
-		const target = event.target;
-
-		if (event.defaultPrevented || event.repeat || !(target instanceof HTMLElement)) return;
-		if (
-			target.isContentEditable ||
-			target.closest(
-				'input:not([type="checkbox"]):not([type="radio"]), textarea, select, [contenteditable="true"]',
-			)
-		)
-			return;
-		if (
-			contextMenuOpen ||
-			imagePreviewRequest ||
-			mediaPreviewEntry ||
-			pdfPreviewEntry ||
-			document.querySelector('[data-modal-open="true"]')
-		)
-			return;
-		const command = event.ctrlKey || event.metaKey;
-
-		if (command && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'a') {
-			event.preventDefault();
-			selectAllLoaded();
-
-			return;
-		}
-		if (
-			(event.key === 'Backspace' || (event.altKey && event.key === 'ArrowLeft')) &&
-			breadcrumbs.length > 1
-		) {
-			event.preventDefault();
-			const parentFolderId = breadcrumbs.at(-2)?.id ?? null;
-			// eslint-disable-next-line svelte/no-navigation-without-resolve
-			void goto(resolve('/(app)') + urlFor(parentFolderId));
-
-			return;
-		}
-
-		if (command && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'x') {
-			if (selectedEntries.length) {
-				event.preventDefault();
-				stageCut(selectedEntries);
-			}
-
-			return;
-		}
-		if (command && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'v') {
-			if (cutEntries.length) {
-				event.preventDefault();
-				void pasteCutEntries(folderId);
-			}
-
-			return;
-		}
-		if (
-			(event.ctrlKey || event.metaKey) &&
-			event.altKey &&
-			!event.shiftKey &&
-			event.key.toLowerCase() === 'n'
-		) {
-			event.preventDefault();
-			beginNewFolder(folderId);
-		}
-	}
-
 	function showContextMenu(entry: FileManagerEntry | null, x: number, y: number): void {
 		contextMenuEntry = entry;
 		contextMenuPosition = { x, y };
@@ -633,16 +576,40 @@
 		deleteDialogOpen = deleteTargets.length > 0;
 	}
 
+	function requestPermanentDelete(entry?: FileManagerEntry): void {
+		const targets = entry
+			? selectedIds.has(fileManagerEntryKey(entry)) && selectedEntries.length
+				? selectedEntries
+				: [entry]
+			: selectedEntries;
+
+		if (!targets.length) return;
+		if (targets.length > MAX_MOVE_ENTRIES) {
+			toast.error(`Delete up to ${MAX_MOVE_ENTRIES} items at a time.`);
+
+			return;
+		}
+		permanentDeleteTargets = [...targets];
+		permanentDeleteDialogOpen = true;
+		contextMenuOpen = false;
+		contextMenuEntry = null;
+	}
+
+	function deletePayload(targets: FileManagerEntry[]): {
+		fileIds: string[];
+		folderIds: string[];
+	} {
+		return {
+			fileIds: targets.filter((entry) => entry.kind === 'file').map((entry) => entry.id),
+			folderIds: targets.filter((entry) => entry.kind === 'folder').map((entry) => entry.id),
+		};
+	}
+
 	async function deleteSelected(): Promise<void> {
 		if (deleting || !deleteTargets.length) return;
 		deleting = true;
 		try {
-			await api.post('/api/entries/delete', {
-				fileIds: deleteTargets.filter((entry) => entry.kind === 'file').map((entry) => entry.id),
-				folderIds: deleteTargets
-					.filter((entry) => entry.kind === 'folder')
-					.map((entry) => entry.id),
-			});
+			await api.post('/api/entries/delete', deletePayload(deleteTargets));
 			selectedIds.clear();
 			deleteTargets = [];
 			deleteDialogOpen = false;
@@ -654,6 +621,32 @@
 			]);
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'Could not delete selected items.');
+		} finally {
+			deleting = false;
+		}
+	}
+
+	async function permanentlyDeleteSelected(): Promise<void> {
+		if (deleting || !permanentDeleteTargets.length) return;
+		deleting = true;
+		try {
+			await api.post('/api/entries/delete', {
+				...deletePayload(permanentDeleteTargets),
+				permanent: true,
+			});
+			selectedIds.clear();
+			permanentDeleteTargets = [];
+			permanentDeleteDialogOpen = false;
+			toast.success('Permanently deleted. Storage cleanup is queued.');
+			await Promise.all([
+				queryClient.invalidateQueries({ queryKey: ['trash'] }),
+				queryClient.invalidateQueries({ queryKey: ['folder-entries'] }),
+				queryClient.invalidateQueries({ queryKey: ['search'] }),
+			]);
+		} catch (error) {
+			toast.error(
+				error instanceof Error ? error.message : 'Could not permanently delete selected items.',
+			);
 		} finally {
 			deleting = false;
 		}
@@ -699,6 +692,26 @@
 			// Preferences still work for the current page when local storage is unavailable.
 		}
 	});
+
+	const handleFileManagerKeydown = createFilesPageKeyboardHandler(() => ({
+		blocked:
+			contextMenuOpen ||
+			Boolean(imagePreviewRequest) ||
+			Boolean(mediaPreviewEntry) ||
+			Boolean(pdfPreviewEntry) ||
+			Boolean(document.querySelector('[data-modal-open="true"]')),
+		rows: displayedRows,
+		selectedEntries,
+		clipboardCount: cutEntries.length,
+		hasParent: breadcrumbs.length > 1,
+		onSelectAll: selectAllLoaded,
+		onDelete: requestDelete,
+		onPermanentDelete: requestPermanentDelete,
+		onNavigateBack: navigateToParentFolder,
+		onCut: () => stageCut(selectedEntries),
+		onPaste: () => void pasteCutEntries(folderId),
+		onNewFolder: () => beginNewFolder(folderId),
+	}));
 </script>
 
 <svelte:head>
@@ -778,8 +791,10 @@
 	{shareEntry}
 	{currentLocation}
 	{deleteDialogOpen}
+	{permanentDeleteDialogOpen}
 	{deleting}
 	{deleteTargets}
+	{permanentDeleteTargets}
 	onCloseImage={() => (imagePreviewRequest = null)}
 	onError={(message) => toast.error(message)}
 	onCloseMedia={() => (mediaPreviewEntry = null)}
@@ -809,6 +824,14 @@
 	onCloseDelete={() => {
 		if (!deleting) deleteDialogOpen = false;
 	}}
+	onPermanentDeleteEntry={requestPermanentDelete}
+	onClosePermanentDelete={() => {
+		if (!deleting) {
+			permanentDeleteDialogOpen = false;
+			permanentDeleteTargets = [];
+		}
+	}}
+	onConfirmPermanentDelete={() => void permanentlyDeleteSelected()}
 	onCancelDelete={() => (deleteDialogOpen = false)}
 	onConfirmDelete={() => void deleteSelected()}
 />

@@ -16,6 +16,7 @@
 		NEW_FOLDER_DRAFT_ID,
 		type FileManagerEntry,
 	} from './types';
+	import { createFileManagerViewKeyboardHandler } from './keyboard';
 
 	const ENTRY_COLUMNS =
 		'minmax(220px, 2fr) minmax(160px, 1.2fr) minmax(90px, 0.75fr) minmax(150px, 1fr)';
@@ -193,67 +194,15 @@
 		get(rowVirtualizer).scrollToIndex(index, { align: 'auto' });
 	}
 
-	function handleEntryKeydown(event: KeyboardEvent): void {
-		if (event.defaultPrevented || !(event.target instanceof HTMLElement)) return;
-		if (event.target.closest('[aria-modal="true"], [role="menu"]')) return;
-		if (
-			event.target.closest(
-				'input:not([type="checkbox"]), textarea, select, [contenteditable="true"]',
-			)
-		)
-			return;
-		const row = event.target.closest<HTMLElement>('[data-entry-index]');
-		const navigableIndexes = tableRows.flatMap((item, rowIndex) =>
-			item.original.id === NEW_FOLDER_DRAFT_ID ? [] : [rowIndex],
-		);
-
-		if (!row) {
-			if (!['ArrowDown', 'ArrowUp'].includes(event.key) || event.altKey) return;
-			const selected = navigableIndexes.find((index) =>
-				selectedIds.has(fileManagerEntryKey(tableRows[index].original)),
-			);
-			const first = selected ?? navigableIndexes[0];
-
-			if (first !== undefined) {
-				event.preventDefault();
-				focusEntry(first);
-			}
-
-			return;
-		}
-		const index = Number(row.dataset.entryIndex);
-
-		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-			if (event.altKey) return;
-			event.preventDefault();
-			const direction = event.key === 'ArrowDown' ? 1 : -1;
-			const current = navigableIndexes.indexOf(index);
-			const next =
-				navigableIndexes[
-					current < 0 ? (direction > 0 ? 0 : navigableIndexes.length - 1) : current + direction
-				];
-
-			if (next !== undefined) focusEntry(next);
-			else if (direction < 0) window.scrollTo({ top: 0, behavior: 'smooth' });
-		} else if (
-			(event.key === 'Enter' || event.code === 'Space') &&
-			event.target.closest('[data-entry-action]')
-		) {
-			const entry = tableRows[index]?.original;
-
-			if (!entry) return;
-			event.preventDefault();
-			if (event.code === 'Space') {
-				onSelectEntry?.(entry, event.ctrlKey || event.metaKey);
-
-				return;
-			}
-			const action = event.target.closest<HTMLElement>('[data-entry-action]')!;
-
-			if (entryActionLabel(entry)) openEntry(entry, action);
-			else onSelectEntry?.(entry, event.ctrlKey || event.metaKey);
-		}
-	}
+	const handleEntryKeydown = createFileManagerViewKeyboardHandler(() => ({
+		layout: 'list',
+		rows: tableRows.map((row) => row.original),
+		selectedIds,
+		focusEntry,
+		onSelectEntry,
+		getEntryActionLabel: entryActionLabel,
+		openEntry,
+	}));
 </script>
 
 <svelte:window onkeydown={handleEntryKeydown} />
