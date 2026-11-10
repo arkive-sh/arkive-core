@@ -638,19 +638,24 @@
 	open
 	label={entry ? `Text file ${entry.name}` : 'New text file'}
 	onClose={requestClose}
-	dialogClass="!h-[88vh] !max-h-[90vh] !w-[min(1100px,100%)] !overflow-hidden"
+	backdropClass="!overflow-hidden !p-0 max-[640px]:!items-center"
+	dialogClass="!h-dvh !max-h-dvh !w-screen !max-w-none !overflow-hidden !rounded-none !border-0 !shadow-none"
 	bodyClass="!flex !min-h-0 !flex-1 !grid-rows-[minmax(0,1fr)] !gap-0 !p-0"
 >
 	{#snippet header()}
-		<header class="flex min-w-0 items-center gap-3 border-b border-(--border) px-5 py-3">
+		<header class="flex min-w-0 items-center gap-3 border-b border-(--border) px-4 py-2">
 			<FileTypeIcon
 				name={entry?.name ?? filename}
 				mime={entry?.type ?? 'text/plain'}
 				className="size-5 shrink-0"
 			/>
-			<div class="min-w-0 flex-1">
-				<h2 class="m-0 truncate text-base font-semibold">{entry ? entry.name : 'New text file'}</h2>
-				<p class="m-0 text-xs text-(--muted)">
+			<div
+				class="flex min-w-0 flex-1 items-baseline gap-3 max-[520px]:flex-col max-[520px]:items-start max-[520px]:gap-0"
+			>
+				<h2 class="m-0 min-w-0 truncate text-base font-semibold">
+					{entry ? entry.name : 'New text file'}
+				</h2>
+				<p class="m-0 shrink-0 text-xs whitespace-nowrap text-(--muted)">
 					{loading
 						? totalPlaintextSize === null
 							? 'Loading…'
@@ -687,7 +692,7 @@
 				>
 			{/if}
 			<button
-				class="inline-flex size-9 cursor-pointer items-center justify-center rounded border border-(--border) hover:bg-(--surface-highest)"
+				class="inline-flex size-8 cursor-pointer items-center justify-center rounded border border-(--border) hover:bg-(--surface-highest)"
 				type="button"
 				aria-label="Close text editor"
 				onclick={requestClose}><X class="size-4" aria-hidden="true" /></button
