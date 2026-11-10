@@ -7,6 +7,7 @@
 	import { RotateCcw, Trash2, X } from '@lucide/svelte';
 	import { api } from '#lib/api.ts';
 	import Breadcrumbs from '#lib/components/Breadcrumbs.svelte';
+	import InfiniteScrollSentinel from '#lib/components/InfiniteScrollSentinel.svelte';
 	import FileEntryContextMenu from '../files/FileEntryContextMenu.svelte';
 	import FilesGridView from '../files/FilesGridView.svelte';
 	import FilesListView from '../files/FilesListView.svelte';
@@ -581,13 +582,20 @@
 						{#if query.isFetchNextPageError}<p class="m-0 text-red-400" role="alert">
 								Could not load more Trash entries.
 							</p>{/if}
-						<button
-							class="cursor-pointer rounded border border-(--border) px-4 py-2 disabled:cursor-not-allowed disabled:opacity-50"
-							type="button"
-							disabled={query.isFetchingNextPage}
-							onclick={() => void query.fetchNextPage()}
-							>{query.isFetchingNextPage ? 'Loading more…' : 'Load more'}</button
-						>
+						{#if query.isFetchNextPageError}
+							<button
+								class="cursor-pointer rounded border border-(--border) px-4 py-2"
+								type="button"
+								onclick={() => void query.fetchNextPage()}>Retry</button
+							>
+						{:else if query.isFetchingNextPage}
+							<p class="m-0" role="status">Loading more…</p>
+						{:else}
+							<InfiniteScrollSentinel
+								enabled={query.hasNextPage && !query.isFetching}
+								onLoad={() => void query.fetchNextPage()}
+							/>
+						{/if}
 					</div>
 				{:else}
 					<footer class="border-t border-(--border-soft) px-5 py-3 text-sm text-(--muted)">

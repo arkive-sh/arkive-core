@@ -45,7 +45,7 @@
 		class="fixed inset-0 z-50 bg-black/60"
 		data-drawer-open="true"
 		bind:this={backdrop}
-		transition:fade={{ duration: 140 }}
+		transition:fade|global={{ duration: 140 }}
 	>
 		<button
 			class="absolute inset-0 cursor-pointer border-0 bg-transparent"
@@ -55,12 +55,12 @@
 			onclick={onClose}
 		></button>
 		<div
-			class={`relative z-10 ml-auto flex h-dvh w-full max-w-[480px] flex-col overflow-hidden border-l border-(--border) bg-(--surface) shadow-[-24px_0_64px_rgba(0,0,0,0.32)] ${panelClass}`}
+			class={`relative z-10 ml-auto flex h-dvh w-full max-w-[480px] flex-col overflow-hidden border-l border-(--border) bg-(--bg) shadow-[-24px_0_64px_rgba(0,0,0,0.32)] ${panelClass}`}
 			role="dialog"
 			aria-modal="true"
 			aria-labelledby={titleId}
 			tabindex="-1"
-			transition:fly={{ x: 32, duration: 180 }}
+			transition:fly|global={{ x: 32, duration: 180 }}
 		>
 			<header
 				class="flex shrink-0 items-center justify-between gap-4 border-b border-(--border) px-5 py-4"
@@ -82,7 +82,7 @@
 			{/if}
 			{#if actions}
 				<footer
-					class={`flex shrink-0 justify-end gap-2.5 border-t border-(--border) bg-white/2 px-5 py-4 ${actionsClass}`}
+					class={`flex shrink-0 justify-end gap-2.5 border-t border-(--border) px-5 py-4 ${actionsClass}`}
 				>
 					{@render actions()}
 				</footer>

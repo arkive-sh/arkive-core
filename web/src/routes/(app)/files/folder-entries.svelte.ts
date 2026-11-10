@@ -5,9 +5,9 @@ import { imageMimeType } from '#lib/utils/image.ts';
 import { decryptSearchFile, decryptSearchFolder } from '#lib/vault/search.ts';
 import { fileManagerEntryKey, type FileManagerEntry } from './types';
 
-const PAGE_SIZE = 50;
+export const FOLDER_ENTRIES_PAGE_SIZE = 50;
 
-type ApiFolder = {
+export type ApiFolder = {
 	ID: string;
 	VaultID: string;
 	ParentFolderID: string | null;
@@ -17,7 +17,7 @@ type ApiFolder = {
 	UpdatedAt: string;
 };
 
-type ApiFile = {
+export type ApiFile = {
 	ID: string;
 	FolderID: string | null;
 	EncryptedMetadata: string;
@@ -26,7 +26,7 @@ type ApiFile = {
 	IsShared: boolean;
 };
 
-type FolderEntriesResponse = {
+export type FolderEntriesResponse = {
 	FolderID: string | null;
 	Path: ApiFolder[];
 	Folders: ApiFolder[];
@@ -67,7 +67,7 @@ export function createFolderEntries(
 				const { data: result } = await api.get<FolderEntriesResponse>(endpoint, {
 					params: {
 						cursor: pageParam ?? undefined,
-						pageSize: PAGE_SIZE,
+						pageSize: FOLDER_ENTRIES_PAGE_SIZE,
 						seekEntryId: pageParam === null ? (focusFileId ?? undefined) : undefined,
 					},
 					signal,
