@@ -9,6 +9,7 @@
 		X,
 	} from '@lucide/svelte';
 	import Breadcrumbs from '#lib/components/Breadcrumbs.svelte';
+	import InfiniteScrollSentinel from '#lib/components/InfiniteScrollSentinel.svelte';
 	import FilesGridView from './FilesGridView.svelte';
 	import FilesListView from './FilesListView.svelte';
 	import FilesViewOptions from './FilesViewOptions.svelte';
@@ -120,33 +121,10 @@
 		onShowDimensionsChange: (show: boolean) => void;
 	} = $props();
 
-	let sentinel = $state<HTMLDivElement>();
 	const selectedCount = $derived(selectedEntries.length);
 	const showSelectionToolbar = $derived(
 		(rows.length > 0 && viewMode === 'grid') || selectedCount > 0 || clipboardCount > 0,
 	);
-
-	$effect(() => {
-		const target = sentinel;
-
-		if (
-			!target ||
-			!query.hasNextPage ||
-			query.isFetching ||
-			typeof IntersectionObserver === 'undefined'
-		)
-			return;
-		const observer = new IntersectionObserver(
-			([entry]) => {
-				if (entry?.isIntersecting && query.hasNextPage && !query.isFetching)
-					void query.fetchNextPage();
-			},
-			{ rootMargin: '400px' },
-		);
-		observer.observe(target);
-
-		return () => observer.disconnect();
-	});
 </script>
 
 <div class="min-h-full bg-(--bg) py-6 pb-8">
@@ -329,8 +307,6 @@
 
 					{#if entriesReady && query.hasNextPage}
 						<div
-							bind:this={sentinel}
-							data-upload-click-ignore
 							class="flex flex-col items-center gap-2 border-t border-(--border-soft) py-3 text-sm text-(--muted)"
 						>
 							{#if query.isFetchNextPageError}<p class="m-0 text-red-400" role="alert">
@@ -338,13 +314,20 @@
 										? query.error.message
 										: 'Could not load more files.'}
 								</p>{/if}
-							<button
-								class="cursor-pointer rounded border border-(--border) px-4 py-2 disabled:cursor-not-allowed disabled:opacity-50"
-								type="button"
-								disabled={query.isFetchingNextPage}
-								onclick={() => void query.fetchNextPage()}
-								>{query.isFetchingNextPage ? 'Loading more…' : 'Load more'}</button
-							>
+							{#if query.isFetchNextPageError}
+								<button
+									class="cursor-pointer rounded border border-(--border) px-4 py-2"
+									type="button"
+									onclick={() => void query.fetchNextPage()}>Retry</button
+								>
+							{:else if query.isFetchingNextPage}
+								<p class="m-0" role="status">Loading more…</p>
+							{:else}
+								<InfiniteScrollSentinel
+									enabled={query.hasNextPage && !query.isFetching}
+									onLoad={() => void query.fetchNextPage()}
+								/>
+							{/if}
 						</div>
 					{:else if entriesReady}
 						<footer class="border-t border-(--border-soft) py-3 text-sm text-(--muted)">

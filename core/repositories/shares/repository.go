@@ -826,7 +826,7 @@ func (r *Repository) ListSharesForUser(ctx context.Context, db database.PgExecut
 		f.encrypted_metadata,
 		f.encrypted_file_key,
 		f.deleted_at,
-		folder.vault_id,
+		COALESCE(folder.vault_id::text, ''),
 		folder.parent_folder_id,
 		folder.encrypted_name,
 		folder.encrypted_metadata,

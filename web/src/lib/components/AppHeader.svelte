@@ -3,9 +3,10 @@
 	import { resolve } from '$app/paths';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import { get } from 'svelte/store';
-	import { Bell, CircleUser, Lock, Menu, Search, Unlock } from '@lucide/svelte';
+	import { Bell, CircleUser, Lock, Search, Unlock } from '@lucide/svelte';
 	import { logoutAndLock } from '#lib/auth.ts';
 	import Dropdown from '#lib/components/Dropdown.svelte';
+	import SidebarToggle from '#lib/components/SidebarToggle.svelte';
 	import { useTransferManager } from '#lib/transfers/manager.ts';
 	import { toast } from '#lib/toast.ts';
 
@@ -13,7 +14,8 @@
 		user: { name: string; username: string; email: string };
 		mobileView: boolean;
 		mobileOpen: boolean;
-		desktopCollapsed: boolean;
+		desktopOpen: boolean;
+		sidebarTransitioning: boolean;
 		vaultUnlocked: boolean;
 		onToggleSidebar: () => void;
 		onToggleVault: () => void;
@@ -24,7 +26,8 @@
 		user,
 		mobileView,
 		mobileOpen,
-		desktopCollapsed,
+		desktopOpen,
+		sidebarTransitioning,
 		vaultUnlocked,
 		onToggleSidebar,
 		onToggleVault,
@@ -61,22 +64,18 @@
 </script>
 
 <header
-	class={`sticky top-0 z-15 border-b border-(--border) bg-(--bg) ${desktopCollapsed ? '' : 'min-[961px]:ml-16'}`}
+	class={`sticky top-0 z-15 border-b border-(--border) bg-(--bg) ${sidebarTransitioning ? 'transition-[margin-left] duration-240 ease-[ease]' : ''} ${desktopOpen ? 'min-[961px]:ml-(--sidebar-width)' : ''}`}
 >
 	<div
 		class="flex min-h-14 flex-wrap items-center justify-between gap-4 px-3 pt-2 pb-3 min-[721px]:px-5 min-[721px]:pb-2"
 	>
 		<div class="flex min-w-0 flex-1 items-center gap-3 min-[721px]:flex-initial">
-			<button
-				class="inline-flex size-9 shrink-0 cursor-pointer items-center justify-center rounded border border-(--border) bg-transparent p-0 text-(--muted) hover:bg-(--surface-raised) hover:text-(--text)"
-				type="button"
-				aria-controls="app-sidebar"
-				aria-expanded={mobileView ? mobileOpen : !desktopCollapsed}
-				aria-label={(mobileView ? mobileOpen : !desktopCollapsed) ? 'Close menu' : 'Open menu'}
-				onclick={onToggleSidebar}
-			>
-				<Menu class="size-5 stroke-2" aria-hidden="true" />
-			</button>
+			<SidebarToggle
+				open={mobileView ? mobileOpen : desktopOpen}
+				controls="app-sidebar"
+				label={mobileView ? (mobileOpen ? 'Close menu' : 'Open menu') : undefined}
+				onToggle={onToggleSidebar}
+			/>
 			<div
 				class="flex min-h-10 w-full min-w-0 items-center gap-2.5 rounded border border-(--border) bg-(--surface-raised) px-3.5 min-[721px]:w-[min(456px,48vw)]"
 			>

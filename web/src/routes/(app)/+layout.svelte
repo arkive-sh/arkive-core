@@ -14,9 +14,13 @@
 	let { data, children }: LayoutProps = $props();
 	let mobileView = $state(false);
 	let mobileOpen = $state(false);
-	let desktopCollapsed = $state(false);
+	let desktopOpen = $state(true);
+	let sidebarTransitioning = $state(false);
+	let sidebarWidth = $state(200);
 	let searchOpen = $state(false);
 	let vaultReady = $state(false);
+	let sidebarTransitionTimer: ReturnType<typeof setTimeout> | undefined;
+	const sidebarWidthStorageKey = 'arkive.sidebar.width';
 
 	function setMobileOpen(open: boolean) {
 		mobileOpen = open;
@@ -24,13 +28,52 @@
 	}
 
 	function toggleSidebar() {
-		if (mobileView) setMobileOpen(!mobileOpen);
-		else desktopCollapsed = !desktopCollapsed;
+		if (mobileView) {
+			setMobileOpen(!mobileOpen);
+
+			return;
+		}
+
+		desktopOpen = !desktopOpen;
+		sidebarTransitioning = true;
+		clearTimeout(sidebarTransitionTimer);
+		sidebarTransitionTimer = setTimeout(() => (sidebarTransitioning = false), 240);
 	}
 
 	function closeSidebar() {
 		if (mobileView) setMobileOpen(false);
-		else desktopCollapsed = true;
+	}
+
+	function openFolder(folderId: string) {
+		const view = page.url.searchParams.get('view') === 'grid' ? '&view=grid' : '';
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve adds the route base before the query string.
+		void goto(`${resolve('/(app)')}?folder_id=${encodeURIComponent(folderId)}${view}`);
+	}
+
+	function openFile(fileId: string, folderId: string | null) {
+		const folder = folderId ? `folder_id=${encodeURIComponent(folderId)}&` : '';
+		const view = page.url.searchParams.get('view') === 'grid' ? '&view=grid' : '';
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve adds the route base before the query string.
+		void goto(`${resolve('/(app)')}?${folder}focus_file=${encodeURIComponent(fileId)}${view}`);
+	}
+
+	function openTrashFolder(folderId: string) {
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve adds the route base before the query string.
+		void goto(`${resolve('/(app)/trash')}?folder_id=${encodeURIComponent(folderId)}`);
+	}
+
+	function openTrashFile(fileId: string, folderId: string | null) {
+		const folder = folderId ? `folder_id=${encodeURIComponent(folderId)}&` : '';
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve adds the route base before the query string.
+		void goto(`${resolve('/(app)/trash')}?${folder}focus_file=${encodeURIComponent(fileId)}`);
+	}
+
+	function updateSidebarWidth(width: number) {
+		sidebarWidth = width;
+	}
+
+	function persistSidebarWidth(width: number) {
+		localStorage.setItem(sidebarWidthStorageKey, String(width));
 	}
 
 	function openSearch() {
@@ -60,10 +103,13 @@
 
 	onMount(() => {
 		void waitUntilReady().then(() => (vaultReady = true));
+		const savedSidebarWidth = Number(localStorage.getItem(sidebarWidthStorageKey));
+
+		if (savedSidebarWidth >= 160 && savedSidebarWidth <= 320) sidebarWidth = savedSidebarWidth;
+
 		const media = window.matchMedia('(max-width: 960px)');
 		const syncView = () => {
 			mobileView = media.matches;
-			if (media.matches) desktopCollapsed = false;
 			setMobileOpen(false);
 		};
 		const closeOnEscape = (event: KeyboardEvent) => {
@@ -81,6 +127,7 @@
 		return () => {
 			media.removeEventListener('change', syncView);
 			window.removeEventListener('keydown', closeOnEscape);
+			clearTimeout(sidebarTransitionTimer);
 			document.body.classList.remove('overflow-hidden');
 		};
 	});
@@ -90,12 +137,13 @@
 	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
-<div class="min-h-screen overflow-x-clip bg-(--bg)">
+<div class="min-h-screen overflow-x-clip bg-(--bg)" style={`--sidebar-width:${sidebarWidth}px`}>
 	<AppHeader
 		user={data.user}
 		{mobileView}
 		{mobileOpen}
-		{desktopCollapsed}
+		{desktopOpen}
+		{sidebarTransitioning}
 		vaultUnlocked={$vaultUnlocked}
 		onToggleSidebar={toggleSidebar}
 		onToggleVault={toggleVault}
@@ -110,14 +158,25 @@
 	/>
 	<AppSidebar
 		currentPath={page.url.pathname}
+		currentFolderId={page.url.searchParams.get('folder_id')}
+		currentFileId={page.url.searchParams.get('focus_file')}
+		vaultId={data.user.id}
+		vaultUnlocked={$vaultUnlocked}
 		{mobileView}
 		{mobileOpen}
-		{desktopCollapsed}
+		{desktopOpen}
+		{sidebarWidth}
+		onResize={updateSidebarWidth}
+		onResizeCommit={persistSidebarWidth}
+		onOpenFolder={openFolder}
+		onOpenFile={openFile}
+		onOpenTrashFolder={openTrashFolder}
+		onOpenTrashFile={openTrashFile}
 		onClose={closeSidebar}
 		onNavigate={() => mobileView && setMobileOpen(false)}
 	/>
 	<main
-		class={`min-h-[calc(100vh-56px)] overflow-x-clip ${desktopCollapsed ? '' : 'min-[961px]:ml-16'}`}
+		class={`min-h-[calc(100vh-56px)] overflow-x-clip ${sidebarTransitioning ? 'transition-[margin-left] duration-240 ease-[ease]' : ''} ${desktopOpen ? 'min-[961px]:ml-(--sidebar-width)' : ''}`}
 		id="main-content"
 	>
 		{@render children()}
