@@ -1,34 +1,20 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { onDestroy, onMount } from 'svelte';
-	import { SvelteSet } from 'svelte/reactivity';
-	import {
-		Database,
-		Download,
-		Eye,
-		EyeOff,
-		Folder,
-		LayoutGrid,
-		LayoutList,
-		LockKeyhole,
-	} from '@lucide/svelte';
+	import { Database, Download, Eye, EyeOff, LockKeyhole } from '@lucide/svelte';
 	import axios from 'axios';
 	import { api } from '#lib/api.ts';
 	import FileTypeIcon from '#lib/components/FileTypeIcon.svelte';
 	import { streamDownload } from '#lib/downloads/stream.ts';
 	import { useTransferManager } from '#lib/transfers/manager.ts';
-	import FileEntryContextMenu from '../../(app)/files/FileEntryContextMenu.svelte';
-	import FilesGridView from '../../(app)/files/FilesGridView.svelte';
-	import FilesListView from '../../(app)/files/FilesListView.svelte';
+	import PublicSharedFolderBrowser from './PublicSharedFolderBrowser.svelte';
 	import { formatBytes } from '#lib/utils/format.ts';
-	import { isAudioMimeType } from '#lib/utils/media.ts';
+	import { isAudioMimeType, isMediaMimeType } from '#lib/utils/media.ts';
 	import { isImageFile } from '#lib/utils/image.ts';
-	import { decodeJSON, fromBase64 } from '#lib/vault/bytes.ts';
+	import { fromBase64 } from '#lib/vault/bytes.ts';
 	import {
 		closePublicShareContext,
 		decryptPublicShareChunk,
-		openPublicShareFileMetadata,
-		openPublicShareFolder,
 		openPublicShareContext,
 	} from '#lib/vault/shares.ts';
 	import {
@@ -37,21 +23,18 @@
 		type FileReaderSource,
 	} from '#lib/vault/read-file.ts';
 	import type { PublicShareCryptoRecord, VaultMetadata } from '#lib/vault/types.ts';
-	import { isPdfFile, type FileManagerEntry, type FilesView } from '../../(app)/files/types';
+	import { isPdfFile, isTextFile, type FileManagerEntry } from '../../(app)/files/types';
 	import EncryptedMediaPlayer from '../../(app)/files/EncryptedMediaPlayer.svelte';
 	import ImageViewer from '../../(app)/files/ImageViewer.svelte';
 	import MediaViewer from '../../(app)/files/MediaViewer.svelte';
 	import PdfViewer from '../../(app)/files/PdfViewer.svelte';
+	import TextFileEditor from '../../(app)/files/TextFileEditor.svelte';
 
-	type PublicShareRecord = {
-		itemType: 'file' | 'folder';
-		shareId: string;
+	type PublicFileShareRecord = {
+		itemType: 'file';
 		token: string;
-		fileId?: string;
-		folderId?: string;
+		fileId: string;
 		vaultId: string;
-		encryptedFolderName?: string;
-		encryptedFolderMetadata?: string;
 		encryptionVersion: number;
 		chunkSize: number;
 		totalChunks: number;
@@ -63,24 +46,22 @@
 		allowPreview: boolean;
 		allowDownload: boolean;
 	};
-	type PublicFolderEntry = {
-		id: string;
-		kind: 'folder' | 'file';
-		name: string;
-		type: string;
-		size: number | null;
-		updatedAt: string;
-		vaultId: string;
-		encryptedName?: string;
-		encryptedMetadata?: string;
-		encryptedFileKeyForShare?: string;
+	type PublicFolderShareRecord = {
+		itemType: 'folder';
+		token: string;
+		folderId: string;
+		encryptedFolderName: string;
+		encryptedFolderMetadata: string;
+		allowPreview: boolean;
+		allowDownload: boolean;
 	};
+	type PublicShareRecord = PublicFileShareRecord | PublicFolderShareRecord;
 
 	type FilePickerWindow = Window & {
 		showSaveFilePicker?: (options?: { suggestedName?: string }) => Promise<FileSystemFileHandle>;
 	};
 
-	let shareKey: Uint8Array | null = null;
+	let shareKey = $state<Uint8Array | null>(null);
 	const token = $derived(page.params.token ?? '');
 	const transfers = useTransferManager();
 	let fileReader = $state<DecryptedFileReader | undefined>();
@@ -89,20 +70,12 @@
 		null,
 	);
 	let permissions = $state({ preview: false, download: false });
-	let folderShare = $state<PublicShareRecord | null>(null);
-	let folderPath = $state<Array<{ id: string; name: string }>>([]);
-	let folderEntries = $state<PublicFolderEntry[]>([]);
-	const noSelection = new SvelteSet<string>();
-	let folderView = $state<FilesView>('list');
-	let folderCursor = $state<string | null>(null);
-	let folderLoading = $state(false);
+	let folderShare = $state<PublicFolderShareRecord | null>(null);
+	let folderImageEntries = $state<FileManagerEntry[]>([]);
 	let previewOpen = $state(false);
 	let imagePreviewRequest = $state<{ fileId: string } | null>(null);
 	let loading = $state(true);
 	let startingDownload = $state(false);
-	let contextMenuEntry = $state<FileManagerEntry | null>(null);
-	let contextMenuPosition = $state({ x: 0, y: 0 });
-	let contextMenuOpen = $derived(contextMenuEntry !== null);
 	let passwordRequired = $state(false);
 	let password = $state('');
 	let error = $state('');
@@ -115,24 +88,25 @@
 			fileReader = undefined;
 			openedRecord = null;
 			metadata = null;
+			folderImageEntries = [];
 		}
 	}
 
 	function createShareReader(
-		share: PublicShareRecord,
+		share: PublicFileShareRecord,
 		secret: Uint8Array,
 		signal?: AbortSignal,
 	): DecryptedFileReader {
 		const cryptoRecord: PublicShareCryptoRecord = {
 			token: share.token,
-			fileId: share.fileId!,
+			fileId: share.fileId,
 			vaultId: share.vaultId,
 			encryptedFileKeyForShare: share.encryptedFileKeyForShare,
 			encryptedMetadata: share.encryptedMetadata,
 			encryptedManifest: share.encryptedManifest,
 		};
 		const record: EncryptedFileRecord = {
-			fileId: share.fileId!,
+			fileId: share.fileId,
 			vaultId: share.vaultId,
 			folderId: null,
 			encryptedFileKey: '',
@@ -155,151 +129,28 @@
 			dispose: () => readerSecret.fill(0),
 		};
 
-		return new DecryptedFileReader(share.fileId!, signal, source);
+		return new DecryptedFileReader(share.fileId, signal, source);
 	}
 
-	async function decryptFolderName(
-		folderId: string,
-		encryptedName: string,
-		encryptedMetadata: string,
-	): Promise<string> {
-		if (!shareKey || !folderShare) throw new Error('Share key is unavailable.');
-		const decrypted = await openPublicShareFolder(
-			folderId,
-			token,
-			encryptedName,
-			encryptedMetadata,
-			shareKey.slice(),
-		);
-		const nameMetadata = decodeJSON<VaultMetadata>(decrypted.nameBytes);
-		decodeJSON<VaultMetadata>(decrypted.metadataBytes);
-
-		return typeof nameMetadata.name === 'string' ? nameMetadata.name : 'Shared folder';
-	}
-
-	async function loadFolderEntries(folderId: string, append = false): Promise<void> {
-		if (!folderShare) return;
-		folderLoading = true;
-		error = '';
-		if (!append) {
-			folderEntries = [];
-			folderCursor = null;
-		}
-		try {
-			const { data } = await api.get<{
-				folders: Array<{
-					id: string;
-					vaultId: string;
-					parentFolderId: string | null;
-					encryptedName: string;
-					encryptedMetadata: string;
-					updatedAt: string;
-				}>;
-				files: Array<{
-					id: string;
-					vaultId: string;
-					folderId: string;
-					encryptedMetadata: string;
-					encryptedFileKeyForShare: string;
-					updatedAt: string;
-				}>;
-				nextCursor: string;
-			}>(
-				`/api/public/shares/${encodeURIComponent(token)}/folders/${encodeURIComponent(folderId)}/entries`,
-				{
-					params: { pageSize: 50, cursor: append ? (folderCursor ?? undefined) : undefined },
-				},
-			);
-			const folders = await Promise.all(
-				data.folders.map(async (folder): Promise<PublicFolderEntry> => ({
-					id: folder.id,
-					kind: 'folder',
-					name: await decryptFolderName(folder.id, folder.encryptedName, folder.encryptedMetadata),
-					type: 'Folder',
-					size: null,
-					updatedAt: folder.updatedAt,
-					vaultId: folder.vaultId,
-					encryptedName: folder.encryptedName,
-					encryptedMetadata: folder.encryptedMetadata,
-				})),
-			);
-			const files = await Promise.all(
-				data.files.map(async (file): Promise<PublicFolderEntry> => {
-					if (!shareKey) throw new Error('Share key is unavailable.');
-					const decrypted = await openPublicShareFileMetadata(
-						{
-							token,
-							fileId: file.id,
-							vaultId: file.vaultId,
-							encryptedFileKeyForShare: file.encryptedFileKeyForShare,
-							encryptedMetadata: file.encryptedMetadata,
-						},
-						shareKey.slice(),
-					);
-					const metadata = decodeJSON<VaultMetadata>(decrypted.metadataBytes);
-
-					return {
-						id: file.id,
-						kind: 'file',
-						name: typeof metadata.name === 'string' ? metadata.name : 'Shared file',
-						type: typeof metadata.mime === 'string' ? metadata.mime : 'application/octet-stream',
-						size: typeof metadata.size === 'number' ? metadata.size : null,
-						updatedAt: file.updatedAt,
-						vaultId: file.vaultId,
-						encryptedMetadata: file.encryptedMetadata,
-						encryptedFileKeyForShare: file.encryptedFileKeyForShare,
-					};
-				}),
-			);
-			const nextEntries = [...folders, ...files].sort((a, b) => a.name.localeCompare(b.name));
-			folderEntries = append ? [...folderEntries, ...nextEntries] : nextEntries;
-			folderCursor = data.nextCursor || null;
-		} catch (cause) {
-			error = cause instanceof Error ? cause.message : 'Could not load this folder.';
-
-			throw cause;
-		} finally {
-			folderLoading = false;
-		}
-	}
-
-	async function openFolder(entry: PublicFolderEntry): Promise<void> {
-		try {
-			await loadFolderEntries(entry.id);
-			folderPath = [...folderPath, { id: entry.id, name: entry.name }];
-		} catch {
-			// The error is shown by the folder view.
-		}
-	}
-
-	function openFolderById(folderId: string): void {
-		const entry = folderEntries.find(
-			(candidate) => candidate.kind === 'folder' && candidate.id === folderId,
-		);
-
-		if (entry) void openFolder(entry);
-	}
-
-	function showContextMenu(entry: FileManagerEntry | null, x: number, y: number): void {
-		contextMenuEntry = entry;
-		contextMenuPosition = { x, y };
-	}
-
-	async function openFolderFile(entry: FileManagerEntry): Promise<void> {
+	async function openFolderFile(
+		entry: FileManagerEntry,
+		imageEntries: FileManagerEntry[] = [],
+	): Promise<void> {
+		if (!folderShare || !shareKey) return;
+		folderImageEntries = imageEntries;
 		loading = true;
 		error = '';
 		try {
-			const { data: share } = await api.get<PublicShareRecord>(
+			const { data: share } = await api.get<PublicFileShareRecord>(
 				`/api/public/shares/${encodeURIComponent(token)}/files/${encodeURIComponent(entry.id)}`,
 			);
 			permissions = { preview: share.allowPreview, download: share.allowDownload };
-			if (folderShare && !share.allowPreview)
-				throw new Error('The owner has disabled previews for this link.');
-			const reader = createShareReader(share, shareKey!);
+			if (!share.allowPreview) throw new Error('The owner has disabled previews for this link.');
+			const reader = createShareReader(share, shareKey);
 			fileReader = reader;
 			const loaded = await reader.load();
 
-			if (folderShare && !supportsPreview(loaded.metadata)) {
+			if (!supportsPreview(loaded.metadata)) {
 				await reader.dispose();
 				fileReader = undefined;
 
@@ -311,15 +162,8 @@
 			}
 			openedRecord = loaded.record;
 			metadata = loaded.metadata;
-			if (folderShare && permissions.preview) {
-				previewOpen = true;
-				imagePreviewRequest = isImageFile(entry.name, entry.type) ? { fileId: entry.id } : null;
-			} else if (permissions.preview && supportsPreview(loaded.metadata)) {
-				if (isImageFile(entry.name, entry.type) || isPdfFile(entry)) {
-					previewOpen = true;
-					imagePreviewRequest = isImageFile(entry.name, entry.type) ? { fileId: entry.id } : null;
-				}
-			}
+			previewOpen = true;
+			imagePreviewRequest = isImageFile(entry.name, entry.type) ? { fileId: entry.id } : null;
 		} catch (cause) {
 			await fileReader?.dispose();
 			fileReader = undefined;
@@ -331,28 +175,30 @@
 		}
 	}
 
-	async function navigateToBreadcrumb(index: number): Promise<void> {
-		const destination = folderPath[index];
-
-		if (!destination || index === folderPath.length - 1) return;
-		try {
-			await loadFolderEntries(destination.id);
-			folderPath = folderPath.slice(0, index + 1);
-		} catch {
-			// The error is shown by the folder view.
-		}
-	}
-
 	async function getCurrentShareFile(
 		fileId: string,
 		signal?: AbortSignal,
-	): Promise<PublicShareRecord> {
+	): Promise<PublicFileShareRecord> {
 		const path = folderShare
 			? `/api/public/shares/${encodeURIComponent(token)}/files/${encodeURIComponent(fileId)}`
 			: `/api/public/shares/${encodeURIComponent(token)}`;
-		const { data } = await api.get<PublicShareRecord>(path, { signal });
+		const { data } = await api.get<PublicFileShareRecord>(path, { signal });
 
 		return data;
+	}
+
+	async function getPublicImageReader(
+		entry: FileManagerEntry,
+		signal?: AbortSignal,
+	): Promise<DecryptedFileReader> {
+		if (!folderShare || !shareKey) throw new Error('The shared folder is unavailable.');
+		if (openedRecord?.fileId === entry.id && fileReader) return fileReader;
+
+		const share = await getCurrentShareFile(entry.id, signal);
+
+		if (!share.allowPreview) throw new Error('The owner has disabled previews for this link.');
+
+		return createShareReader(share, shareKey, signal);
 	}
 
 	async function openShare(): Promise<void> {
@@ -365,9 +211,6 @@
 		openedRecord = null;
 		metadata = null;
 		folderShare = null;
-		folderPath = [];
-		folderEntries = [];
-		folderCursor = null;
 
 		try {
 			const { data: share } = await api.get<PublicShareRecord>(
@@ -383,13 +226,6 @@
 				if (!share.folderId || !share.encryptedFolderName || !share.encryptedFolderMetadata)
 					throw new Error('The shared folder is unavailable.');
 				folderShare = share;
-				const name = await decryptFolderName(
-					share.folderId,
-					share.encryptedFolderName,
-					share.encryptedFolderMetadata,
-				);
-				folderPath = [{ id: share.folderId, name }];
-				await loadFolderEntries(share.folderId);
 
 				return;
 			}
@@ -416,10 +252,9 @@
 
 		return (
 			isImageFile(file.name || '', mime) ||
-			isAudioMimeType(mime) ||
-			mime.startsWith('video/') ||
-			mime.toLowerCase() === 'application/pdf' ||
-			file.name?.toLowerCase().endsWith('.pdf') === true
+			isMediaMimeType(mime) ||
+			isPdfFile({ name: file.name || '', type: mime }) ||
+			isTextFile({ name: file.name || '', type: mime })
 		);
 	}
 
@@ -614,117 +449,16 @@
 			>
 				{error}
 			</section>
-		{:else if folderShare}
-			<section class="flex min-h-0 flex-1 flex-col">
-				<nav
-					class="flex min-w-0 items-center gap-3 border-b border-[#30363d] py-3 text-sm"
-					aria-label="Folder path"
-				>
-					<div class="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
-						<Folder class="size-5 shrink-0 text-sky-400" aria-hidden="true" />
-						{#each folderPath as crumb, index (crumb.id)}
-							{#if index > 0}<span class="text-[#6f7983]" aria-hidden="true">/</span>{/if}
-							{#if index < folderPath.length - 1}
-								<button
-									class="max-w-52 shrink-0 cursor-pointer truncate border-0 bg-transparent p-0 text-[#aeb8c2] hover:text-white"
-									type="button"
-									onclick={() => void navigateToBreadcrumb(index)}>{crumb.name}</button
-								>
-							{:else}
-								<span class="max-w-52 shrink-0 truncate text-[#e5eaef]" aria-current="page"
-									>{crumb.name}</span
-								>
-							{/if}
-						{/each}
-					</div>
-					<span class="shrink-0 text-[#87929a] max-[520px]:hidden">Read-only</span>
-					<div
-						class="inline-flex shrink-0 items-center rounded-md border border-[#30363d] bg-[#161b22] p-1"
-						role="group"
-						aria-label="Folder view"
-					>
-						<button
-							class={`inline-flex size-9 cursor-pointer items-center justify-center rounded transition-colors ${folderView === 'list' ? 'bg-[#30363d] text-[#e5eaef]' : 'text-[#87929a] hover:text-white'}`}
-							type="button"
-							aria-label="List view"
-							aria-pressed={folderView === 'list'}
-							onclick={() => (folderView = 'list')}
-						>
-							<LayoutList class="size-4.5" aria-hidden="true" />
-						</button>
-						<button
-							class={`inline-flex size-9 cursor-pointer items-center justify-center rounded transition-colors ${folderView === 'grid' ? 'bg-[#30363d] text-[#e5eaef]' : 'text-[#87929a] hover:text-white'}`}
-							type="button"
-							aria-label="Grid view"
-							aria-pressed={folderView === 'grid'}
-							onclick={() => (folderView = 'grid')}
-						>
-							<LayoutGrid class="size-4.5" aria-hidden="true" />
-						</button>
-					</div>
-				</nav>
-				{#if error}<p class="m-0 border-b border-[#30363d] py-3 text-red-400" role="alert">
-						{error}
-					</p>{/if}
-				{#if folderEntries.length === 0 && folderLoading}
-					<p class="py-8 text-center text-[#87929a]" role="status">Loading folder…</p>
-				{:else if folderView === 'grid'}
-					<FilesGridView
-						rows={folderEntries}
-						focusFileId={null}
-						selectedIds={noSelection}
-						selectionEnabled={false}
-						previewEnabled={permissions.preview}
-						tileSize={200}
-						showType={false}
-						showSize={true}
-						showDimensions={false}
-						creatingFolder={false}
-						onCreateFolder={() => {}}
-						onCancelNewFolder={() => {}}
-						onToggleSelection={() => {}}
-						onOpenFolder={openFolderById}
-						onShowContextMenu={showContextMenu}
-						onPreviewImage={(entry) => void openFolderFile(entry)}
-						onPreviewMedia={(entry) => void openFolderFile(entry)}
-						onPreviewPdf={(entry) => void openFolderFile(entry)}
-						onPreviewText={(entry) => void openFolderFile(entry)}
-					/>
-				{:else}
-					<FilesListView
-						rows={folderEntries}
-						focusFileId={null}
-						selectedIds={noSelection}
-						selectionEnabled={false}
-						previewEnabled={permissions.preview}
-						selectedCount={0}
-						loadedCount={folderEntries.length}
-						showDimensions={false}
-						creatingFolder={false}
-						onCreateFolder={() => {}}
-						onCancelNewFolder={() => {}}
-						onToggleSelection={() => {}}
-						onToggleAll={() => {}}
-						onOpenFolder={openFolderById}
-						onShowContextMenu={showContextMenu}
-						onPreviewImage={(entry) => void openFolderFile(entry)}
-						onPreviewMedia={(entry) => void openFolderFile(entry)}
-						onPreviewPdf={(entry) => void openFolderFile(entry)}
-						onPreviewText={(entry) => void openFolderFile(entry)}
-					/>
-				{/if}
-				{#if folderCursor}
-					<div class="flex justify-center border-t border-[#30363d] py-4">
-						<button
-							class="cursor-pointer rounded border border-[#30363d] bg-transparent px-4 py-2 text-[#dee3e8] disabled:opacity-50"
-							type="button"
-							disabled={folderLoading}
-							onclick={() => void loadFolderEntries(folderPath.at(-1)!.id, true)}
-							>{folderLoading ? 'Loading…' : 'Load more'}</button
-						>
-					</div>
-				{/if}
-			</section>
+		{:else if folderShare && shareKey}
+			<PublicSharedFolderBrowser
+				share={folderShare}
+				{shareKey}
+				allowPreview={permissions.preview}
+				allowDownload={permissions.download}
+				bind:error
+				onOpenFile={openFolderFile}
+				onDownloadFile={downloadSharedFile}
+			/>
 		{:else if metadata && shareEntry}
 			<section
 				class="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-lg border border-[#30363d] bg-[#161b22] shadow-[0_28px_90px_rgb(0_0_0_/_42%)]"
@@ -788,37 +522,33 @@
 							</div>
 						{/if}
 
-						{#if !folderShare}
-							<div class="flex flex-wrap justify-center gap-3 max-[640px]:gap-2">
-								{#if permissions.preview && (isImageFile(shareEntry.name, shareEntry.type) || isPdfFile(shareEntry))}
-									<button
-										class="inline-flex min-h-12 cursor-pointer items-center justify-center gap-3 rounded-[4px] border-0 bg-[linear-gradient(180deg,#4ab8f0,#3aa9e3)] px-6 text-[13px] font-extrabold tracking-[0.08em] text-[#052235] uppercase hover:brightness-[1.06] disabled:cursor-wait disabled:opacity-[0.65] max-[640px]:min-h-[42px] max-[640px]:px-[14px] max-[640px]:text-[11px]"
-										type="button"
-										onclick={openFilePreview}
-									>
-										<Eye class="size-4" aria-hidden="true" />
-										Preview file
-									</button>
-								{/if}
-								{#if permissions.download}
-									<button
-										class="inline-flex min-h-12 cursor-pointer items-center justify-center gap-3 rounded-[4px] border-0 bg-[linear-gradient(180deg,#4ab8f0,#3aa9e3)] px-6 text-[13px] font-extrabold tracking-[0.08em] text-[#052235] uppercase hover:brightness-[1.06] disabled:cursor-wait disabled:opacity-[0.65] max-[640px]:min-h-[42px] max-[640px]:px-[14px] max-[640px]:text-[11px]"
-										type="button"
-										disabled={startingDownload}
-										onclick={() => downloadSharedFile()}
-									>
-										<Download class="size-4" aria-hidden="true" />
-										{startingDownload ? 'Choose save location…' : 'Download file'}
-									</button>
-								{/if}
-								{#if !permissions.preview && !permissions.download}
-									<p class="m-0 leading-[1.55] text-[#87929a]">
-										This link has no available actions.
-									</p>
-								{/if}
-								{#if error}<p class="m-0 leading-[1.5] text-red-400" role="alert">{error}</p>{/if}
-							</div>
-						{/if}
+						<div class="flex flex-wrap justify-center gap-3 max-[640px]:gap-2">
+							{#if permissions.preview && (isImageFile(shareEntry.name, shareEntry.type) || isPdfFile(shareEntry) || isTextFile(shareEntry))}
+								<button
+									class="inline-flex min-h-12 cursor-pointer items-center justify-center gap-3 rounded-[4px] border-0 bg-[linear-gradient(180deg,#4ab8f0,#3aa9e3)] px-6 text-[13px] font-extrabold tracking-[0.08em] text-[#052235] uppercase hover:brightness-[1.06] disabled:cursor-wait disabled:opacity-[0.65] max-[640px]:min-h-[42px] max-[640px]:px-[14px] max-[640px]:text-[11px]"
+									type="button"
+									onclick={openFilePreview}
+								>
+									<Eye class="size-4" aria-hidden="true" />
+									Preview file
+								</button>
+							{/if}
+							{#if permissions.download}
+								<button
+									class="inline-flex min-h-12 cursor-pointer items-center justify-center gap-3 rounded-[4px] border-0 bg-[linear-gradient(180deg,#4ab8f0,#3aa9e3)] px-6 text-[13px] font-extrabold tracking-[0.08em] text-[#052235] uppercase hover:brightness-[1.06] disabled:cursor-wait disabled:opacity-[0.65] max-[640px]:min-h-[42px] max-[640px]:px-[14px] max-[640px]:text-[11px]"
+									type="button"
+									disabled={startingDownload}
+									onclick={() => downloadSharedFile()}
+								>
+									<Download class="size-4" aria-hidden="true" />
+									{startingDownload ? 'Choose save location…' : 'Download file'}
+								</button>
+							{/if}
+							{#if !permissions.preview && !permissions.download}
+								<p class="m-0 leading-[1.55] text-[#87929a]">This link has no available actions.</p>
+							{/if}
+							{#if error}<p class="m-0 leading-[1.5] text-red-400" role="alert">{error}</p>{/if}
+						</div>
 					</div>
 				</div>
 			</section>
@@ -834,35 +564,14 @@
 	</div>
 </main>
 
-<FileEntryContextMenu
-	mode="public"
-	open={contextMenuOpen}
-	entry={contextMenuEntry}
-	x={contextMenuPosition.x}
-	y={contextMenuPosition.y}
-	allowPreview={permissions.preview}
-	allowDownload={permissions.download}
-	onClose={() => (contextMenuEntry = null)}
-	onOpenFolder={openFolderById}
-	onDownload={downloadSharedFile}
-	onPreviewImage={(entry) => void openFolderFile(entry)}
-	onPreviewMedia={(entry) => void openFolderFile(entry)}
-	onPreviewPdf={(entry) => void openFolderFile(entry)}
-	onPreviewText={(entry) => void openFolderFile(entry)}
-	onProperties={() => {}}
-	onDelete={() => {}}
-	onCreateFolder={() => {}}
-	onCreateTextFile={() => {}}
-	onUploadFiles={() => {}}
-	onUploadFolder={() => {}}
-/>
-
 {#if previewOpen && permissions.preview && shareEntry && fileReader}
 	{#if isImageFile(shareEntry.name, shareEntry.type)}
 		<ImageViewer
-			entries={[shareEntry]}
+			entries={folderImageEntries.length > 0 ? folderImageEntries : [shareEntry]}
 			request={imagePreviewRequest}
 			reader={fileReader}
+			getReader={folderShare ? getPublicImageReader : undefined}
+			autoLoadOriginal={false}
 			onClose={closePreview}
 			onError={(message) => (error = message)}
 		/>
@@ -870,5 +579,7 @@
 		<PdfViewer entry={shareEntry} reader={fileReader} onClose={closePreview} />
 	{:else if isAudioMimeType(shareEntry.type) || shareEntry.type.startsWith('video/')}
 		<MediaViewer entry={shareEntry} reader={fileReader} onClose={closePreview} />
+	{:else if isTextFile(shareEntry)}
+		<TextFileEditor entry={shareEntry} {fileReader} readOnly onClose={closePreview} />
 	{/if}
 {/if}

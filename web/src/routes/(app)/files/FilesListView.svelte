@@ -55,10 +55,10 @@
 		showDimensions: boolean;
 		newFolderName?: string;
 		creatingFolder: boolean;
-		onCreateFolder: () => void | Promise<void>;
-		onCancelNewFolder: () => void;
-		onToggleSelection: (entry: FileManagerEntry) => void;
-		onToggleAll: () => void;
+		onCreateFolder?: () => void | Promise<void>;
+		onCancelNewFolder?: () => void;
+		onToggleSelection?: (entry: FileManagerEntry) => void;
+		onToggleAll?: () => void;
 		onOpenFolder: (id: string) => void;
 		onOpenShares?: (id: string) => void;
 		onShowContextMenu: (entry: FileManagerEntry | null, x: number, y: number) => void;
@@ -67,8 +67,9 @@
 		onPreviewPdf: (entry: FileManagerEntry) => void;
 		onPreviewText: (entry: FileManagerEntry) => void;
 	} = $props();
+	const canSelect = $derived(selectionEnabled && Boolean(onToggleSelection));
 	const activeGridColumns = $derived(
-		`${selectionEnabled ? '3rem' : '0px'} ${ENTRY_COLUMNS}${showDimensions ? ' minmax(120px, 0.8fr)' : ''}`,
+		`${canSelect ? '3rem' : '0px'} ${ENTRY_COLUMNS}${showDimensions ? ' minmax(120px, 0.8fr)' : ''}`,
 	);
 	let selectAllCheckbox = $state<HTMLInputElement>();
 	let tableBody = $state<HTMLTableSectionElement>();
@@ -181,18 +182,15 @@
 		>
 			{#each table.getHeaderGroups() as headerGroup (headerGroup.id)}
 				<tr class="grid w-full" style={`grid-template-columns: ${activeGridColumns}`}>
-					<th
-						class={selectionEnabled ? 'flex items-center px-4 py-3 first:pl-5' : 'w-0 p-0'}
-						scope="col"
-					>
-						{#if selectionEnabled}<input
+					<th class={canSelect ? 'flex items-center px-4 py-3 first:pl-5' : 'w-0 p-0'} scope="col">
+						{#if canSelect && onToggleAll}<input
 								bind:this={selectAllCheckbox}
 								class="size-4 cursor-pointer accent-(--accent)"
 								type="checkbox"
 								disabled={!loadedCount}
 								checked={allSelected}
 								aria-label="Select all loaded entries"
-								onchange={onToggleAll}
+								onchange={() => onToggleAll?.()}
 							/>{/if}
 					</th>
 					{#each headerGroup.headers as header (header.id)}
@@ -234,7 +232,7 @@
 									onShowContextMenu(row.original, event.clientX, event.clientY);
 								}}
 					>
-						<td class={selectionEnabled ? 'flex items-center px-4 py-1.5 first:pl-5' : 'w-0 p-0'}>
+						<td class={canSelect ? 'flex items-center px-4 py-1.5 first:pl-5' : 'w-0 p-0'}>
 							{#if actionLabel}
 								<button
 									class="absolute inset-0 z-0 m-0 cursor-pointer appearance-none border-0 bg-transparent p-0 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--accent)"
@@ -243,12 +241,12 @@
 									onclick={(event) => openEntry(row.original, event.currentTarget)}
 								></button>
 							{/if}
-							{#if selectionEnabled && !isDraftFolder && row.original.selectable !== false}<input
+							{#if canSelect && !isDraftFolder && row.original.selectable !== false}<input
 									class="relative z-10 size-4 cursor-pointer accent-(--accent)"
 									type="checkbox"
 									checked={selectedIds.has(fileManagerEntryKey(row.original))}
 									aria-label={`Select ${row.original.name}`}
-									onchange={() => onToggleSelection(row.original)}
+									onchange={() => onToggleSelection?.(row.original)}
 								/>{/if}
 						</td>
 						{#each row.getAllCells() as cell (cell.id)}
@@ -256,7 +254,7 @@
 								<td
 									class="flex min-w-0 items-center whitespace-nowrap px-4 py-1.5 first:pl-5 last:pr-5"
 								>
-									{#if isDraftFolder && cell.column.id === 'name'}
+									{#if isDraftFolder && cell.column.id === 'name' && onCreateFolder && onCancelNewFolder}
 										<InlineNewFolder
 											variant="list"
 											bind:name={newFolderName}

@@ -38,15 +38,15 @@
 		onPreviewImage: (entry: FileManagerEntry) => void;
 		onPreviewMedia: (entry: FileManagerEntry) => void;
 		onPreviewPdf: (entry: FileManagerEntry) => void;
-		onPreviewText: (entry: FileManagerEntry) => void;
-		onProperties: (entry: FileManagerEntry) => void;
-		onDelete: (entry: FileManagerEntry) => void;
+		onPreviewText?: (entry: FileManagerEntry) => void;
+		onProperties?: (entry: FileManagerEntry) => void;
+		onDelete?: (entry: FileManagerEntry) => void;
 		onCut?: (entry: FileManagerEntry) => void;
 		onPaste?: (entry: FileManagerEntry | null) => void;
-		onCreateFolder: (entry: FileManagerEntry | null) => void;
-		onCreateTextFile: () => void;
-		onUploadFiles: () => void;
-		onUploadFolder: () => void;
+		onCreateFolder?: (entry: FileManagerEntry | null) => void;
+		onCreateTextFile?: () => void;
+		onUploadFiles?: () => void;
+		onUploadFolder?: () => void;
 		onRestore?: (entry: FileManagerEntry) => void;
 		onRestoreContents?: (entry: FileManagerEntry) => void;
 		onPermanentDelete?: (entry: FileManagerEntry) => void;
@@ -140,7 +140,7 @@
 		if (!entry) return;
 		const selected = entry;
 		onClose();
-		onProperties(selected);
+		onProperties?.(selected);
 	}
 
 	function downloadFile(): void {
@@ -182,7 +182,7 @@
 		if (!entry || entry.kind !== 'file' || !isTextFile(entry)) return;
 		const selected = entry;
 		onClose();
-		onPreviewText(selected);
+		onPreviewText?.(selected);
 	}
 
 	function previewPublicEntry(): void {
@@ -192,13 +192,14 @@
 		if (isImageFile(selected.name, selected.type)) onPreviewImage(selected);
 		else if (isMediaMimeType(selected.type)) onPreviewMedia(selected);
 		else if (isPdfFile(selected)) onPreviewPdf(selected);
+		else if (isTextFile(selected)) onPreviewText?.(selected);
 	}
 
 	function confirmDelete(): void {
 		if (!entry) return;
 		const selected = entry;
 		onClose();
-		onDelete(selected);
+		onDelete?.(selected);
 	}
 
 	function restoreTrashEntry(): void {
@@ -231,22 +232,22 @@
 
 	function createFolder(): void {
 		onClose();
-		onCreateFolder(entry);
+		onCreateFolder?.(entry);
 	}
 
 	function createTextFile(): void {
 		onClose();
-		onCreateTextFile();
+		onCreateTextFile?.();
 	}
 
 	function uploadFiles(): void {
 		onClose();
-		onUploadFiles();
+		onUploadFiles?.();
 	}
 
 	function uploadFolder(): void {
 		onClose();
-		onUploadFolder();
+		onUploadFolder?.();
 	}
 
 	function cutEntry(): void {
@@ -285,7 +286,7 @@
 					<span>Open folder</span>
 				</button>
 			{:else if entry?.kind === 'file'}
-				{#if allowPreview && (isImageFile(entry.name, entry.type) || isMediaMimeType(entry.type) || isPdfFile(entry))}
+				{#if allowPreview && (isImageFile(entry.name, entry.type) || isMediaMimeType(entry.type) || isPdfFile(entry) || (isTextFile(entry) && onPreviewText))}
 					<button
 						class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
 						type="button"
@@ -373,24 +374,28 @@
 				</button>
 			{/if}
 			{#if !entry}
-				<button
-					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
-					type="button"
-					role="menuitem"
-					onclick={uploadFiles}
-				>
-					<CloudUpload class="size-4 text-(--muted)" aria-hidden="true" />
-					<span>Upload files</span>
-				</button>
-				<button
-					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
-					type="button"
-					role="menuitem"
-					onclick={uploadFolder}
-				>
-					<FolderOpen class="size-4 text-(--muted)" aria-hidden="true" />
-					<span>Upload folder</span>
-				</button>
+				{#if onUploadFiles}
+					<button
+						class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
+						type="button"
+						role="menuitem"
+						onclick={uploadFiles}
+					>
+						<CloudUpload class="size-4 text-(--muted)" aria-hidden="true" />
+						<span>Upload files</span>
+					</button>
+				{/if}
+				{#if onUploadFolder}
+					<button
+						class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
+						type="button"
+						role="menuitem"
+						onclick={uploadFolder}
+					>
+						<FolderOpen class="size-4 text-(--muted)" aria-hidden="true" />
+						<span>Upload folder</span>
+					</button>
+				{/if}
 			{/if}
 			{#if entry}
 				<button
@@ -414,7 +419,7 @@
 					<span>Open folder</span>
 				</button>
 			{/if}
-			{#if mode === 'files' && entry}
+			{#if mode === 'files' && entry && onShare}
 				<button
 					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
 					type="button"
@@ -459,7 +464,7 @@
 						<FileText class="size-4 text-(--muted)" aria-hidden="true" />
 						<span>Preview</span>
 					</button>
-				{:else if isTextFile(entry)}
+				{:else if isTextFile(entry) && onPreviewText}
 					<button
 						class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
 						type="button"
@@ -480,7 +485,7 @@
 					<span>Download</span>
 				</button>
 			{/if}
-			{#if entry?.kind !== 'folder'}
+			{#if entry?.kind !== 'folder' && onCreateTextFile}
 				<button
 					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
 					type="button"
@@ -490,6 +495,8 @@
 					<FileText class="size-4 text-(--muted)" aria-hidden="true" />
 					<span>New text file</span>
 				</button>
+			{/if}
+			{#if entry?.kind !== 'folder' && onCreateFolder}
 				<button
 					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
 					type="button"
@@ -500,7 +507,7 @@
 					<span>New folder here</span>
 				</button>
 			{/if}
-			{#if entry}
+			{#if entry && onProperties}
 				<button
 					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
 					type="button"
@@ -510,6 +517,8 @@
 					<Info class="size-4 text-(--muted)" aria-hidden="true" />
 					<span>Properties</span>
 				</button>
+			{/if}
+			{#if entry && onDelete}
 				<button
 					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm text-red-400 hover:bg-red-500/10"
 					type="button"
