@@ -394,7 +394,6 @@
 		hasSearched = false;
 		activeIndex = 0;
 		latestQuery = '';
-		clearThumbnails();
 		let frame = 0;
 		void tick().then(() => {
 			frame = window.requestAnimationFrame(() => {

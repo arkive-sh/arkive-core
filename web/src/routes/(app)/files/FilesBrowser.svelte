@@ -48,6 +48,7 @@
 		creatingFolder,
 		onBeginNewFolder,
 		onToggleSelection,
+		onSelectEntry,
 		onToggleAll,
 		onClearSelection,
 		onDownloadSelected,
@@ -97,6 +98,7 @@
 		creatingFolder: boolean;
 		onBeginNewFolder: () => void;
 		onToggleSelection: (entry: FileManagerEntry) => void;
+		onSelectEntry: (entry: FileManagerEntry, additive: boolean) => void;
 		onToggleAll: () => void;
 		onClearSelection: () => void;
 		onDownloadSelected: () => void;
@@ -273,6 +275,7 @@
 							{onCreateFolder}
 							{onCancelNewFolder}
 							{onToggleSelection}
+							{onSelectEntry}
 							{onOpenFolder}
 							{onOpenShares}
 							{onShowContextMenu}
@@ -294,6 +297,7 @@
 							{selectedCount}
 							{loadedCount}
 							{onToggleSelection}
+							{onSelectEntry}
 							{onToggleAll}
 							{onOpenFolder}
 							{onOpenShares}
