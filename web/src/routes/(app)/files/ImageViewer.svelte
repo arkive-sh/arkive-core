@@ -15,6 +15,8 @@
 		entries: FileManagerEntry[];
 		request: PreviewRequest | null;
 		reader?: DecryptedFileReader;
+		getReader?: (entry: FileManagerEntry) => Promise<DecryptedFileReader>;
+		autoLoadOriginal?: boolean;
 		onClose: () => void;
 		onError: (message: string) => void;
 	};
@@ -26,7 +28,15 @@
 			'loading-thumbnail' | 'ready' | 'loading-original' | 'original' | 'failed' | 'too-large';
 	};
 
-	let { entries, request, reader, onClose, onError }: Props = $props();
+	let {
+		entries,
+		request,
+		reader,
+		getReader,
+		autoLoadOriginal = true,
+		onClose,
+		onError,
+	}: Props = $props();
 	let lightbox: import('photoswipe/lightbox').default | undefined;
 	let loadingLightbox: Promise<import('photoswipe/lightbox').default> | undefined;
 	let lastRequest: PreviewRequest | null = null;
@@ -144,7 +154,7 @@
 				resource.status = 'ready';
 				content.onLoaded();
 				updateOriginalButton();
-				if (reader) void loadOriginal(content);
+				if (autoLoadOriginal && (reader || getReader)) void loadOriginal(content);
 
 				return;
 			}
@@ -194,9 +204,16 @@
 
 		resource.status = 'loading-original';
 		updateOriginalButton();
+		let imageReader: DecryptedFileReader | undefined;
+
 		try {
-			const decrypted = reader
-				? await reader.createBlob(entry.type, MAX_IMAGE_PREVIEW_BYTES, resource.controller.signal)
+			imageReader = getReader ? await getReader(entry) : reader;
+			const decrypted = imageReader
+				? await imageReader.createBlob(
+						entry.type,
+						MAX_IMAGE_PREVIEW_BYTES,
+						resource.controller.signal,
+					)
 				: await readDecryptedFile(
 						entry.id,
 						entry.type,
@@ -264,6 +281,8 @@
 			resource.status = error instanceof PreviewSizeLimitError ? 'too-large' : 'failed';
 			onError(error instanceof Error ? error.message : `Could not preview ${entry.name}.`);
 			updateOriginalButton();
+		} finally {
+			if (imageReader && imageReader !== reader) await imageReader.dispose();
 		}
 	}
 

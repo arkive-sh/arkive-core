@@ -53,9 +53,9 @@
 		showDimensions: boolean;
 		newFolderName?: string;
 		creatingFolder: boolean;
-		onCreateFolder: () => void | Promise<void>;
-		onCancelNewFolder: () => void;
-		onToggleSelection: (entry: FileManagerEntry) => void;
+		onCreateFolder?: () => void | Promise<void>;
+		onCancelNewFolder?: () => void;
+		onToggleSelection?: (entry: FileManagerEntry) => void;
 		onOpenFolder: (id: string) => void;
 		onOpenShares?: (id: string) => void;
 		onShowContextMenu: (entry: FileManagerEntry | null, x: number, y: number) => void;
@@ -67,6 +67,7 @@
 	let gridLayout = $state<HTMLDivElement>();
 	let gridContent = $state<HTMLDivElement>();
 	let columnCount = $state(1);
+	const canSelect = $derived(selectionEnabled && Boolean(onToggleSelection));
 	const cardGap = $derived(Math.min(8, Math.max(4, Math.round(tileSize * 0.04))));
 	const gridPadding = $derived(Math.min(8, Math.max(4, Math.round(tileSize * 0.05))));
 	const contentGap = $derived(Math.max(2, Math.round(tileSize * 0.025)));
@@ -302,27 +303,29 @@
 				>
 					{#each rows.slice(start, start + columnCount) as entry (`${entry.kind}:${entry.id}`)}
 						{#if entry.id === NEW_FOLDER_DRAFT_ID}
-							<article data-file-entry class="min-w-0">
-								<div
-									class="grid place-items-center overflow-hidden"
-									style={`height: ${entryIconSize + 32}px`}
-								>
-									<Folder
-										class="fill-(--accent) text-(--accent)"
-										style={`width: ${entryIconSize}px; height: ${entryIconSize}px`}
-										aria-hidden="true"
-									/>
-								</div>
-								<div style={`padding: ${cardGap}px`}>
-									<InlineNewFolder
-										variant="grid"
-										bind:name={newFolderName}
-										busy={creatingFolder}
-										onCreate={onCreateFolder}
-										onCancel={onCancelNewFolder}
-									/>
-								</div>
-							</article>
+							{#if onCreateFolder && onCancelNewFolder}
+								<article data-file-entry class="min-w-0">
+									<div
+										class="grid place-items-center overflow-hidden"
+										style={`height: ${entryIconSize + 32}px`}
+									>
+										<Folder
+											class="fill-(--accent) text-(--accent)"
+											style={`width: ${entryIconSize}px; height: ${entryIconSize}px`}
+											aria-hidden="true"
+										/>
+									</div>
+									<div style={`padding: ${cardGap}px`}>
+										<InlineNewFolder
+											variant="grid"
+											bind:name={newFolderName}
+											busy={creatingFolder}
+											onCreate={onCreateFolder}
+											onCancel={onCancelNewFolder}
+										/>
+									</div>
+								</article>
+							{/if}
 						{:else}
 							{@const actionLabel = entryActionLabel(entry)}
 							<article
@@ -341,13 +344,13 @@
 										onclick={(event) => openEntry(entry, event.currentTarget)}
 									></button>
 								{/if}
-								{#if selectionEnabled && entry.selectable !== false}<input
+								{#if canSelect && entry.selectable !== false}<input
 										class="absolute z-10 cursor-pointer"
 										style={`top: ${checkboxInset}px; right: ${checkboxInset}px; width: ${checkboxSize}px; height: ${checkboxSize}px`}
 										type="checkbox"
 										checked={selectedIds.has(fileManagerEntryKey(entry))}
 										aria-label={`Select ${entry.name}`}
-										onchange={() => onToggleSelection(entry)}
+										onchange={() => onToggleSelection?.(entry)}
 									/>{/if}
 								{#if entry.kind === 'folder'}
 									<div

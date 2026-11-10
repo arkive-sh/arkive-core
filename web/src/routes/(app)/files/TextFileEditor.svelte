@@ -42,11 +42,15 @@
 		entry,
 		vaultId,
 		parentFolderId,
+		fileReader,
+		readOnly = false,
 		onClose,
 	}: {
 		entry: FileManagerEntry | null;
-		vaultId: string;
-		parentFolderId: string | null;
+		vaultId?: string;
+		parentFolderId?: string | null;
+		fileReader?: DecryptedFileReader;
+		readOnly?: boolean;
 		onClose: () => void;
 	} = $props();
 
@@ -68,6 +72,7 @@
 	let viewport = $state<HTMLDivElement>();
 	let pendingFocus = $state<{ index: number; offset: number } | null>(null);
 	let reader: DecryptedFileReader | undefined;
+	let ownsReader = false;
 	let controller: AbortController | undefined;
 	let handedOff = false;
 	const textSize = $derived(contentByteCount + Math.max(0, lines.length - 1));
@@ -260,7 +265,8 @@
 	async function loadFile(): Promise<void> {
 		if (!entry) return;
 		controller = new AbortController();
-		reader = new DecryptedFileReader(entry.id, controller.signal);
+		ownsReader = !fileReader;
+		reader = fileReader ?? new DecryptedFileReader(entry.id, controller.signal);
 		let pending = '';
 		const decoder = new TextDecoder('utf-8', { fatal: true });
 		const decode = (bytes?: Uint8Array, stream = false) => {
@@ -296,6 +302,7 @@
 				const bytes = await reader.readRange(
 					start,
 					Math.min(plaintextSize, start + READ_CHUNK_SIZE),
+					controller.signal,
 				);
 
 				try {
@@ -317,8 +324,10 @@
 						? error.message
 						: 'Could not open this text file.';
 		} finally {
-			await reader?.dispose();
-			reader = undefined;
+			if (ownsReader) {
+				await reader?.dispose();
+				reader = undefined;
+			}
 			loading = false;
 			selectionMessage = '';
 		}
@@ -538,6 +547,12 @@
 	function saveCopy(): void {
 		const name = filename.trim();
 
+		if (!vaultId) {
+			errorMessage = 'A vault is required to save a copy.';
+
+			return;
+		}
+
 		if (!name || /[/\\\p{Cc}]/u.test(name) || name === '.' || name === '..') {
 			errorMessage = 'Enter a valid file name without path separators.';
 
@@ -546,7 +561,7 @@
 		const source = makeUploadSource(name, [...lines]);
 		const item: UploadItem = { file: source, relativePath: name };
 
-		if (!transfers.enqueueUploads([item], vaultId, parentFolderId)) {
+		if (!transfers.enqueueUploads([item], vaultId, parentFolderId ?? null)) {
 			errorMessage = 'Could not add the text file to transfers.';
 
 			return;
@@ -612,7 +627,7 @@
 
 	onDestroy(() => {
 		controller?.abort();
-		void reader?.dispose();
+		if (ownsReader) void reader?.dispose();
 		if (!handedOff) clearLines();
 		filename = '';
 		errorMessage = '';
@@ -643,7 +658,7 @@
 						: `${formatBytes(textSize)} · ${lines.length.toLocaleString()} lines`}
 				</p>
 			</div>
-			{#if entry && !editing && !errorMessage && !loading}
+			{#if entry && !readOnly && !editing && !errorMessage && !loading}
 				<button
 					class={`h-9 cursor-pointer rounded border px-3 text-sm hover:bg-(--surface-highest) ${wrapLines ? 'border-(--accent)' : 'border-(--border)'}`}
 					type="button"
