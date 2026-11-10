@@ -216,6 +216,13 @@
 		else selectedIds.add(key);
 	}
 
+	function selectEntry(entry: FileManagerEntry, additive: boolean): void {
+		if (entry.selectable === false) return;
+		if (!additive) selectedIds.clear();
+		if (additive && selectedIds.has(fileManagerEntryKey(entry))) toggleSelection(entry);
+		else selectedIds.add(fileManagerEntryKey(entry));
+	}
+
 	function toggleAllLoaded(): void {
 		const keys = loadedEntries.map(fileManagerEntryKey);
 		const deselect = keys.length > 0 && keys.every((key) => selectedIds.has(key));
@@ -224,6 +231,10 @@
 			if (deselect) selectedIds.delete(key);
 			else selectedIds.add(key);
 		}
+	}
+
+	function selectAllLoaded(): void {
+		for (const entry of loadedEntries) selectedIds.add(fileManagerEntryKey(entry));
 	}
 
 	function clearSelection(): void {
@@ -416,6 +427,24 @@
 		)
 			return;
 		const command = event.ctrlKey || event.metaKey;
+
+		if (command && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'a') {
+			event.preventDefault();
+			selectAllLoaded();
+
+			return;
+		}
+		if (
+			(event.key === 'Backspace' || (event.altKey && event.key === 'ArrowLeft')) &&
+			breadcrumbs.length > 1
+		) {
+			event.preventDefault();
+			const parentFolderId = breadcrumbs.at(-2)?.id ?? null;
+			// eslint-disable-next-line svelte/no-navigation-without-resolve
+			void goto(resolve('/(app)') + urlFor(parentFolderId));
+
+			return;
+		}
 
 		if (command && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'x') {
 			if (selectedEntries.length) {
@@ -703,6 +732,7 @@
 	{creatingFolder}
 	onBeginNewFolder={() => beginNewFolder(folderId)}
 	onToggleSelection={toggleSelection}
+	onSelectEntry={selectEntry}
 	onToggleAll={toggleAllLoaded}
 	onClearSelection={clearSelection}
 	onDownloadSelected={downloadSelected}

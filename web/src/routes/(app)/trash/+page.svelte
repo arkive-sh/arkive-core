@@ -309,12 +309,59 @@
 		else selectedIds.add(key);
 	}
 
+	function selectEntry(entry: FileManagerEntry, additive: boolean): void {
+		if (entry.selectable === false) return;
+		if (!additive) selectedIds.clear();
+		const key = fileManagerEntryKey(entry);
+
+		if (additive && selectedIds.has(key)) selectedIds.delete(key);
+		else selectedIds.add(key);
+	}
+
+	function handleTrashKeydown(event: KeyboardEvent): void {
+		const target = event.target;
+
+		if (event.defaultPrevented || event.repeat || !(target instanceof HTMLElement)) return;
+		if (
+			target.isContentEditable ||
+			target.closest('input:not([type="checkbox"]), textarea, select, [contenteditable="true"]')
+		)
+			return;
+		if (
+			contextMenuOpen ||
+			permanentDeleteOpen ||
+			document.querySelector('[data-modal-open="true"]')
+		)
+			return;
+		const command = event.ctrlKey || event.metaKey;
+
+		if (command && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'a') {
+			event.preventDefault();
+			selectAll();
+
+			return;
+		}
+		if (
+			(event.key === 'Backspace' || (event.altKey && event.key === 'ArrowLeft')) &&
+			folderPath.length
+		) {
+			event.preventDefault();
+			navigateToFolder(folderPath.at(-2)?.id ?? null);
+		}
+	}
+
 	function toggleAll(): void {
 		if (allSelected) selectedIds.clear();
 		else {
 			for (const entry of entries) {
 				if (entry.selectable !== false) selectedIds.add(fileManagerEntryKey(entry));
 			}
+		}
+	}
+
+	function selectAll(): void {
+		for (const entry of entries) {
+			if (entry.selectable !== false) selectedIds.add(fileManagerEntryKey(entry));
 		}
 	}
 
@@ -535,6 +582,7 @@
 						{focusFileId}
 						{selectedIds}
 						selectionEnabled={true}
+						onSelectEntry={selectEntry}
 						previewEnabled={false}
 						{tileSize}
 						{showType}
@@ -557,6 +605,7 @@
 						{focusFileId}
 						{selectedIds}
 						selectionEnabled={true}
+						onSelectEntry={selectEntry}
 						previewEnabled={false}
 						dateColumnLabel="Deleted"
 						selectedCount={selectedEntries.length}
@@ -607,6 +656,8 @@
 		{/if}
 	</div>
 </div>
+
+<svelte:window onkeydown={handleTrashKeydown} />
 
 <FileEntryContextMenu
 	mode="trash"

@@ -34,6 +34,7 @@
 		onCreateFolder,
 		onCancelNewFolder,
 		onToggleSelection,
+		onSelectEntry,
 		onOpenFolder,
 		onOpenShares,
 		onShowContextMenu,
@@ -56,6 +57,7 @@
 		onCreateFolder?: () => void | Promise<void>;
 		onCancelNewFolder?: () => void;
 		onToggleSelection?: (entry: FileManagerEntry) => void;
+		onSelectEntry?: (entry: FileManagerEntry, additive: boolean) => void;
 		onOpenFolder: (id: string) => void;
 		onOpenShares?: (id: string) => void;
 		onShowContextMenu: (entry: FileManagerEntry | null, x: number, y: number) => void;
@@ -66,6 +68,7 @@
 	} = $props();
 	let gridLayout = $state<HTMLDivElement>();
 	let gridContent = $state<HTMLDivElement>();
+	let pendingFocusIndex = $state<number | null>(null);
 	let columnCount = $state(1);
 	const canSelect = $derived(selectionEnabled && Boolean(onToggleSelection));
 	const cardGap = $derived(Math.min(8, Math.max(4, Math.round(tileSize * 0.04))));
@@ -111,6 +114,20 @@
 	const renderedEntries = $derived(
 		virtualRows.flatMap(({ index }) => rows.slice(index * columnCount, (index + 1) * columnCount)),
 	);
+
+	$effect(() => {
+		const index = pendingFocusIndex;
+
+		if (index === null || !virtualRows.some((row) => row.index === Math.floor(index / columnCount)))
+			return;
+		const button = gridContent?.querySelector<HTMLButtonElement>(
+			`[data-entry-action][data-entry-index="${index}"]`,
+		);
+
+		if (!button) return;
+		pendingFocusIndex = null;
+		button.focus({ preventScroll: true });
+	});
 
 	$effect(() => {
 		const layout = gridLayout;
@@ -201,6 +218,82 @@
 		else if (isTextFile(entry)) onPreviewText(entry);
 	}
 
+	function focusEntry(index: number): void {
+		if (index < 0 || index >= rows.length || rows[index].id === NEW_FOLDER_DRAFT_ID) return;
+		pendingFocusIndex = index;
+		get(rowVirtualizer).scrollToIndex(Math.floor(index / columnCount), { align: 'auto' });
+	}
+
+	function handleEntryKeydown(event: KeyboardEvent): void {
+		if (event.defaultPrevented || !(event.target instanceof HTMLElement)) return;
+		if (event.target.closest('[aria-modal="true"], [role="menu"]')) return;
+		if (
+			event.target.closest(
+				'input:not([type="checkbox"]), textarea, select, [contenteditable="true"]',
+			)
+		)
+			return;
+		const article = event.target.closest<HTMLElement>('[data-entry-index]');
+
+		if (!article) {
+			if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(event.key) || event.altKey)
+				return;
+			const selected = rows.findIndex(
+				(entry) => entry.id !== NEW_FOLDER_DRAFT_ID && selectedIds.has(fileManagerEntryKey(entry)),
+			);
+			const first =
+				selected >= 0 ? selected : rows.findIndex((entry) => entry.id !== NEW_FOLDER_DRAFT_ID);
+
+			if (first >= 0) {
+				event.preventDefault();
+				focusEntry(first);
+			}
+
+			return;
+		}
+		const index = Number(article.dataset.entryIndex);
+
+		if (['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
+			if (event.altKey) return;
+			event.preventDefault();
+			const step =
+				event.key === 'ArrowDown'
+					? columnCount
+					: event.key === 'ArrowUp'
+						? -columnCount
+						: event.key === 'ArrowRight'
+							? 1
+							: -1;
+			let next = index + step;
+
+			while (rows[next]?.id === NEW_FOLDER_DRAFT_ID) next += Math.sign(step);
+			if (event.key === 'ArrowDown' && next >= rows.length) next = rows.length - 1;
+			if (next < 0 || next >= rows.length || next === index) {
+				if (event.key === 'ArrowUp') window.scrollTo({ top: 0, behavior: 'smooth' });
+
+				return;
+			}
+			focusEntry(next);
+		} else if (
+			(event.key === 'Enter' || event.code === 'Space') &&
+			event.target.closest('[data-entry-action]')
+		) {
+			const entry = rows[index];
+
+			if (!entry) return;
+			event.preventDefault();
+			if (event.code === 'Space') {
+				onSelectEntry?.(entry, event.ctrlKey || event.metaKey);
+
+				return;
+			}
+			const action = event.target.closest<HTMLElement>('[data-entry-action]')!;
+
+			if (entryActionLabel(entry)) openEntry(entry, action);
+			else onSelectEntry?.(entry, event.ctrlKey || event.metaKey);
+		}
+	}
+
 	async function loadThumbnail(entry: FileManagerEntry): Promise<void> {
 		if (!entry.thumbnail) return;
 		try {
@@ -281,6 +374,8 @@
 	});
 </script>
 
+<svelte:window onkeydown={handleEntryKeydown} />
+
 <div
 	bind:this={gridLayout}
 	class="grid"
@@ -301,7 +396,8 @@
 					class="absolute top-0 left-0 grid w-full"
 					style={`grid-template-columns: repeat(${columnCount}, minmax(0, 1fr)); gap: ${cardGap}px; transform: translateY(${virtualRow.start - rowScrollMargin}px)`}
 				>
-					{#each rows.slice(start, start + columnCount) as entry (`${entry.kind}:${entry.id}`)}
+					{#each rows.slice(start, start + columnCount) as entry, columnIndex (`${entry.kind}:${entry.id}`)}
+						{@const entryIndex = start + columnIndex}
 						{#if entry.id === NEW_FOLDER_DRAFT_ID}
 							{#if onCreateFolder && onCancelNewFolder}
 								<article data-file-entry class="min-w-0">
@@ -330,20 +426,25 @@
 							{@const actionLabel = entryActionLabel(entry)}
 							<article
 								data-file-entry
-								class={`group relative min-w-0 rounded-md transition-colors ${actionLabel ? 'cursor-pointer' : ''} ${selectedIds.has(fileManagerEntryKey(entry)) ? 'bg-(--surface-highest)' : ''} ${focusFileId === entry.id ? 'ring-2 ring-(--accent)' : ''}`}
+								data-entry-index={entryIndex}
+								class={`group relative min-w-0 cursor-pointer rounded-md transition-colors ${selectedIds.has(fileManagerEntryKey(entry)) ? 'bg-(--surface-highest)' : ''} ${focusFileId === entry.id ? 'ring-2 ring-(--accent)' : ''}`}
 								oncontextmenu={(event) => {
 									event.preventDefault();
 									onShowContextMenu(entry, event.clientX, event.clientY);
 								}}
 							>
-								{#if actionLabel}
-									<button
-										class="absolute inset-0 z-1 m-0 cursor-pointer appearance-none border-0 bg-transparent p-0 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--accent)"
-										type="button"
-										aria-label={actionLabel}
-										onclick={(event) => openEntry(entry, event.currentTarget)}
-									></button>
-								{/if}
+								<button
+									class="absolute inset-0 z-1 m-0 cursor-pointer appearance-none border-0 bg-transparent p-0 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--accent)"
+									type="button"
+									data-entry-action
+									data-entry-index={entryIndex}
+									aria-label={canSelect && entry.selectable !== false
+										? `Select ${entry.name}${actionLabel ? '; press Enter or double-click to open' : ''}`
+										: (actionLabel ?? entry.name)}
+									title={actionLabel ? 'Click to select; double-click to open' : undefined}
+									onclick={(event) => onSelectEntry?.(entry, event.ctrlKey || event.metaKey)}
+									ondblclick={(event) => openEntry(entry, event.currentTarget)}
+								></button>
 								{#if canSelect && entry.selectable !== false}<input
 										class="absolute z-10 cursor-pointer"
 										style={`top: ${checkboxInset}px; right: ${checkboxInset}px; width: ${checkboxSize}px; height: ${checkboxSize}px`}

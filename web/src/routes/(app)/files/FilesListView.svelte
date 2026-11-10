@@ -35,6 +35,7 @@
 		onCreateFolder,
 		onCancelNewFolder,
 		onToggleSelection,
+		onSelectEntry,
 		onToggleAll,
 		onOpenFolder,
 		onOpenShares,
@@ -58,6 +59,7 @@
 		onCreateFolder?: () => void | Promise<void>;
 		onCancelNewFolder?: () => void;
 		onToggleSelection?: (entry: FileManagerEntry) => void;
+		onSelectEntry?: (entry: FileManagerEntry, additive: boolean) => void;
 		onToggleAll?: () => void;
 		onOpenFolder: (id: string) => void;
 		onOpenShares?: (id: string) => void;
@@ -73,6 +75,7 @@
 	);
 	let selectAllCheckbox = $state<HTMLInputElement>();
 	let tableBody = $state<HTMLTableSectionElement>();
+	let pendingFocusIndex = $state<number | null>(null);
 	const allSelected = $derived(loadedCount > 0 && selectedCount === loadedCount);
 
 	$effect(() => {
@@ -109,6 +112,19 @@
 	});
 	const virtualRows = $derived($rowVirtualizer.getVirtualItems());
 	const rowScrollMargin = $derived($rowVirtualizer.options.scrollMargin);
+
+	$effect(() => {
+		const index = pendingFocusIndex;
+
+		if (index === null || !virtualRows.some((row) => row.index === index)) return;
+		const button = tableBody?.querySelector<HTMLButtonElement>(
+			`[data-entry-action][data-entry-index="${index}"]`,
+		);
+
+		if (!button) return;
+		pendingFocusIndex = null;
+		button.focus({ preventScroll: true });
+	});
 
 	$effect(() => {
 		const body = tableBody;
@@ -170,7 +186,77 @@
 		else if (isPdfFile(entry)) onPreviewPdf(entry);
 		else if (isTextFile(entry)) onPreviewText(entry);
 	}
+
+	function focusEntry(index: number): void {
+		if (index < 0 || index >= tableRows.length) return;
+		pendingFocusIndex = index;
+		get(rowVirtualizer).scrollToIndex(index, { align: 'auto' });
+	}
+
+	function handleEntryKeydown(event: KeyboardEvent): void {
+		if (event.defaultPrevented || !(event.target instanceof HTMLElement)) return;
+		if (event.target.closest('[aria-modal="true"], [role="menu"]')) return;
+		if (
+			event.target.closest(
+				'input:not([type="checkbox"]), textarea, select, [contenteditable="true"]',
+			)
+		)
+			return;
+		const row = event.target.closest<HTMLElement>('[data-entry-index]');
+		const navigableIndexes = tableRows.flatMap((item, rowIndex) =>
+			item.original.id === NEW_FOLDER_DRAFT_ID ? [] : [rowIndex],
+		);
+
+		if (!row) {
+			if (!['ArrowDown', 'ArrowUp'].includes(event.key) || event.altKey) return;
+			const selected = navigableIndexes.find((index) =>
+				selectedIds.has(fileManagerEntryKey(tableRows[index].original)),
+			);
+			const first = selected ?? navigableIndexes[0];
+
+			if (first !== undefined) {
+				event.preventDefault();
+				focusEntry(first);
+			}
+
+			return;
+		}
+		const index = Number(row.dataset.entryIndex);
+
+		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+			if (event.altKey) return;
+			event.preventDefault();
+			const direction = event.key === 'ArrowDown' ? 1 : -1;
+			const current = navigableIndexes.indexOf(index);
+			const next =
+				navigableIndexes[
+					current < 0 ? (direction > 0 ? 0 : navigableIndexes.length - 1) : current + direction
+				];
+
+			if (next !== undefined) focusEntry(next);
+			else if (direction < 0) window.scrollTo({ top: 0, behavior: 'smooth' });
+		} else if (
+			(event.key === 'Enter' || event.code === 'Space') &&
+			event.target.closest('[data-entry-action]')
+		) {
+			const entry = tableRows[index]?.original;
+
+			if (!entry) return;
+			event.preventDefault();
+			if (event.code === 'Space') {
+				onSelectEntry?.(entry, event.ctrlKey || event.metaKey);
+
+				return;
+			}
+			const action = event.target.closest<HTMLElement>('[data-entry-action]')!;
+
+			if (entryActionLabel(entry)) openEntry(entry, action);
+			else onSelectEntry?.(entry, event.ctrlKey || event.metaKey);
+		}
+	}
 </script>
+
+<svelte:window onkeydown={handleEntryKeydown} />
 
 <div class="overflow-x-auto">
 	<table
@@ -222,8 +308,9 @@
 					{@const actionLabel = isDraftFolder ? undefined : entryActionLabel(row.original)}
 					<tr
 						data-index={virtualRow.index}
+						data-entry-index={virtualRow.index}
 						data-file-entry
-						class={`absolute top-0 left-0 grid h-11.25 w-full transition-colors hover:bg-(--surface-highest) ${actionLabel ? 'cursor-pointer' : ''} ${selectedIds.has(fileManagerEntryKey(row.original)) ? 'bg-(--surface-highest)' : 'bg-transparent'} ${focusFileId === row.original.id ? 'ring-2 ring-inset ring-(--accent)' : ''}`}
+						class={`absolute top-0 left-0 grid h-11.25 w-full cursor-pointer transition-colors hover:bg-(--surface-highest) ${selectedIds.has(fileManagerEntryKey(row.original)) ? 'bg-(--surface-highest)' : 'bg-transparent'} ${focusFileId === row.original.id ? 'ring-2 ring-inset ring-(--accent)' : ''}`}
 						style={`grid-template-columns: ${activeGridColumns}; transform: translateY(${virtualRow.start - rowScrollMargin}px)`}
 						oncontextmenu={isDraftFolder
 							? undefined
@@ -233,14 +320,18 @@
 								}}
 					>
 						<td class={canSelect ? 'flex items-center px-4 py-1.5 first:pl-5' : 'w-0 p-0'}>
-							{#if actionLabel}
-								<button
+							{#if !isDraftFolder}<button
 									class="absolute inset-0 z-0 m-0 cursor-pointer appearance-none border-0 bg-transparent p-0 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--accent)"
 									type="button"
-									aria-label={actionLabel}
-									onclick={(event) => openEntry(row.original, event.currentTarget)}
-								></button>
-							{/if}
+									data-entry-action
+									data-entry-index={virtualRow.index}
+									aria-label={canSelect && row.original.selectable !== false
+										? `Select ${row.original.name}${actionLabel ? '; press Enter or double-click to open' : ''}`
+										: (actionLabel ?? row.original.name)}
+									title={actionLabel ? 'Click to select; double-click to open' : undefined}
+									onclick={(event) => onSelectEntry?.(row.original, event.ctrlKey || event.metaKey)}
+									ondblclick={(event) => openEntry(row.original, event.currentTarget)}
+								></button>{/if}
 							{#if canSelect && !isDraftFolder && row.original.selectable !== false}<input
 									class="relative z-10 size-4 cursor-pointer accent-(--accent)"
 									type="checkbox"
