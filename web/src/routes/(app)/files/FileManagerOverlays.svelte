@@ -28,6 +28,8 @@
 		deleteDialogOpen,
 		deleting,
 		deleteTargets,
+		permanentDeleteDialogOpen,
+		permanentDeleteTargets,
 		onCloseImage,
 		onError,
 		onCloseMedia,
@@ -44,6 +46,7 @@
 		onShareEntry,
 		onCloseShare,
 		onDeleteEntry,
+		onPermanentDeleteEntry,
 		onCutEntry,
 		onPaste,
 		onCreateFolder,
@@ -54,6 +57,8 @@
 		onCloseDelete,
 		onCancelDelete,
 		onConfirmDelete,
+		onClosePermanentDelete,
+		onConfirmPermanentDelete,
 	}: {
 		imageEntries: FileManagerEntry[];
 		imagePreviewRequest: { fileId: string; trigger?: HTMLElement } | null;
@@ -75,6 +80,8 @@
 		deleteDialogOpen: boolean;
 		deleting: boolean;
 		deleteTargets: FileManagerEntry[];
+		permanentDeleteDialogOpen: boolean;
+		permanentDeleteTargets: FileManagerEntry[];
 		onCloseImage: () => void;
 		onError: (message: string) => void;
 		onCloseMedia: () => void;
@@ -91,6 +98,7 @@
 		onShareEntry: (entry: FileManagerEntry) => void;
 		onCloseShare: () => void;
 		onDeleteEntry: (entry: FileManagerEntry) => void;
+		onPermanentDeleteEntry: (entry: FileManagerEntry) => void;
 		onCutEntry: (entry: FileManagerEntry) => void;
 		onPaste: (entry: FileManagerEntry | null) => void;
 		onCreateFolder: (entry: FileManagerEntry | null) => void;
@@ -101,6 +109,8 @@
 		onCloseDelete: () => void;
 		onCancelDelete: () => void;
 		onConfirmDelete: () => void;
+		onClosePermanentDelete: () => void;
+		onConfirmPermanentDelete: () => void;
 	} = $props();
 </script>
 
@@ -139,6 +149,7 @@
 	{onProperties}
 	onShare={onShareEntry}
 	onDelete={onDeleteEntry}
+	onPermanentDelete={onPermanentDeleteEntry}
 	onCut={onCutEntry}
 	{onPaste}
 	{onCreateFolder}
@@ -176,8 +187,35 @@
 		<button
 			class="cursor-pointer rounded border border-red-500 bg-red-500 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
 			type="button"
+			data-modal-autofocus
 			disabled={deleting || !deleteTargets.length}
 			onclick={onConfirmDelete}>{deleting ? 'Moving…' : 'Move to Trash'}</button
+		>
+	{/snippet}
+</Modal>
+
+<Modal
+	open={permanentDeleteDialogOpen}
+	label="Confirm permanent deletion"
+	title={`Permanently delete ${permanentDeleteTargets.length} ${permanentDeleteTargets.length === 1 ? 'item' : 'items'}?`}
+	onClose={onClosePermanentDelete}
+>
+	<p class="m-0 text-sm text-(--muted)">
+		This cannot be undone. The encrypted objects will be marked for permanent deletion.
+	</p>
+	{#snippet actions()}
+		<button
+			class="cursor-pointer rounded border border-(--border) px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+			type="button"
+			disabled={deleting}
+			onclick={onClosePermanentDelete}>Cancel</button
+		>
+		<button
+			class="cursor-pointer rounded border border-red-500 bg-red-500 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+			type="button"
+			data-modal-autofocus
+			disabled={deleting || !permanentDeleteTargets.length}
+			onclick={onConfirmPermanentDelete}>{deleting ? 'Deleting…' : 'Delete permanently'}</button
 		>
 	{/snippet}
 </Modal>

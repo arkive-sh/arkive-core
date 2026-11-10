@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import type { Snippet } from 'svelte';
 
 	type Props = {
@@ -31,6 +32,25 @@
 		actions,
 	}: Props = $props();
 	let backdrop = $state<HTMLDivElement>();
+	let dialog = $state<HTMLDivElement>();
+
+	$effect(() => {
+		if (!open || !dialog) return;
+		const previousFocus = document.activeElement;
+		const currentDialog = dialog;
+		void tick().then(() => {
+			const target =
+				currentDialog.querySelector<HTMLElement>('[data-modal-autofocus]:not([disabled])') ??
+				currentDialog.querySelector<HTMLElement>(
+					'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])',
+				);
+			(target ?? currentDialog).focus();
+		});
+
+		return () => {
+			if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
+		};
+	});
 
 	function closeTopmost(event: KeyboardEvent) {
 		if (event.key !== 'Escape' || !open) return;
@@ -57,6 +77,7 @@
 			onclick={onClose}
 		></button>
 		<div
+			bind:this={dialog}
 			class={`relative z-1 flex max-h-[90vh] w-[min(460px,100%)] flex-col overflow-x-hidden overflow-y-auto rounded-lg border border-(--border) bg-(--surface) shadow-[0_24px_64px_rgba(0,0,0,0.48)] max-[640px]:max-h-[min(90vh,760px)] max-[640px]:w-full ${dialogClass}`}
 			role="dialog"
 			aria-modal="true"

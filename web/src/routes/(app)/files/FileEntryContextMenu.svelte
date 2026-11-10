@@ -20,6 +20,7 @@
 	import { isImageFile } from '#lib/utils/image.ts';
 	import { isAudioMimeType, isMediaMimeType } from '#lib/utils/media.ts';
 	import { isPdfFile, isTextFile, type FileManagerEntry } from './types';
+	import { createContextMenuKeyboardHandler } from './keyboard';
 
 	type Props = {
 		mode?: 'files' | 'trash' | 'public';
@@ -73,6 +74,7 @@
 		onPreviewText,
 		onProperties,
 		onDelete,
+		onPermanentDelete,
 		onCut,
 		onPaste,
 		onCreateFolder,
@@ -81,7 +83,6 @@
 		onUploadFolder,
 		onRestore,
 		onRestoreContents,
-		onPermanentDelete,
 		onPermanentDeleteContents,
 	}: Props = $props();
 	let menu = $state<HTMLDivElement>();
@@ -106,28 +107,7 @@
 		if (open && event.target instanceof Node && !menu?.contains(event.target)) onClose();
 	}
 
-	function handleKeydown(event: KeyboardEvent): void {
-		if (!open) return;
-		if (event.key === 'Escape') {
-			event.preventDefault();
-			onClose();
-
-			return;
-		}
-		if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
-		const items = Array.from(menu?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? []);
-
-		if (!items.length) return;
-		event.preventDefault();
-		const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
-		const nextIndex =
-			event.key === 'Home'
-				? 0
-				: event.key === 'End'
-					? items.length - 1
-					: (currentIndex + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
-		items[nextIndex]?.focus();
-	}
+	const handleKeydown = createContextMenuKeyboardHandler(() => ({ open, menu, onClose }));
 
 	function openFolder(): void {
 		if (!entry || entry.kind !== 'folder') return;
@@ -216,7 +196,7 @@
 		onRestoreContents?.(selected);
 	}
 
-	function permanentlyDeleteTrashEntry(): void {
+	function permanentlyDeleteEntry(): void {
 		if (!entry) return;
 		const selected = entry;
 		onClose();
@@ -335,7 +315,7 @@
 					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm text-red-400 hover:bg-red-500/10"
 					type="button"
 					role="menuitem"
-					onclick={permanentlyDeleteTrashEntry}
+					onclick={permanentlyDeleteEntry}
 				>
 					<Trash2 class="size-4" aria-hidden="true" />
 					<span>Delete permanently</span>
@@ -527,6 +507,17 @@
 				>
 					<Trash2 class="size-4" aria-hidden="true" />
 					<span>Move to Trash</span>
+				</button>
+			{/if}
+			{#if mode === 'files' && entry && onPermanentDelete}
+				<button
+					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm text-red-400 hover:bg-red-500/10"
+					type="button"
+					role="menuitem"
+					onclick={permanentlyDeleteEntry}
+				>
+					<Trash2 class="size-4" aria-hidden="true" />
+					<span>Delete permanently</span>
 				</button>
 			{/if}
 		{/if}

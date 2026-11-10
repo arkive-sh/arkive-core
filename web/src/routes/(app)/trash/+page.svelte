@@ -17,6 +17,7 @@
 	import { decryptSearchFile, decryptSearchFolder } from '#lib/vault/search.ts';
 	import { vaultUnlocked } from '#lib/vault/state.ts';
 	import { fileManagerEntryKey, type FileManagerEntry, type FilesView } from '../files/types';
+	import { createTrashPageKeyboardHandler } from '../files/keyboard';
 	import type { PageProps } from './$types';
 
 	const PAGE_SIZE = 50;
@@ -318,38 +319,6 @@
 		else selectedIds.add(key);
 	}
 
-	function handleTrashKeydown(event: KeyboardEvent): void {
-		const target = event.target;
-
-		if (event.defaultPrevented || event.repeat || !(target instanceof HTMLElement)) return;
-		if (
-			target.isContentEditable ||
-			target.closest('input:not([type="checkbox"]), textarea, select, [contenteditable="true"]')
-		)
-			return;
-		if (
-			contextMenuOpen ||
-			permanentDeleteOpen ||
-			document.querySelector('[data-modal-open="true"]')
-		)
-			return;
-		const command = event.ctrlKey || event.metaKey;
-
-		if (command && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'a') {
-			event.preventDefault();
-			selectAll();
-
-			return;
-		}
-		if (
-			(event.key === 'Backspace' || (event.altKey && event.key === 'ArrowLeft')) &&
-			folderPath.length
-		) {
-			event.preventDefault();
-			navigateToFolder(folderPath.at(-2)?.id ?? null);
-		}
-	}
-
 	function toggleAll(): void {
 		if (allSelected) selectedIds.clear();
 		else {
@@ -483,6 +452,21 @@
 		selectedTargets = [];
 		permanentDeleteContainer = null;
 	}
+
+	const handleTrashKeydown = createTrashPageKeyboardHandler(() => ({
+		blocked:
+			contextMenuOpen ||
+			permanentDeleteOpen ||
+			Boolean(document.querySelector('[data-modal-open="true"]')),
+		rows: entries,
+		selectedIds,
+		selectedEntries,
+		hasParent: folderPath.length > 0,
+		onSelectAll: selectAll,
+		onNavigateBack: () => navigateToFolder(folderPath.at(-2)?.id ?? null),
+		onPermanentDelete: requestPermanentDelete,
+		onPermanentDeleteContents: requestPermanentDeleteContents,
+	}));
 </script>
 
 <svelte:head>
@@ -712,6 +696,7 @@
 		<button
 			class="cursor-pointer rounded border border-red-500 bg-red-500 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
 			type="button"
+			data-modal-autofocus
 			disabled={mutating || (!selectedTargets.length && !permanentDeleteContainer)}
 			onclick={() => void permanentlyDelete()}
 			>{mutating ? 'Deleting…' : 'Delete permanently'}</button

@@ -103,6 +103,7 @@ type DeleteEntriesInput struct {
 	UserID    string
 	FileIDs   []string
 	FolderIDs []string
+	Permanent bool
 }
 
 type DeleteEntriesResult struct {

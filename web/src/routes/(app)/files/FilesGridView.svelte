@@ -17,6 +17,7 @@
 		NEW_FOLDER_DRAFT_ID,
 		type FileManagerEntry,
 	} from './types';
+	import { createFileManagerViewKeyboardHandler } from './keyboard';
 
 	const THUMBNAIL_CONCURRENCY = 4;
 	let {
@@ -224,75 +225,16 @@
 		get(rowVirtualizer).scrollToIndex(Math.floor(index / columnCount), { align: 'auto' });
 	}
 
-	function handleEntryKeydown(event: KeyboardEvent): void {
-		if (event.defaultPrevented || !(event.target instanceof HTMLElement)) return;
-		if (event.target.closest('[aria-modal="true"], [role="menu"]')) return;
-		if (
-			event.target.closest(
-				'input:not([type="checkbox"]), textarea, select, [contenteditable="true"]',
-			)
-		)
-			return;
-		const article = event.target.closest<HTMLElement>('[data-entry-index]');
-
-		if (!article) {
-			if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(event.key) || event.altKey)
-				return;
-			const selected = rows.findIndex(
-				(entry) => entry.id !== NEW_FOLDER_DRAFT_ID && selectedIds.has(fileManagerEntryKey(entry)),
-			);
-			const first =
-				selected >= 0 ? selected : rows.findIndex((entry) => entry.id !== NEW_FOLDER_DRAFT_ID);
-
-			if (first >= 0) {
-				event.preventDefault();
-				focusEntry(first);
-			}
-
-			return;
-		}
-		const index = Number(article.dataset.entryIndex);
-
-		if (['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
-			if (event.altKey) return;
-			event.preventDefault();
-			const step =
-				event.key === 'ArrowDown'
-					? columnCount
-					: event.key === 'ArrowUp'
-						? -columnCount
-						: event.key === 'ArrowRight'
-							? 1
-							: -1;
-			let next = index + step;
-
-			while (rows[next]?.id === NEW_FOLDER_DRAFT_ID) next += Math.sign(step);
-			if (event.key === 'ArrowDown' && next >= rows.length) next = rows.length - 1;
-			if (next < 0 || next >= rows.length || next === index) {
-				if (event.key === 'ArrowUp') window.scrollTo({ top: 0, behavior: 'smooth' });
-
-				return;
-			}
-			focusEntry(next);
-		} else if (
-			(event.key === 'Enter' || event.code === 'Space') &&
-			event.target.closest('[data-entry-action]')
-		) {
-			const entry = rows[index];
-
-			if (!entry) return;
-			event.preventDefault();
-			if (event.code === 'Space') {
-				onSelectEntry?.(entry, event.ctrlKey || event.metaKey);
-
-				return;
-			}
-			const action = event.target.closest<HTMLElement>('[data-entry-action]')!;
-
-			if (entryActionLabel(entry)) openEntry(entry, action);
-			else onSelectEntry?.(entry, event.ctrlKey || event.metaKey);
-		}
-	}
+	const handleEntryKeydown = createFileManagerViewKeyboardHandler(() => ({
+		layout: 'grid',
+		rows,
+		selectedIds,
+		columnCount,
+		focusEntry,
+		onSelectEntry,
+		getEntryActionLabel: entryActionLabel,
+		openEntry,
+	}));
 
 	async function loadThumbnail(entry: FileManagerEntry): Promise<void> {
 		if (!entry.thumbnail) return;
