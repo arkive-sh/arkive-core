@@ -208,6 +208,7 @@ export function createFolderEntries(
 							updatedAt: file.UpdatedAt,
 							isShared: file.IsShared,
 							parentFolderId: file.FolderID,
+							encryptedMetadata: file.EncryptedMetadata,
 							encryptedFileKey: file.EncryptedFileKey,
 							dimensions: mediaDimensions,
 						};
@@ -221,6 +222,7 @@ export function createFolderEntries(
 							updatedAt: file.UpdatedAt,
 							isShared: file.IsShared,
 							parentFolderId: file.FolderID,
+							encryptedMetadata: file.EncryptedMetadata,
 							encryptedFileKey: file.EncryptedFileKey,
 						};
 					}

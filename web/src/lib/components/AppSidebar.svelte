@@ -17,7 +17,6 @@
 		desktopOpen: boolean;
 		sidebarWidth: number;
 		onResize: (width: number) => void;
-		onResizeCommit: (width: number) => void;
 		onOpenFolder: (folderId: string) => void;
 		onOpenFile: (fileId: string, folderId: string | null) => void;
 		onOpenTrashFolder: (folderId: string) => void;
@@ -37,7 +36,6 @@
 		desktopOpen,
 		sidebarWidth,
 		onResize,
-		onResizeCommit,
 		onOpenFolder,
 		onOpenFile,
 		onOpenTrashFolder,
@@ -214,5 +212,5 @@
 		</a>
 		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 	</div>
-	<SidebarResizeHandle width={sidebarWidth} visible={!mobileView} {onResize} {onResizeCommit} />
+	<SidebarResizeHandle width={sidebarWidth} visible={!mobileView} {onResize} />
 </aside>

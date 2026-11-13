@@ -95,7 +95,6 @@
 	let showType = $state(false);
 	let showSize = $state(true);
 	let showDimensions = $state(false);
-	let viewOptionsReady = $state(false);
 
 	const selectedEntries = $derived(
 		entries.filter(
@@ -265,33 +264,6 @@
 				entries = [...entries, ...decrypted];
 				entriesReady = true;
 			});
-		}
-	});
-
-	$effect(() => {
-		if (viewOptionsReady) return;
-		try {
-			viewMode = localStorage.getItem('arkive.files.view') === 'grid' ? 'grid' : 'list';
-			tileSize = Number(localStorage.getItem('arkive.files.tile-size')) || 200;
-			showType = localStorage.getItem('arkive.files.show-type') === 'true';
-			showSize = localStorage.getItem('arkive.files.show-size') !== 'false';
-			showDimensions = localStorage.getItem('arkive.files.show-dimensions') === 'true';
-		} catch {
-			// Keep defaults if view preferences are unavailable.
-		}
-		viewOptionsReady = true;
-	});
-
-	$effect(() => {
-		if (!viewOptionsReady) return;
-		try {
-			localStorage.setItem('arkive.files.view', viewMode);
-			localStorage.setItem('arkive.files.tile-size', String(tileSize));
-			localStorage.setItem('arkive.files.show-type', String(showType));
-			localStorage.setItem('arkive.files.show-size', String(showSize));
-			localStorage.setItem('arkive.files.show-dimensions', String(showDimensions));
-		} catch {
-			// Preferences still work for the current Trash page if storage is unavailable.
 		}
 	});
 
@@ -527,6 +499,7 @@
 					{showSize}
 					{showDimensions}
 					onViewChange={(view) => (viewMode = view)}
+					onViewRestore={(view) => (viewMode = view)}
 					onTileSizeChange={(size) => (tileSize = size)}
 					onShowTypeChange={(show) => (showType = show)}
 					onShowSizeChange={(show) => (showSize = show)}

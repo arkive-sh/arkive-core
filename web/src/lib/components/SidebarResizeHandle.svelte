@@ -1,20 +1,40 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+
 	let {
 		width,
 		minWidth = 160,
 		maxWidth = 320,
 		visible = true,
 		onResize,
-		onResizeCommit,
 	}: {
 		width: number;
 		minWidth?: number;
 		maxWidth?: number;
 		visible?: boolean;
 		onResize: (width: number) => void;
-		onResizeCommit: (width: number) => void;
 	} = $props();
 	let resizedWidth = 0;
+	const storageKey = 'arkive.sidebar.width';
+
+	function persistWidth(nextWidth: number): void {
+		try {
+			localStorage.setItem(storageKey, String(nextWidth));
+		} catch {
+			// The sidebar still resizes for this session when local storage is unavailable.
+		}
+	}
+
+	onMount(() => {
+		try {
+			const savedWidth = Number(localStorage.getItem(storageKey));
+
+			if (savedWidth >= minWidth && savedWidth <= maxWidth && savedWidth !== width)
+				onResize(savedWidth);
+		} catch {
+			// Use the default width when local storage is unavailable.
+		}
+	});
 
 	function resize(event: PointerEvent): void {
 		const target = event.currentTarget;
@@ -50,7 +70,7 @@
 
 		if (handle instanceof HTMLElement && handle.hasPointerCapture(event.pointerId)) {
 			handle.releasePointerCapture(event.pointerId);
-			onResizeCommit(resizedWidth);
+			persistWidth(resizedWidth);
 		}
 	}
 
@@ -77,7 +97,7 @@
 		event.preventDefault();
 		resizedWidth = Math.min(maxWidth, Math.max(minWidth, nextWidth));
 		onResize(resizedWidth);
-		onResizeCommit(resizedWidth);
+		persistWidth(resizedWidth);
 	}
 </script>
 

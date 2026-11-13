@@ -24,6 +24,7 @@
 	import { vaultUnlocked } from '#lib/vault/state.ts';
 	import { addEntriesToFolderShares, getFolderShareScopes } from '#lib/shares/folder-share.ts';
 	import { createFilesPageKeyboardHandler } from './files/keyboard';
+	import { renameFileManagerEntry } from './files/rename-entry';
 	import type { PageProps } from './$types';
 
 	// shortcut: browsers without File System Access cannot download; add another streaming file sink when supporting them.
@@ -52,6 +53,9 @@
 	let newFolderName = $state('');
 	let creatingFolder = $state(false);
 	let propertiesEntry = $state<FileManagerEntry | null>(null);
+	let renameEntry = $state<FileManagerEntry | null>(null);
+	let renameName = $state('');
+	let renaming = $state(false);
 	let shareEntry = $state<FileManagerEntry | null>(null);
 	let imagePreviewRequest = $state<{ fileId: string; trigger?: HTMLElement } | null>(null);
 	let mediaPreviewEntry = $state<FileManagerEntry | null>(null);
@@ -67,7 +71,6 @@
 	let showType = $state(false);
 	let showSize = $state(true);
 	let showDimensions = $state(false);
-	let viewOptionsReady = $state(false);
 	const selectedIds = new SvelteSet<string>();
 	const transfers = useTransferManager();
 	const queryClient = useQueryClient();
@@ -76,7 +79,14 @@
 
 	const folderId = $derived(page.url.searchParams.get('folder_id') || null);
 	const focusFileId = $derived(page.url.searchParams.get('focus_file'));
-	const viewMode = $derived(page.url.searchParams.get('view') === 'grid' ? 'grid' : 'list');
+	let savedViewMode = $state<FilesView>('list');
+	const viewMode = $derived(
+		page.url.searchParams.get('view') === 'grid'
+			? 'grid'
+			: page.url.searchParams.get('view') === 'list'
+				? 'list'
+				: savedViewMode,
+	);
 	const folderEntries = createFolderEntries(
 		() => data.user.id,
 		() => folderId,
@@ -139,6 +149,8 @@
 		contextMenuEntry = null;
 		contextMenuOpen = false;
 		propertiesEntry = null;
+		renameEntry = null;
+		renameName = '';
 		shareEntry = null;
 	});
 
@@ -653,45 +665,58 @@
 	}
 
 	function changeView(view: FilesView): void {
+		savedViewMode = view;
 		const href = urlFor(folderId, view);
 		// eslint-disable-next-line svelte/no-navigation-without-resolve
 		void goto(resolve('/(app)') + href);
 	}
 
 	onMount(() => {
-		try {
-			const savedTileSize = localStorage.getItem('arkive.files.tile-size');
-
-			if (savedTileSize !== null) {
-				const parsedTileSize = Number(savedTileSize);
-
-				if (Number.isFinite(parsedTileSize)) {
-					const normalized = Math.min(260, Math.max(60, Math.round(parsedTileSize / 10) * 10));
-					// The old 150px default was persisted automatically; move that default to the roomier grid.
-					tileSize = normalized === 150 ? 200 : normalized;
-				}
-			}
-			showType = localStorage.getItem('arkive.files.show-type') === 'true';
-			showSize = localStorage.getItem('arkive.files.show-size') !== 'false';
-			showDimensions = localStorage.getItem('arkive.files.show-dimensions') === 'true';
-		} catch {
-			// Keep the default view options when local storage is unavailable.
-		}
-		viewOptionsReady = true;
 		void waitUntilReady();
 	});
 
-	$effect(() => {
-		if (!viewOptionsReady) return;
-		try {
-			localStorage.setItem('arkive.files.tile-size', String(tileSize));
-			localStorage.setItem('arkive.files.show-type', String(showType));
-			localStorage.setItem('arkive.files.show-size', String(showSize));
-			localStorage.setItem('arkive.files.show-dimensions', String(showDimensions));
-		} catch {
-			// Preferences still work for the current page when local storage is unavailable.
+	function requestRename(entry: FileManagerEntry): void {
+		if (!$vaultUnlocked || renaming) return;
+		renameEntry = entry;
+		renameName = entry.name;
+		contextMenuEntry = null;
+		contextMenuOpen = false;
+	}
+
+	function cancelRename(): void {
+		if (renaming) return;
+		renameEntry = null;
+		renameName = '';
+	}
+
+	async function renameSelectedEntry(entry: FileManagerEntry, nextName: string): Promise<void> {
+		const name = nextName.trim();
+
+		if (renaming || !name || !$vaultUnlocked) return;
+		if (name === entry.name) {
+			renameEntry = null;
+			renameName = '';
+
+			return;
 		}
-	});
+
+		renaming = true;
+		try {
+			await renameFileManagerEntry(entry, data.user.id, name);
+			renameEntry = null;
+			renameName = '';
+			toast.success('Renamed.');
+			await Promise.all([
+				queryClient.invalidateQueries({ queryKey: ['folder-entries'] }),
+				queryClient.invalidateQueries({ queryKey: ['search'] }),
+				queryClient.invalidateQueries({ queryKey: ['shares'] }),
+			]);
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : 'Could not rename this item.');
+		} finally {
+			renaming = false;
+		}
+	}
 
 	const handleFileManagerKeydown = createFilesPageKeyboardHandler(() => ({
 		blocked:
@@ -725,6 +750,7 @@
 	{breadcrumbItems}
 	{focusFileId}
 	{viewMode}
+	viewPreferenceLocked={page.url.searchParams.has('view')}
 	query={entriesQuery}
 	{rows}
 	{displayedRows}
@@ -742,7 +768,10 @@
 	{showSize}
 	{showDimensions}
 	bind:newFolderName
+	{renameEntry}
+	bind:renameName
 	{creatingFolder}
+	{renaming}
 	onBeginNewFolder={() => beginNewFolder(folderId)}
 	onToggleSelection={toggleSelection}
 	onSelectEntry={selectEntry}
@@ -763,7 +792,10 @@
 	onPreviewText={previewText}
 	onCreateFolder={saveNewFolder}
 	onCancelNewFolder={cancelNewFolder}
+	onRename={renameSelectedEntry}
+	onCancelRename={cancelRename}
 	onViewChange={changeView}
+	onViewRestore={(view) => (savedViewMode = view)}
 	onTileSizeChange={(size) => (tileSize = size)}
 	onShowTypeChange={(show) => (showType = show)}
 	onShowSizeChange={(show) => (showSize = show)}
@@ -811,6 +843,7 @@
 	onPreviewPdf={previewPdf}
 	onPreviewText={previewText}
 	onProperties={(entry) => (propertiesEntry = entry)}
+	onRequestRename={requestRename}
 	onShareEntry={(entry) => (shareEntry = entry)}
 	onCloseShare={() => (shareEntry = null)}
 	onDeleteEntry={requestDelete}

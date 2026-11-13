@@ -43,6 +43,7 @@
 		onPreviewPdf,
 		onPreviewText,
 		onProperties,
+		onRequestRename,
 		onShareEntry,
 		onCloseShare,
 		onDeleteEntry,
@@ -95,6 +96,7 @@
 		onPreviewPdf: (entry: FileManagerEntry) => void;
 		onPreviewText: (entry: FileManagerEntry) => void;
 		onProperties: (entry: FileManagerEntry) => void;
+		onRequestRename: (entry: FileManagerEntry) => void;
 		onShareEntry: (entry: FileManagerEntry) => void;
 		onCloseShare: () => void;
 		onDeleteEntry: (entry: FileManagerEntry) => void;
@@ -147,6 +149,7 @@
 	{onPreviewPdf}
 	{onPreviewText}
 	{onProperties}
+	onRename={onRequestRename}
 	onShare={onShareEntry}
 	onDelete={onDeleteEntry}
 	onPermanentDelete={onPermanentDeleteEntry}

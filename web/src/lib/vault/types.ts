@@ -277,6 +277,15 @@ export interface VaultWorkerCalls {
 		params: { metadataBytes: ArrayBuffer | null; aad: string };
 		result: { encryptedMetadata: string };
 	};
+	encryptFileMetadataForFile: {
+		params: {
+			metadataBytes: ArrayBuffer | null;
+			encryptedFileKey: string;
+			fileKeyAad: string;
+			metadataAad: string;
+		};
+		result: { encryptedMetadata: string };
+	};
 	encryptFolderMetadata: VaultWorkerCalls['encryptFileMetadata'];
 	decryptFileMetadata: {
 		params: { encryptedMetadata: string; aad: string };

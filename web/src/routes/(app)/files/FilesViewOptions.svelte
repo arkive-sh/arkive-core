@@ -7,11 +7,13 @@
 
 	type Props = {
 		view: FilesView;
+		viewLocked?: boolean;
 		tileSize: number;
 		showType: boolean;
 		showSize: boolean;
 		showDimensions: boolean;
 		onViewChange: (view: FilesView) => void;
+		onViewRestore: (view: FilesView) => void;
 		onTileSizeChange: (size: number) => void;
 		onShowTypeChange: (show: boolean) => void;
 		onShowSizeChange: (show: boolean) => void;
@@ -20,11 +22,13 @@
 
 	let {
 		view,
+		viewLocked = false,
 		tileSize,
 		showType,
 		showSize,
 		showDimensions,
 		onViewChange,
+		onViewRestore,
 		onTileSizeChange,
 		onShowTypeChange,
 		onShowSizeChange,
@@ -35,6 +39,44 @@
 	let trigger = $state<HTMLButtonElement>();
 	let panel = $state<HTMLElement>();
 	let position = $state<{ top: number; left: number; width: number } | null>(null);
+	const viewStorageKey = 'arkive.files.view';
+	const tileSizeStorageKey = 'arkive.files.tile-size';
+	const showTypeStorageKey = 'arkive.files.show-type';
+	const showSizeStorageKey = 'arkive.files.show-size';
+	const showDimensionsStorageKey = 'arkive.files.show-dimensions';
+
+	function persist(key: string, value: string | number | boolean): void {
+		try {
+			localStorage.setItem(key, String(value));
+		} catch {
+			// The controls still work for this session when local storage is unavailable.
+		}
+	}
+
+	function changeView(nextView: FilesView): void {
+		persist(viewStorageKey, nextView);
+		onViewChange(nextView);
+	}
+
+	function changeTileSize(size: number): void {
+		persist(tileSizeStorageKey, size);
+		onTileSizeChange(size);
+	}
+
+	function changeShowType(show: boolean): void {
+		persist(showTypeStorageKey, show);
+		onShowTypeChange(show);
+	}
+
+	function changeShowSize(show: boolean): void {
+		persist(showSizeStorageKey, show);
+		onShowSizeChange(show);
+	}
+
+	function changeShowDimensions(show: boolean): void {
+		persist(showDimensionsStorageKey, show);
+		onShowDimensionsChange(show);
+	}
 
 	$effect(() => {
 		if (!open) {
@@ -84,6 +126,31 @@
 	});
 
 	onMount(() => {
+		try {
+			const savedView = localStorage.getItem(viewStorageKey);
+
+			if (!viewLocked && (savedView === 'list' || savedView === 'grid') && savedView !== view)
+				onViewRestore(savedView);
+
+			const savedTileSize = localStorage.getItem(tileSizeStorageKey);
+
+			if (savedTileSize !== null) {
+				const parsed = Number(savedTileSize);
+
+				if (Number.isFinite(parsed)) {
+					const normalized = Math.min(260, Math.max(60, Math.round(parsed / 10) * 10));
+					const restoredSize = normalized === 150 ? 200 : normalized;
+					onTileSizeChange(restoredSize);
+					persist(tileSizeStorageKey, restoredSize);
+				}
+			}
+			onShowTypeChange(localStorage.getItem(showTypeStorageKey) === 'true');
+			onShowSizeChange(localStorage.getItem(showSizeStorageKey) !== 'false');
+			onShowDimensionsChange(localStorage.getItem(showDimensionsStorageKey) === 'true');
+		} catch {
+			// Keep the current options when local storage is unavailable.
+		}
+
 		const closeOutside = (event: PointerEvent) => {
 			if (event.target instanceof Node && !root?.contains(event.target)) open = false;
 		};
@@ -138,7 +205,7 @@
 							type="button"
 							aria-label="List view"
 							aria-pressed={view === 'list'}
-							onclick={() => onViewChange('list')}
+							onclick={() => changeView('list')}
 						>
 							<LayoutList class="size-4.5" aria-hidden="true" />
 						</button>
@@ -149,7 +216,7 @@
 							type="button"
 							aria-label="Grid view"
 							aria-pressed={view === 'grid'}
-							onclick={() => onViewChange('grid')}
+							onclick={() => changeView('grid')}
 						>
 							<LayoutGrid class="size-4.5" aria-hidden="true" />
 						</button>
@@ -171,7 +238,7 @@
 						value={tileSize}
 						aria-label="Tile size"
 						aria-valuetext={`${tileSize} pixels`}
-						oninput={(event) => onTileSizeChange(Number(event.currentTarget.value))}
+						oninput={(event) => changeTileSize(Number(event.currentTarget.value))}
 					/>
 					<span class="flex justify-between text-(--muted)"
 						><span>Small</span><span>Large</span></span
@@ -184,7 +251,7 @@
 							class="size-4 cursor-pointer accent-(--accent)"
 							type="checkbox"
 							checked={showType}
-							onchange={(event) => onShowTypeChange(event.currentTarget.checked)}
+							onchange={(event) => changeShowType(event.currentTarget.checked)}
 						/>
 						<span>File type</span>
 					</label>
@@ -193,7 +260,7 @@
 							class="size-4 cursor-pointer accent-(--accent)"
 							type="checkbox"
 							checked={showSize}
-							onchange={(event) => onShowSizeChange(event.currentTarget.checked)}
+							onchange={(event) => changeShowSize(event.currentTarget.checked)}
 						/>
 						<span>File size</span>
 					</label>
@@ -206,7 +273,7 @@
 						class="size-4 cursor-pointer accent-(--accent)"
 						type="checkbox"
 						checked={showDimensions}
-						onchange={(event) => onShowDimensionsChange(event.currentTarget.checked)}
+						onchange={(event) => changeShowDimensions(event.currentTarget.checked)}
 					/>
 					<span>Resolution</span>
 				</label>

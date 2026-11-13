@@ -20,7 +20,7 @@
 	let searchOpen = $state(false);
 	let vaultReady = $state(false);
 	let sidebarTransitionTimer: ReturnType<typeof setTimeout> | undefined;
-	const sidebarWidthStorageKey = 'arkive.sidebar.width';
+	const sidebarOpenStorageKey = 'arkive.sidebar.open';
 
 	function setMobileOpen(open: boolean) {
 		mobileOpen = open;
@@ -35,6 +35,11 @@
 		}
 
 		desktopOpen = !desktopOpen;
+		try {
+			localStorage.setItem(sidebarOpenStorageKey, String(desktopOpen));
+		} catch {
+			// The sidebar still works for this session when local storage is unavailable.
+		}
 		sidebarTransitioning = true;
 		clearTimeout(sidebarTransitionTimer);
 		sidebarTransitionTimer = setTimeout(() => (sidebarTransitioning = false), 240);
@@ -72,10 +77,6 @@
 		sidebarWidth = width;
 	}
 
-	function persistSidebarWidth(width: number) {
-		localStorage.setItem(sidebarWidthStorageKey, String(width));
-	}
-
 	function openSearch() {
 		searchOpen = true;
 	}
@@ -103,9 +104,11 @@
 
 	onMount(() => {
 		void waitUntilReady().then(() => (vaultReady = true));
-		const savedSidebarWidth = Number(localStorage.getItem(sidebarWidthStorageKey));
-
-		if (savedSidebarWidth >= 160 && savedSidebarWidth <= 320) sidebarWidth = savedSidebarWidth;
+		try {
+			if (localStorage.getItem(sidebarOpenStorageKey) === 'false') desktopOpen = false;
+		} catch {
+			// Use the default sidebar settings when local storage is unavailable.
+		}
 
 		const media = window.matchMedia('(max-width: 960px)');
 		const syncView = () => {
@@ -167,7 +170,6 @@
 		{desktopOpen}
 		{sidebarWidth}
 		onResize={updateSidebarWidth}
-		onResizeCommit={persistSidebarWidth}
 		onOpenFolder={openFolder}
 		onOpenFile={openFile}
 		onOpenTrashFolder={openTrashFolder}

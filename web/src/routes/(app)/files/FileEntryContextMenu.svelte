@@ -13,6 +13,7 @@
 		FolderPlus,
 		Image,
 		Info,
+		Pencil,
 		RotateCcw,
 		Scissors,
 		Trash2,
@@ -36,6 +37,7 @@
 		onOpenFolder: (id: string) => void;
 		onDownload: (entry: FileManagerEntry) => void;
 		onShare?: (entry: FileManagerEntry) => void;
+		onRename?: (entry: FileManagerEntry) => void;
 		onPreviewImage: (entry: FileManagerEntry) => void;
 		onPreviewMedia: (entry: FileManagerEntry) => void;
 		onPreviewPdf: (entry: FileManagerEntry) => void;
@@ -68,6 +70,7 @@
 		onOpenFolder,
 		onDownload,
 		onShare,
+		onRename,
 		onPreviewImage,
 		onPreviewMedia,
 		onPreviewPdf,
@@ -135,6 +138,13 @@
 		const selected = entry;
 		onClose();
 		onShare?.(selected);
+	}
+
+	function renameEntry(): void {
+		if (!entry) return;
+		const selected = entry;
+		onClose();
+		onRename?.(selected);
 	}
 
 	function previewPdf(): void {
@@ -378,6 +388,17 @@
 				{/if}
 			{/if}
 			{#if entry}
+				{#if mode === 'files' && onRename}
+					<button
+						class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
+						type="button"
+						role="menuitem"
+						onclick={renameEntry}
+					>
+						<Pencil class="size-4 text-(--muted)" aria-hidden="true" />
+						<span>Rename</span>
+					</button>
+				{/if}
 				<button
 					class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
 					type="button"

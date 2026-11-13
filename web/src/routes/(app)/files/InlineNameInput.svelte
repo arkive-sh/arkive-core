@@ -6,15 +6,39 @@
 		variant: 'list' | 'grid';
 		name?: string;
 		busy: boolean;
-		onCreate: () => void | Promise<void>;
+		placeholder?: string;
+		showFolderIcon?: boolean;
+		selectOnMount?: boolean;
+		selectBeforeExtension?: boolean;
+		onSubmit: () => void | Promise<void>;
 		onCancel: () => void;
 	};
 
-	let { variant, name = $bindable(''), busy, onCreate, onCancel }: Props = $props();
+	let {
+		variant,
+		name = $bindable(''),
+		busy,
+		placeholder = 'New folder name',
+		showFolderIcon = true,
+		selectOnMount = false,
+		selectBeforeExtension = false,
+		onSubmit,
+		onCancel,
+	}: Props = $props();
 	let container = $state<HTMLFormElement>();
 	let input = $state<HTMLInputElement>();
 
-	onMount(() => input?.focus());
+	onMount(() => {
+		input?.focus();
+		if (selectOnMount) {
+			const extensionStart = name.lastIndexOf('.');
+			const selectionEnd =
+				selectBeforeExtension && extensionStart > 0 && extensionStart < name.length - 1
+					? extensionStart
+					: name.length;
+			input?.setSelectionRange(0, selectionEnd);
+		}
+	});
 
 	function handleOutsidePointer(event: PointerEvent): void {
 		if (!busy && container && event.target instanceof Node && !container.contains(event.target))
@@ -26,15 +50,16 @@
 			event.preventDefault();
 			event.stopPropagation();
 			if (!busy) onCancel();
-		} else if (event.key === 'Enter' && !busy && name.trim()) {
+		} else if (event.key === 'Enter') {
 			event.preventDefault();
-			void onCreate();
+			event.stopPropagation();
+			if (!busy && name.trim()) void onSubmit();
 		}
 	}
 
 	function submit(event: SubmitEvent): void {
 		event.preventDefault();
-		if (!busy && name.trim()) void onCreate();
+		if (!busy && name.trim()) void onSubmit();
 	}
 </script>
 
@@ -42,18 +67,21 @@
 
 <form
 	bind:this={container}
-	class={variant === 'list' ? 'flex min-w-0 flex-1 items-center gap-2' : 'grid min-w-0 gap-1.5'}
+	class={`relative z-10 ${variant === 'list' ? 'flex min-w-0 flex-1 items-center gap-2' : 'grid min-w-0 gap-1.5'}`}
 	aria-busy={busy}
 	onsubmit={submit}
 >
-	{#if variant === 'list'}<Folder class="size-4 shrink-0 text-(--accent)" aria-hidden="true" />{/if}
+	{#if variant === 'list' && showFolderIcon}<Folder
+			class="size-4 shrink-0 text-(--accent)"
+			aria-hidden="true"
+		/>{/if}
 	<input
 		bind:this={input}
 		bind:value={name}
 		class="h-8 min-w-0 flex-1 rounded border border-(--border) bg-(--bg) px-2 text-sm text-(--text) outline-none placeholder:text-(--muted) focus:border-(--accent) focus:ring-1 focus:ring-(--accent)"
 		type="text"
-		placeholder="New folder name"
-		aria-label="New folder name"
+		{placeholder}
+		aria-label={placeholder}
 		disabled={busy}
 		onkeydown={handleKeydown}
 	/>

@@ -64,14 +64,18 @@ export function encryptFileMetadataForFile(
 	metadata: VaultMetadata,
 	vaultId: string,
 	fileId: string,
+	parentFolderId: string | null,
+	encryptedFileKey: string,
 ): Promise<{ encryptedMetadata: string }> {
 	const metadataBytes = encodeJSON(metadata);
 
 	return callVaultWorker(
-		'encryptFileMetadata',
+		'encryptFileMetadataForFile',
 		{
 			metadataBytes,
-			aad: fileMetadataAAD(vaultId, fileId),
+			encryptedFileKey,
+			fileKeyAad: fileKeyAAD(vaultId, fileId, parentFolderId),
+			metadataAad: fileMetadataAAD(vaultId, fileId),
 		},
 		[metadataBytes],
 	);

@@ -6,7 +6,7 @@
 	import { get } from 'svelte/store';
 	import { formatBytes, formatDate } from '#lib/utils/format.ts';
 	import FileTypeIcon from '#lib/components/FileTypeIcon.svelte';
-	import InlineNewFolder from './InlineNewFolder.svelte';
+	import InlineNameInput from './InlineNameInput.svelte';
 	import { isImageFile } from '#lib/utils/image.ts';
 	import { isMediaMimeType } from '#lib/utils/media.ts';
 	import {
@@ -32,9 +32,14 @@
 		loadedCount,
 		showDimensions,
 		newFolderName = $bindable(''),
+		renameEntry = null,
+		renameName = $bindable(''),
 		creatingFolder,
+		renaming = false,
 		onCreateFolder,
 		onCancelNewFolder,
+		onRename,
+		onCancelRename,
 		onToggleSelection,
 		onSelectEntry,
 		onToggleAll,
@@ -56,9 +61,14 @@
 		loadedCount: number;
 		showDimensions: boolean;
 		newFolderName?: string;
+		renameEntry?: FileManagerEntry | null;
+		renameName?: string;
 		creatingFolder: boolean;
+		renaming?: boolean;
 		onCreateFolder?: () => void | Promise<void>;
 		onCancelNewFolder?: () => void;
+		onRename?: (entry: FileManagerEntry, name: string) => void | Promise<void>;
+		onCancelRename?: () => void;
 		onToggleSelection?: (entry: FileManagerEntry) => void;
 		onSelectEntry?: (entry: FileManagerEntry, additive: boolean) => void;
 		onToggleAll?: () => void;
@@ -295,15 +305,38 @@
 									class="flex min-w-0 items-center whitespace-nowrap px-4 py-1.5 first:pl-5 last:pr-5"
 								>
 									{#if isDraftFolder && cell.column.id === 'name' && onCreateFolder && onCancelNewFolder}
-										<InlineNewFolder
+										<InlineNameInput
 											variant="list"
 											bind:name={newFolderName}
 											busy={creatingFolder}
-											onCreate={onCreateFolder}
+											onSubmit={onCreateFolder}
 											onCancel={onCancelNewFolder}
 										/>
 									{:else if isDraftFolder}
 										<span></span>
+									{:else if cell.column.id === 'name' && renameEntry?.id === row.original.id && onRename && onCancelRename}
+										<div class="inline-flex min-w-0 flex-1 items-center gap-2">
+											{#if row.original.kind === 'folder'}
+												<Folder class="size-4 shrink-0 text-(--accent)" aria-hidden="true" />
+											{:else}
+												<FileTypeIcon
+													name={row.original.name}
+													mime={row.original.type}
+													className="size-4 shrink-0"
+												/>
+											{/if}
+											<InlineNameInput
+												variant="list"
+												showFolderIcon={false}
+												selectOnMount
+												selectBeforeExtension={row.original.kind === 'file'}
+												placeholder="Rename file or folder"
+												bind:name={renameName}
+												busy={renaming}
+												onSubmit={() => onRename(row.original, renameName)}
+												onCancel={onCancelRename}
+											/>
+										</div>
 									{:else if cell.column.id === 'name' && row.original.kind === 'folder'}
 										<span
 											class="inline-flex min-w-0 max-w-full items-center gap-2 text-left font-medium text-(--text)"

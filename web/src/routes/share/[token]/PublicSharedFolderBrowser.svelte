@@ -217,16 +217,7 @@
 		if (currentFolder) void loadFolderEntries(currentFolder.id, true).catch(() => {});
 	}
 
-	function persistTreeWidth(width: number): void {
-		folderTreeWidth = width;
-		localStorage.setItem('arkive.sidebar.width', String(width));
-	}
-
 	onMount(() => {
-		const savedWidth = Number(localStorage.getItem('arkive.sidebar.width'));
-
-		if (savedWidth >= 160 && savedWidth <= 320) folderTreeWidth = savedWidth;
-
 		void (async () => {
 			try {
 				const name = await decryptFolderName(
@@ -328,7 +319,6 @@
 				<SidebarResizeHandle
 					width={folderTreeWidth}
 					onResize={(width) => (folderTreeWidth = width)}
-					onResizeCommit={persistTreeWidth}
 				/>
 			{/if}
 		</aside>

@@ -6,7 +6,7 @@
 	import { get } from 'svelte/store';
 	import { formatBytes } from '#lib/utils/format.ts';
 	import FileTypeIcon from '#lib/components/FileTypeIcon.svelte';
-	import InlineNewFolder from './InlineNewFolder.svelte';
+	import InlineNameInput from './InlineNameInput.svelte';
 	import { isImageFile } from '#lib/utils/image.ts';
 	import { isMediaMimeType } from '#lib/utils/media.ts';
 	import { readDecryptedThumbnail } from '#lib/vault/thumbnail.ts';
@@ -31,9 +31,14 @@
 		showSize,
 		showDimensions,
 		newFolderName = $bindable(''),
+		renameEntry = null,
+		renameName = $bindable(''),
 		creatingFolder,
+		renaming = false,
 		onCreateFolder,
 		onCancelNewFolder,
+		onRename,
+		onCancelRename,
 		onToggleSelection,
 		onSelectEntry,
 		onOpenFolder,
@@ -54,9 +59,14 @@
 		showSize: boolean;
 		showDimensions: boolean;
 		newFolderName?: string;
+		renameEntry?: FileManagerEntry | null;
+		renameName?: string;
 		creatingFolder: boolean;
+		renaming?: boolean;
 		onCreateFolder?: () => void | Promise<void>;
 		onCancelNewFolder?: () => void;
+		onRename?: (entry: FileManagerEntry, name: string) => void | Promise<void>;
+		onCancelRename?: () => void;
 		onToggleSelection?: (entry: FileManagerEntry) => void;
 		onSelectEntry?: (entry: FileManagerEntry, additive: boolean) => void;
 		onOpenFolder: (id: string) => void;
@@ -354,11 +364,11 @@
 										/>
 									</div>
 									<div style={`padding: ${cardGap}px`}>
-										<InlineNewFolder
+										<InlineNameInput
 											variant="grid"
 											bind:name={newFolderName}
 											busy={creatingFolder}
-											onCreate={onCreateFolder}
+											onSubmit={onCreateFolder}
 											onCancel={onCancelNewFolder}
 										/>
 									</div>
@@ -441,10 +451,23 @@
 								>
 									<div class="flex min-w-0 items-center justify-center gap-1">
 										<div class="min-w-0 flex-1" title={entry.name}>
-											<span
-												class="block truncate font-medium leading-tight"
-												style={`font-size: ${nameFontSize}px`}>{entry.name}</span
-											>
+											{#if renameEntry?.id === entry.id && onRename && onCancelRename}
+												<InlineNameInput
+													variant="grid"
+													selectOnMount
+													selectBeforeExtension={entry.kind === 'file'}
+													placeholder="Rename file or folder"
+													bind:name={renameName}
+													busy={renaming}
+													onSubmit={() => onRename(entry, renameName)}
+													onCancel={onCancelRename}
+												/>
+											{:else}
+												<span
+													class="block truncate font-medium leading-tight"
+													style={`font-size: ${nameFontSize}px`}>{entry.name}</span
+												>
+											{/if}
 										</div>
 										{#if entry.isShared}
 											<button

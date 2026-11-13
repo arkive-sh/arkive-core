@@ -239,6 +239,34 @@ async function handleEncryptFileMetadata(params: WorkerInput<'encryptFileMetadat
 	}
 }
 
+async function handleEncryptFileMetadataForFile(params: WorkerInput<'encryptFileMetadataForFile'>) {
+	const master = activeMasterKey();
+	const generation = workerState.vaultGeneration;
+	let encryptedFileKey;
+	let fileKey;
+	let metadata;
+	let encryptedMetadata;
+
+	try {
+		if (!params.metadataBytes) throw new Error('Metadata is unavailable');
+		metadata = toUint8Array(params.metadataBytes);
+		params.metadataBytes = null;
+		encryptedFileKey = fromBase64(params.encryptedFileKey);
+		fileKey = await decryption.unwrapKey(encryptedFileKey, master, aadBytes(params.fileKeyAad));
+		assertVaultGeneration(generation);
+		encryptedMetadata = await encryption.encrypt(metadata, fileKey, aadBytes(params.metadataAad));
+		assertVaultGeneration(generation);
+
+		return { encryptedMetadata: toBase64(encryptedMetadata) };
+	} finally {
+		params.metadataBytes = null;
+		encryptedFileKey = clearBytes(encryptedFileKey);
+		fileKey = clearBytes(fileKey);
+		metadata = clearBytes(metadata);
+		encryptedMetadata = clearBytes(encryptedMetadata);
+	}
+}
+
 async function handleDecryptFileMetadata(params: WorkerInput<'decryptFileMetadata'>) {
 	const master = activeMasterKey();
 	let encryptedMetadata;
@@ -263,6 +291,7 @@ export const file_operations = {
 	decryptFileChunk: handleDecryptFileChunk,
 	encryptFileMetadataInContext: handleEncryptFileMetadataInContext,
 	encryptFileMetadata: handleEncryptFileMetadata,
+	encryptFileMetadataForFile: handleEncryptFileMetadataForFile,
 	decryptFileMetadata: handleDecryptFileMetadata,
 	encryptFolderMetadata: handleEncryptFileMetadata,
 	decryptFolderMetadata: handleDecryptFileMetadata,
@@ -275,6 +304,7 @@ export const file_operations = {
 	| 'decryptFileChunk'
 	| 'encryptFileMetadataInContext'
 	| 'encryptFileMetadata'
+	| 'encryptFileMetadataForFile'
 	| 'decryptFileMetadata'
 	| 'encryptFolderMetadata'
 	| 'decryptFolderMetadata'

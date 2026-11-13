@@ -28,6 +28,7 @@
 		breadcrumbItems,
 		focusFileId,
 		viewMode,
+		viewPreferenceLocked,
 		query,
 		rows,
 		displayedRows,
@@ -45,7 +46,10 @@
 		showSize,
 		showDimensions,
 		newFolderName = $bindable(''),
+		renameEntry,
+		renameName = $bindable(''),
 		creatingFolder,
+		renaming,
 		onBeginNewFolder,
 		onToggleSelection,
 		onSelectEntry,
@@ -66,7 +70,10 @@
 		onPreviewText,
 		onCreateFolder,
 		onCancelNewFolder,
+		onRename,
+		onCancelRename,
 		onViewChange,
+		onViewRestore,
 		onTileSizeChange,
 		onShowTypeChange,
 		onShowSizeChange,
@@ -78,6 +85,7 @@
 		breadcrumbItems: BreadcrumbItem[];
 		focusFileId: string | null;
 		viewMode: FilesView;
+		viewPreferenceLocked: boolean;
 		query: Query;
 		rows: FileManagerEntry[];
 		displayedRows: FileManagerEntry[];
@@ -95,7 +103,10 @@
 		showSize: boolean;
 		showDimensions: boolean;
 		newFolderName?: string;
+		renameEntry: FileManagerEntry | null;
+		renameName?: string;
 		creatingFolder: boolean;
+		renaming: boolean;
 		onBeginNewFolder: () => void;
 		onToggleSelection: (entry: FileManagerEntry) => void;
 		onSelectEntry: (entry: FileManagerEntry, additive: boolean) => void;
@@ -116,7 +127,10 @@
 		onPreviewText: (entry: FileManagerEntry) => void;
 		onCreateFolder: () => void | Promise<void>;
 		onCancelNewFolder: () => void;
+		onRename: (entry: FileManagerEntry, name: string) => void | Promise<void>;
+		onCancelRename: () => void;
 		onViewChange: (view: FilesView) => void;
+		onViewRestore: (view: FilesView) => void;
 		onTileSizeChange: (size: number) => void;
 		onShowTypeChange: (show: boolean) => void;
 		onShowSizeChange: (show: boolean) => void;
@@ -226,11 +240,13 @@
 				{/if}
 				<FilesViewOptions
 					view={viewMode}
+					viewLocked={viewPreferenceLocked}
 					{tileSize}
 					{showType}
 					{showSize}
 					{showDimensions}
 					{onViewChange}
+					{onViewRestore}
 					{onTileSizeChange}
 					{onShowTypeChange}
 					{onShowSizeChange}
@@ -271,9 +287,14 @@
 							{showSize}
 							{showDimensions}
 							bind:newFolderName
+							{renameEntry}
+							bind:renameName
 							{creatingFolder}
+							{renaming}
 							{onCreateFolder}
 							{onCancelNewFolder}
+							{onRename}
+							{onCancelRename}
 							{onToggleSelection}
 							{onSelectEntry}
 							{onOpenFolder}
@@ -291,9 +312,14 @@
 							{selectedIds}
 							{showDimensions}
 							bind:newFolderName
+							{renameEntry}
+							bind:renameName
 							{creatingFolder}
+							{renaming}
 							{onCreateFolder}
 							{onCancelNewFolder}
+							{onRename}
+							{onCancelRename}
 							{selectedCount}
 							{loadedCount}
 							{onToggleSelection}
