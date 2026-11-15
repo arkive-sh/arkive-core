@@ -2,8 +2,6 @@ package settings
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -13,7 +11,6 @@ import (
 	"arkive/core/models"
 	settingsrepo "arkive/core/repositories/settings"
 	usersrepo "arkive/core/repositories/users"
-	"arkive/pkg/storage/localclient"
 	"arkive/pkg/validation"
 )
 
@@ -24,8 +21,6 @@ type Service struct {
 }
 
 type StorageInput struct {
-	Provider          string
-	LocalPath         string
 	StorageGB         string
 	S3AccessKeyID     string
 	S3SecretAccessKey string
@@ -53,16 +48,6 @@ func NewService(db database.PgPool, settingsRepo *settingsrepo.Repository, users
 		settingsRepo: settingsRepo,
 		usersRepo:    usersRepo,
 	}
-}
-
-func NewLocalStorage(db database.PgPool, settingsRepo *settingsrepo.Repository) *localclient.Client {
-	return localclient.New(func(ctx context.Context) (string, error) {
-		settings, err := settingsRepo.GetStorageSettings(ctx, db)
-		if err != nil {
-			return "", err
-		}
-		return settings.LocalPath, nil
-	})
 }
 
 func (s *Service) StorageSettings(ctx context.Context) (models.StorageSettings, error) {
@@ -165,11 +150,6 @@ func (s *Service) UpdatePreviewSettings(ctx context.Context, userID string, inpu
 
 func SaveStorageSettingsTx(ctx context.Context, tx pgx.Tx, settingsRepo *settingsrepo.Repository, settings models.StorageSettings) error {
 	settings = NormalizeStorageSettings(settings)
-	if settings.Provider == "local" {
-		if err := os.MkdirAll(settings.LocalPath, 0o700); err != nil {
-			return err
-		}
-	}
 	return settingsRepo.SaveStorageSettings(ctx, tx, settings)
 }
 
@@ -186,8 +166,7 @@ func BuildStorageSettings(input StorageInput) (models.StorageSettings, validatio
 		}
 	}
 	return NormalizeStorageSettings(models.StorageSettings{
-		Provider:          strings.ToLower(strings.TrimSpace(input.Provider)),
-		LocalPath:         strings.TrimSpace(input.LocalPath),
+		Provider:          "s3",
 		MaxStorageBytes:   maxBytes,
 		S3AccessKeyID:     strings.TrimSpace(input.S3AccessKeyID),
 		S3SecretAccessKey: strings.TrimSpace(input.S3SecretAccessKey),
@@ -202,13 +181,7 @@ func BuildStorageSettings(input StorageInput) (models.StorageSettings, validatio
 func NormalizeStorageSettings(settings models.StorageSettings) models.StorageSettings {
 	settings.Provider = strings.ToLower(strings.TrimSpace(settings.Provider))
 	if settings.Provider == "" {
-		settings.Provider = "local"
-	}
-	settings.LocalPath = strings.TrimSpace(settings.LocalPath)
-	if settings.Provider == "local" && settings.LocalPath != "" {
-		if abs, err := filepath.Abs(settings.LocalPath); err == nil {
-			settings.LocalPath = abs
-		}
+		settings.Provider = "s3"
 	}
 	settings.S3Region = strings.TrimSpace(settings.S3Region)
 	if settings.Provider == "s3" && settings.S3Region == "" {
@@ -218,26 +191,20 @@ func NormalizeStorageSettings(settings models.StorageSettings) models.StorageSet
 }
 
 func ValidateStorageSettings(settings models.StorageSettings, validationErrors validation.Errors) {
-	switch settings.Provider {
-	case "local":
-		if settings.LocalPath == "" {
-			validationErrors.Add("local_path", "local storage path is required")
-		}
-	case "s3":
-		if settings.S3AccessKeyID == "" {
-			validationErrors.Add("s3_access_key_id", "access key is required")
-		}
-		if settings.S3SecretAccessKey == "" {
-			validationErrors.Add("s3_secret_access_key", "secret key is required")
-		}
-		if settings.S3Bucket == "" {
-			validationErrors.Add("s3_bucket", "bucket is required")
-		}
-		if settings.S3Endpoint == "" {
-			validationErrors.Add("s3_endpoint", "endpoint is required")
-		}
-	default:
-		validationErrors.Add("storage_provider", "choose local or S3-compatible storage")
+	if settings.Provider != "s3" {
+		validationErrors.Add("storage_provider", "S3-compatible storage is required")
+	}
+	if settings.S3AccessKeyID == "" {
+		validationErrors.Add("s3_access_key_id", "access key is required")
+	}
+	if settings.S3SecretAccessKey == "" {
+		validationErrors.Add("s3_secret_access_key", "secret key is required")
+	}
+	if settings.S3Bucket == "" {
+		validationErrors.Add("s3_bucket", "bucket is required")
+	}
+	if settings.S3Endpoint == "" {
+		validationErrors.Add("s3_endpoint", "endpoint is required")
 	}
 }
 

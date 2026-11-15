@@ -47,7 +47,6 @@ type InitialAdminInput struct {
 	VaultSalt                []byte
 	EncryptedMasterKey       []byte
 	Storage                  models.StorageSettings
-	LocalStorageGB           string
 }
 
 func NewService(db database.PgPool, authRepo *authrepo.Repository, userRepo *usersrepo.Repository, settingsRepo *settingsrepo.Repository, opaqueSetup string) *Service {

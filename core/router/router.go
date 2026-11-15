@@ -23,10 +23,9 @@ import (
 	"arkive/core/services/shares"
 	syncsvc "arkive/core/services/sync"
 	"arkive/core/services/uploads"
-	"arkive/pkg/storage/localclient"
 )
 
-func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, filesService *filessvc.Service, folderService *folderssvc.Service, localStorage *localclient.Client, corsMiddleware gin.HandlerFunc) *gin.Engine {
+func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, filesService *filessvc.Service, folderService *folderssvc.Service, corsMiddleware gin.HandlerFunc) *gin.Engine {
 	r := gin.Default()
 	r.Use(middleware.ErrorLogger())
 	r.Use(middleware.SecurityHeaders())
@@ -45,13 +44,6 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 	shareService := shares.NewService(db, filerepo.New(), foldersrepo.New(), sharerepo.New())
 	syncService := syncsvc.NewService(db, syncrepo.New())
 
-	localStorageRoutes := r.Group("/local-storage")
-	if corsMiddleware != nil {
-		localStorageRoutes.Use(corsMiddleware)
-		r.OPTIONS("/local-storage/*path", corsMiddleware)
-	}
-	localStorageRoutes.PUT("/upload/:token", handlers.LocalStorageUpload(localStorage))
-	localStorageRoutes.GET("/download/:token", handlers.LocalStorageDownload(localStorage))
 	// Public API endpoints
 	api := r.Group("/api")
 	if corsMiddleware != nil {

@@ -1,5 +1,4 @@
 import * as v from 'valibot';
-import type { StorageProvider } from './types';
 
 export interface SetupFormValues {
 	name: string;
@@ -7,9 +6,7 @@ export interface SetupFormValues {
 	email: string;
 	password: string;
 	confirm_password: string;
-	storage_provider: StorageProvider;
 	storage_gb: string;
-	local_path: string;
 	s3_access_key_id: string;
 	s3_secret_access_key: string;
 	s3_bucket: string;
@@ -45,22 +42,15 @@ export function validateSetup(values: SetupFormValues) {
 			email: v.pipe(v.string(), v.nonEmpty('email is required'), v.email('email must be valid')),
 			password,
 			confirm_password: required('confirm password is required'),
-			storage_provider: v.picklist(['local', 's3']),
 			storage_gb: v.pipe(
 				v.string(),
 				v.nonEmpty('storage limit is required'),
 				v.regex(/^\d+$/, 'storage limit must be 0 or a positive number'),
 			),
-			local_path:
-				values.storage_provider === 'local'
-					? required('local storage path is required')
-					: v.string(),
-			s3_access_key_id:
-				values.storage_provider === 's3' ? required('access key is required') : v.string(),
-			s3_secret_access_key:
-				values.storage_provider === 's3' ? required('secret key is required') : v.string(),
-			s3_bucket: values.storage_provider === 's3' ? required('bucket is required') : v.string(),
-			s3_endpoint: values.storage_provider === 's3' ? required('endpoint is required') : v.string(),
+			s3_access_key_id: required('access key is required'),
+			s3_secret_access_key: required('secret key is required'),
+			s3_bucket: required('bucket is required'),
+			s3_endpoint: required('endpoint is required'),
 		}),
 		v.forward(
 			v.partialCheck(

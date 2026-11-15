@@ -29,11 +29,11 @@ Core has no mailer, so its API returns the reset link to the requester; the link
 
 ### Storage
 
-- Local filesystem storage
 - S3-compatible storage providers
 - Cloudflare R2 support
 - Multipart uploads
 - Direct-to-storage uploads via presigned URLs
+- File bytes go directly between the browser and storage, bypassing the Go API server
 - Large file support
 
 ### File Management
@@ -81,19 +81,10 @@ The backend only stores encrypted data and encrypted metadata. Decryption happen
 Arkive Core is a server-rendered Go application with client-side cryptography powered by Rust and WebAssembly.
 
 ```text
-Browser
- ├─ Vault unlock
- ├─ Encrypt files
- ├─ Encrypt metadata
- ├─ Generate trigram search tokens
- └─ Decrypt content
-          │
-          ▼
-Arkive Core API (Go)
-          │
-          ▼
-Storage Provider
-(Local / S3-compatible / R2)
+Browser ─── metadata and authorization ───► Arkive Core API (Go)
+   │                                            │
+   ├─ encrypt/decrypt files                     └── presigned URLs ───┐
+   └─ encrypted file bytes ──────────────────────────────────────────► S3-compatible storage
 ```
 
 All encryption and decryption happens on the client after vault unlock.

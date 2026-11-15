@@ -44,7 +44,6 @@ func (r *Repository) GetStorageSettings(ctx context.Context, db database.PgExecu
 	usePathStyle, _ := strconv.ParseBool(values["storage.s3_use_path_style"])
 	settings := models.StorageSettings{
 		Provider:          strings.TrimSpace(values["storage.provider"]),
-		LocalPath:         strings.TrimSpace(values["storage.local_path"]),
 		MaxStorageBytes:   maxStorageBytes,
 		S3AccessKeyID:     strings.TrimSpace(values["storage.s3_access_key_id"]),
 		S3SecretAccessKey: values["storage.s3_secret_access_key"],
@@ -178,7 +177,6 @@ func (r *Repository) SavePreviewSettings(ctx context.Context, db database.PgExec
 func (r *Repository) SaveStorageSettings(ctx context.Context, db database.PgExecutor, settings models.StorageSettings) error {
 	values := map[string]string{
 		"storage.provider":             settings.Provider,
-		"storage.local_path":           settings.LocalPath,
 		"storage.max_bytes":            strconv.FormatInt(settings.MaxStorageBytes, 10),
 		"storage.s3_access_key_id":     settings.S3AccessKeyID,
 		"storage.s3_secret_access_key": settings.S3SecretAccessKey,
@@ -198,5 +196,6 @@ func (r *Repository) SaveStorageSettings(ctx context.Context, db database.PgExec
 			return err
 		}
 	}
-	return nil
+	_, err := db.Exec(ctx, `DELETE FROM instance_settings WHERE key = 'storage.local_path'`)
+	return err
 }

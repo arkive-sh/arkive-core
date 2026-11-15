@@ -16,8 +16,6 @@ import (
 )
 
 type apiSetupStorageInput struct {
-	Provider          string `json:"provider"`
-	LocalPath         string `json:"localPath"`
 	StorageGB         string `json:"storageGB"`
 	S3AccessKeyID     string `json:"s3AccessKeyID"`
 	S3SecretAccessKey string `json:"s3SecretAccessKey"`
@@ -121,8 +119,6 @@ func APICreateInitialSetup(svc *setup.Service) gin.HandlerFunc {
 		}
 
 		storage, validationErrors := settingssvc.BuildStorageSettings(settingssvc.StorageInput{
-			Provider:          req.Storage.Provider,
-			LocalPath:         req.Storage.LocalPath,
 			StorageGB:         req.Storage.StorageGB,
 			S3AccessKeyID:     req.Storage.S3AccessKeyID,
 			S3SecretAccessKey: req.Storage.S3SecretAccessKey,
@@ -172,7 +168,6 @@ func APICreateInitialSetup(svc *setup.Service) gin.HandlerFunc {
 			VaultSalt:                vaultSalt,
 			EncryptedMasterKey:       encryptedMasterKey,
 			Storage:                  storage,
-			LocalStorageGB:           req.Storage.StorageGB,
 		})
 		if validationErrors.HasAny() {
 			apierror.Validation(c, validationErrors)

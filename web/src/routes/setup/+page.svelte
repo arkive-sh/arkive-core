@@ -6,20 +6,13 @@
 	import Button from '#lib/components/Button.svelte';
 	import InputField from '#lib/components/InputField.svelte';
 	import SetupSection from '#lib/components/SetupSection.svelte';
-	import StorageSelector from '#lib/components/StorageSelector.svelte';
 	import { api, type APIErrorResponse } from '#lib/api.ts';
 	import { opaqueAuth } from '#lib/opaque-auth.ts';
 	import { callVaultWorker } from '#lib/vault/worker-client.ts';
 	import { toBase64 } from '#lib/vault/bytes.ts';
-	import {
-		SETUP_MASTER_KEY_STORAGE,
-		type InitialSetupRequest,
-		type SetupStatus,
-		type StorageProvider,
-	} from './types';
+	import { SETUP_MASTER_KEY_STORAGE, type InitialSetupRequest, type SetupStatus } from './types';
 	import { validateSetup, type SetupFormValues } from './validation';
 
-	let storageProvider = $state<StorageProvider>('local');
 	let submitting = $state(false);
 	let generalError = $state('');
 	let fieldErrors = $state<Record<string, string>>({});
@@ -33,9 +26,7 @@
 			email: read('email'),
 			password: read('password'),
 			confirm_password: read('confirm_password'),
-			storage_provider: storageProvider,
 			storage_gb: read('storage_gb'),
-			local_path: read('local_path'),
 			s3_access_key_id: read('s3_access_key_id'),
 			s3_secret_access_key: read('s3_secret_access_key'),
 			s3_bucket: read('s3_bucket'),
@@ -150,17 +141,14 @@
 				vaultSalt,
 				encryptedMasterKey,
 				storage: {
-					provider: storageProvider,
-					localPath: storageProvider === 'local' ? formValues.local_path : '',
 					storageGB: formValues.storage_gb,
-					s3AccessKeyID: storageProvider === 's3' ? formValues.s3_access_key_id : '',
-					s3SecretAccessKey: storageProvider === 's3' ? formValues.s3_secret_access_key : '',
-					s3SessionToken:
-						storageProvider === 's3' ? String(values.get('s3_session_token') ?? '').trim() : '',
-					s3Bucket: storageProvider === 's3' ? formValues.s3_bucket : '',
-					s3Endpoint: storageProvider === 's3' ? formValues.s3_endpoint : '',
-					s3Region: storageProvider === 's3' ? String(values.get('s3_region') ?? '').trim() : '',
-					s3UsePathStyle: storageProvider === 's3' && values.get('s3_use_path_style') === 'on',
+					s3AccessKeyID: formValues.s3_access_key_id,
+					s3SecretAccessKey: formValues.s3_secret_access_key,
+					s3SessionToken: String(values.get('s3_session_token') ?? '').trim(),
+					s3Bucket: formValues.s3_bucket,
+					s3Endpoint: formValues.s3_endpoint,
+					s3Region: String(values.get('s3_region') ?? '').trim(),
+					s3UsePathStyle: values.get('s3_use_path_style') === 'on',
 				},
 			};
 			await api.post('/api/setup', request);
@@ -307,14 +295,6 @@
 				{#snippet storageIcon()}<Database class="size-4" aria-hidden="true" />{/snippet}
 				<SetupSection number="3" title="Storage" icon={storageIcon}>
 					<div class="grid gap-4">
-						<StorageSelector
-							value={storageProvider}
-							onchange={(provider) => {
-								storageProvider = provider;
-								fieldErrors = {};
-								generalError = '';
-							}}
-						/>
 						<InputField
 							label="Storage limit in GB"
 							name="storage_gb"
@@ -327,57 +307,42 @@
 							helperText={fieldErrors.storage_gb}
 						/>
 						<div class="rounded border border-(--border-soft) bg-(--surface) p-3.5">
-							<div class:hidden={storageProvider !== 'local'}>
-								<InputField
-									label="Storage path"
-									name="local_path"
-									placeholder="/var/lib/arkive/files"
-									value="./data/storage"
-									helperText={fieldErrors.local_path}
-								/>
-							</div>
-							<div class:hidden={storageProvider !== 's3'}>
-								<div class="grid grid-cols-2 gap-4 max-[760px]:grid-cols-1">
-									<div class="col-span-2 max-[760px]:col-span-1">
-										<InputField
-											label="Endpoint URL"
-											name="s3_endpoint"
-											placeholder="https://s3.region.amazonaws.com"
-											helperText={fieldErrors.s3_endpoint}
-										/>
-									</div>
+							<div class="mb-3 text-sm font-medium text-(--text)">S3-compatible storage</div>
+							<div class="grid grid-cols-2 gap-4 max-[760px]:grid-cols-1">
+								<div class="col-span-2 max-[760px]:col-span-1">
 									<InputField
-										label="Bucket name"
-										name="s3_bucket"
-										placeholder="arkive-vault-01"
-										helperText={fieldErrors.s3_bucket}
+										label="Endpoint URL"
+										name="s3_endpoint"
+										placeholder="https://s3.region.amazonaws.com"
+										helperText={fieldErrors.s3_endpoint}
 									/>
-									<InputField
-										label="Region"
-										name="s3_region"
-										placeholder="us-east-1"
-										value="auto"
-									/>
-									<InputField
-										label="Access key"
-										name="s3_access_key_id"
-										helperText={fieldErrors.s3_access_key_id}
-									/>
-									<InputField
-										label="Secret key"
-										name="s3_secret_access_key"
-										type="password"
-										helperText={fieldErrors.s3_secret_access_key}
-									/>
-									<InputField label="Session token" name="s3_session_token" type="password" />
 								</div>
-								<label
-									class="mt-1 inline-flex cursor-pointer items-center gap-2.5 text-[13px] leading-5 text-(--muted)"
-								>
-									<input class="accent-(--accent)" type="checkbox" name="s3_use_path_style" />
-									<span>Use path-style addressing</span>
-								</label>
+								<InputField
+									label="Bucket name"
+									name="s3_bucket"
+									placeholder="arkive-vault-01"
+									helperText={fieldErrors.s3_bucket}
+								/>
+								<InputField label="Region" name="s3_region" placeholder="us-east-1" value="auto" />
+								<InputField
+									label="Access key"
+									name="s3_access_key_id"
+									helperText={fieldErrors.s3_access_key_id}
+								/>
+								<InputField
+									label="Secret key"
+									name="s3_secret_access_key"
+									type="password"
+									helperText={fieldErrors.s3_secret_access_key}
+								/>
+								<InputField label="Session token" name="s3_session_token" type="password" />
 							</div>
+							<label
+								class="mt-1 inline-flex cursor-pointer items-center gap-2.5 text-[13px] leading-5 text-(--muted)"
+							>
+								<input class="accent-(--accent)" type="checkbox" name="s3_use_path_style" />
+								<span>Use path-style addressing</span>
+							</label>
 						</div>
 					</div>
 				</SetupSection>
@@ -393,7 +358,6 @@
 					variant="secondary"
 					class="max-[760px]:w-full"
 					onclick={() => {
-						storageProvider = 'local';
 						fieldErrors = {};
 						generalError = '';
 					}}

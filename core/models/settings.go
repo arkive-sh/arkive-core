@@ -2,7 +2,6 @@ package models
 
 type StorageSettings struct {
 	Provider          string
-	LocalPath         string
 	MaxStorageBytes   int64
 	S3AccessKeyID     string
 	S3SecretAccessKey string

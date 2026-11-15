@@ -55,8 +55,7 @@ func main() {
 	}
 
 	settingsRepo := settingsrepo.New()
-	localStorage := settingssvc.NewLocalStorage(db, settingsRepo)
-	storageProvider := storageprovider.New(db, settingsRepo, localStorage)
+	storageProvider := storageprovider.New(db, settingsRepo)
 	folderRepo := foldersrepo.New()
 	fileRepo := filerepo.New()
 	storageRepo := storagerepo.New()
@@ -115,7 +114,7 @@ func main() {
 		})
 	}
 
-	r := router.New(db, cfg, uploadService, filesService, folderService, localStorage, corsMiddleware)
+	r := router.New(db, cfg, uploadService, filesService, folderService, corsMiddleware)
 	if err := r.SetTrustedProxies(cfg.TrustedProxies); err != nil {
 		log.Fatalf("invalid TRUSTED_PROXIES: %v", err)
 	}

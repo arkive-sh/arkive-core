@@ -19,7 +19,9 @@ api.interceptors.response.use(undefined, (error: unknown) => {
 		const message = responseError?.details?.fields?.general || responseError?.message;
 
 		if (error.response?.status === 429) {
-			const retryAfter = Number(error.response.headers.get('Retry-After'));
+			const retryAfter = Number(
+				error.response.headers['retry-after'] ?? error.response.headers['Retry-After'],
+			);
 			const rateLimitMessage =
 				Number.isFinite(retryAfter) && retryAfter > 0
 					? `Too many requests. Try again in about ${Math.ceil(retryAfter)} seconds.`

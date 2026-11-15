@@ -6,8 +6,6 @@ export interface SetupStatus {
 	userID?: string;
 }
 
-export type StorageProvider = 'local' | 's3';
-
 export interface InitialSetupRequest {
 	name: string;
 	username: string;
@@ -16,8 +14,6 @@ export interface InitialSetupRequest {
 	vaultSalt: string;
 	encryptedMasterKey: string;
 	storage: {
-		provider: StorageProvider;
-		localPath: string;
 		storageGB: string;
 		s3AccessKeyID: string;
 		s3SecretAccessKey: string;

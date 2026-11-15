@@ -10,7 +10,6 @@ import (
 	"arkive/core/models"
 	settingsrepo "arkive/core/repositories/settings"
 	"arkive/pkg/storage"
-	"arkive/pkg/storage/localclient"
 	"arkive/pkg/storage/s3client"
 )
 
@@ -19,14 +18,12 @@ var ErrStorageNotConfigured = errors.New("storage not configured")
 type Provider struct {
 	db       database.PgPool
 	settings *settingsrepo.Repository
-	local    *localclient.Client
 }
 
-func New(db database.PgPool, settingsRepo *settingsrepo.Repository, local *localclient.Client) *Provider {
+func New(db database.PgPool, settingsRepo *settingsrepo.Repository) *Provider {
 	return &Provider{
 		db:       db,
 		settings: settingsRepo,
-		local:    local,
 	}
 }
 
@@ -34,9 +31,6 @@ func (p *Provider) PresignUpload(ctx context.Context, key, contentType string, c
 	settings, err := p.load(ctx)
 	if err != nil {
 		return "", err
-	}
-	if settings.Provider == "local" {
-		return p.local.PresignUpload(ctx, key, contentType, contentLength, expires)
 	}
 	client, err := p.s3(ctx, settings)
 	if err != nil {
@@ -50,9 +44,6 @@ func (p *Provider) PresignDownload(ctx context.Context, key, filename, dispositi
 	if err != nil {
 		return "", err
 	}
-	if settings.Provider == "local" {
-		return p.local.PresignDownload(ctx, key, filename, disposition, expires)
-	}
 	client, err := p.s3(ctx, settings)
 	if err != nil {
 		return "", err
@@ -64,9 +55,6 @@ func (p *Provider) DeleteObject(ctx context.Context, key string) error {
 	settings, err := p.load(ctx)
 	if err != nil {
 		return err
-	}
-	if settings.Provider == "local" {
-		return p.local.DeleteObject(ctx, key)
 	}
 	client, err := p.s3(ctx, settings)
 	if err != nil {
@@ -80,9 +68,6 @@ func (p *Provider) DeleteObjects(ctx context.Context, keys []string) (map[string
 	if err != nil {
 		return nil, err
 	}
-	if settings.Provider == "local" {
-		return p.local.DeleteObjects(ctx, keys)
-	}
 	client, err := p.s3(ctx, settings)
 	if err != nil {
 		return nil, err
@@ -94,9 +79,6 @@ func (p *Provider) ObjectSize(ctx context.Context, key string) (int64, error) {
 	settings, err := p.load(ctx)
 	if err != nil {
 		return 0, err
-	}
-	if settings.Provider == "local" {
-		return p.local.ObjectSize(ctx, key)
 	}
 	client, err := p.s3(ctx, settings)
 	if err != nil {
@@ -110,9 +92,6 @@ func (p *Provider) CreateMultipartUpload(ctx context.Context, key, contentType s
 	if err != nil {
 		return "", err
 	}
-	if settings.Provider == "local" {
-		return p.local.CreateMultipartUpload(ctx, key, contentType)
-	}
 	client, err := p.s3(ctx, settings)
 	if err != nil {
 		return "", err
@@ -124,9 +103,6 @@ func (p *Provider) PresignUploadPart(ctx context.Context, key, uploadID string, 
 	settings, err := p.load(ctx)
 	if err != nil {
 		return "", err
-	}
-	if settings.Provider == "local" {
-		return p.local.PresignUploadPart(ctx, key, uploadID, partNumber, contentLength, expires)
 	}
 	client, err := p.s3(ctx, settings)
 	if err != nil {
@@ -140,9 +116,6 @@ func (p *Provider) CompleteMultipartUpload(ctx context.Context, key, uploadID st
 	if err != nil {
 		return err
 	}
-	if settings.Provider == "local" {
-		return p.local.CompleteMultipartUpload(ctx, key, uploadID, parts)
-	}
 	client, err := p.s3(ctx, settings)
 	if err != nil {
 		return err
@@ -154,9 +127,6 @@ func (p *Provider) AbortMultipartUpload(ctx context.Context, key, uploadID strin
 	settings, err := p.load(ctx)
 	if err != nil {
 		return err
-	}
-	if settings.Provider == "local" {
-		return p.local.AbortMultipartUpload(ctx, key, uploadID)
 	}
 	client, err := p.s3(ctx, settings)
 	if err != nil {
@@ -179,7 +149,7 @@ func (p *Provider) load(ctx context.Context) (models.StorageSettings, error) {
 		return models.StorageSettings{}, err
 	}
 	settings.Provider = strings.ToLower(strings.TrimSpace(settings.Provider))
-	if settings.Provider != "local" && settings.Provider != "s3" {
+	if settings.Provider != "s3" {
 		return models.StorageSettings{}, ErrStorageNotConfigured
 	}
 	return settings, nil
