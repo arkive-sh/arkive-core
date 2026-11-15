@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"net/http"
 	"strings"
 	"time"
 
@@ -115,7 +116,14 @@ func main() {
 
 	r := router.New(db, cfg, uploadService, filesService, folderService, localStorage, corsMiddleware)
 
-	if err := r.Run(cfg.Port); err != nil {
+	server := &http.Server{
+		Addr:              cfg.Port,
+		Handler:           r,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+	}
+	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("server failed: %v", err)
 	}
 }
