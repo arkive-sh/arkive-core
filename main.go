@@ -115,6 +115,9 @@ func main() {
 	}
 
 	r := router.New(db, cfg, uploadService, filesService, folderService, localStorage, corsMiddleware)
+	if err := r.SetTrustedProxies(cfg.TrustedProxies); err != nil {
+		log.Fatalf("invalid TRUSTED_PROXIES: %v", err)
+	}
 
 	server := &http.Server{
 		Addr:              cfg.Port,

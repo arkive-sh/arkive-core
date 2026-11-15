@@ -16,6 +16,7 @@ type Config struct {
 	PasswordResetTokenTTL time.Duration
 	BaseURL               string
 	CORSAllowedOrigins    []string
+	TrustedProxies        []string
 	CookieSecret          string
 	OpaqueServerSetup     string
 	Env                   string
@@ -71,6 +72,12 @@ func Load() (Config, error) {
 			corsAllowedOrigins = append(corsAllowedOrigins, origin)
 		}
 	}
+	var trustedProxies []string
+	for _, proxy := range strings.Split(os.Getenv("TRUSTED_PROXIES"), ",") {
+		if proxy = strings.TrimSpace(proxy); proxy != "" {
+			trustedProxies = append(trustedProxies, proxy)
+		}
+	}
 
 	return Config{
 		DatabaseURL:           dsn,
@@ -79,6 +86,7 @@ func Load() (Config, error) {
 		PasswordResetTokenTTL: passwordResetTTL,
 		BaseURL:               baseURL,
 		CORSAllowedOrigins:    corsAllowedOrigins,
+		TrustedProxies:        trustedProxies,
 		CookieSecret:          cookieSecret,
 		OpaqueServerSetup:     opaqueServerSetup,
 		Env:                   env,

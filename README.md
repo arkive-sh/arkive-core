@@ -178,6 +178,7 @@ For local dev, keep these values:
 - `COOKIE_SECRET`
 - `SESSION_TTL`
 - `OPAQUE_SERVER_SETUP` (generate once with `make opaque-setup` and save the output)
+- `TRUSTED_PROXIES` (optional; leave empty for direct access)
 
 Keep `OPAQUE_SERVER_SETUP` private and stable. Changing it invalidates existing password registrations.
 
@@ -232,6 +233,15 @@ Set these values in `.env`:
 - `COOKIE_SECRET` to strong random secret
 - `SESSION_TTL` to desired duration
 - `OPAQUE_SERVER_SETUP` generated once with `make opaque-setup`
+- `TRUSTED_PROXIES` to the IP/CIDR of the reverse proxy that connects directly to Arkive
+
+If Nginx or Caddy runs on the same host and proxies to Arkive over loopback, use:
+
+```env
+TRUSTED_PROXIES=127.0.0.1/32,::1/128
+```
+
+If Arkive is reached directly without a reverse proxy, leave `TRUSTED_PROXIES` empty. For a proxy in Docker or on another host, use only its address or a private proxy-only subnet, and prevent other clients from reaching Arkive directly.
 
 Keep the OPAQUE setup private and stable; replacing it makes existing accounts unable to authenticate.
 
