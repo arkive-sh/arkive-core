@@ -4,6 +4,7 @@
 		Download,
 		FolderOpen,
 		FolderPlus,
+		ListChecks,
 		Scissors,
 		Trash2,
 		X,
@@ -138,6 +139,8 @@
 	} = $props();
 
 	const selectedCount = $derived(selectedEntries.length);
+	const toolbarLabelClass =
+		'inline-block max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-[max-width,opacity] duration-300 ease-out group-hover/toolbar:max-w-56 group-hover/toolbar:opacity-100 group-focus-within/toolbar:max-w-56 group-focus-within/toolbar:opacity-100 max-[640px]:max-w-56 max-[640px]:opacity-100 motion-reduce:transition-none';
 	const entryOffset = $derived(query.data?.pages[0]?.StartIndex ?? 0);
 	const showSelectionToolbar = $derived(
 		(rows.length > 0 && viewMode === 'grid') || selectedCount > 0 || clipboardCount > 0,
@@ -157,18 +160,19 @@
 				</div>
 			</div>
 			<div
-				class="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2 max-[640px]:w-full max-[640px]:justify-between max-[640px]:pt-2"
+				class="group/toolbar flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2 max-[640px]:w-full max-[640px]:justify-between max-[640px]:pt-2"
 			>
 				{#if unlocked}
 					<button
-						class="inline-flex h-9 shrink-0 cursor-pointer items-center gap-2 rounded-md border border-(--border) bg-(--surface) px-3 text-sm text-(--text) hover:bg-(--surface-highest) disabled:cursor-not-allowed disabled:opacity-50"
+						class="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md border border-(--border) bg-(--surface) text-(--text) hover:bg-(--surface-highest) disabled:cursor-not-allowed disabled:opacity-50"
 						type="button"
+						aria-label="New folder"
+						title="New folder"
 						disabled={newFolderActive || creatingFolder}
 						aria-keyshortcuts="Control+Alt+n Meta+Alt+n"
 						onclick={onBeginNewFolder}
 					>
 						<FolderPlus class="size-4" aria-hidden="true" />
-						<span>New folder</span>
 					</button>
 				{/if}
 				{#if showSelectionToolbar}
@@ -177,8 +181,13 @@
 							<button
 								class="inline-flex h-8 cursor-pointer items-center rounded px-2 text-sm text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)"
 								type="button"
-								onclick={onToggleAll}>Select all</button
+								aria-label="Select all loaded entries"
+								title="Select all"
+								onclick={onToggleAll}
 							>
+								<ListChecks class="size-4" aria-hidden="true" />
+								<span class={toolbarLabelClass}>Select all</span>
+							</button>
 						{/if}
 						{#if selectedCount}
 							<span class="px-2 text-sm text-(--muted)">{selectedCount} selected</span>
@@ -186,22 +195,24 @@
 								<button
 									class="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded px-2 text-sm text-(--text) hover:bg-(--surface-highest)"
 									type="button"
+									title="Download selected files"
 									aria-label={`Download ${selectedFiles.length} selected ${selectedFiles.length === 1 ? 'file' : 'files'}`}
 									onclick={onDownloadSelected}
 								>
 									<Download class="size-4" aria-hidden="true" />
-									<span>Download</span>
+									<span class={toolbarLabelClass}>Download</span>
 								</button>
 							{/if}
 							<button
 								class="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded px-2 text-sm text-(--text) hover:bg-(--surface-highest)"
 								type="button"
+								title="Cut selected items"
 								aria-label={`Cut ${selectedCount} selected ${selectedCount === 1 ? 'item' : 'items'}`}
 								disabled={moving}
 								onclick={onCutSelected}
 							>
 								<Scissors class="size-4" aria-hidden="true" />
-								<span>Cut</span>
+								<span class={toolbarLabelClass}>Cut</span>
 							</button>
 							<button
 								class="inline-flex size-8 cursor-pointer items-center justify-center rounded text-red-400 hover:bg-red-500/10 hover:text-red-300"
@@ -223,11 +234,12 @@
 							<button
 								class="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded px-2 text-sm text-(--text) hover:bg-(--surface-highest)"
 								type="button"
+								title="Paste here"
 								disabled={moving}
 								onclick={onPaste}
 							>
 								<ClipboardPaste class="size-4" aria-hidden="true" />
-								<span>Paste here</span>
+								<span class={toolbarLabelClass}>Paste here</span>
 							</button>
 							<button
 								class="inline-flex size-8 cursor-pointer items-center justify-center rounded text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)"

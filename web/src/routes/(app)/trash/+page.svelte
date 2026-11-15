@@ -4,7 +4,7 @@
 	import { resolve } from '$app/paths';
 	import { SvelteSet, SvelteURLSearchParams } from 'svelte/reactivity';
 	import { createInfiniteQuery, useQueryClient } from '@tanstack/svelte-query';
-	import { RotateCcw, Trash2, X } from '@lucide/svelte';
+	import { ListChecks, RotateCcw, Trash2, X } from '@lucide/svelte';
 	import { api } from '#lib/api.ts';
 	import Breadcrumbs from '#lib/components/Breadcrumbs.svelte';
 	import InfiniteScrollSentinel from '#lib/components/InfiniteScrollSentinel.svelte';
@@ -21,6 +21,8 @@
 	import type { PageProps } from './$types';
 
 	const PAGE_SIZE = 50;
+	const toolbarLabelClass =
+		'inline-block max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-[max-width,opacity] duration-300 ease-out group-hover/toolbar:max-w-56 group-hover/toolbar:opacity-100 group-focus-within/toolbar:max-w-56 group-focus-within/toolbar:opacity-100 max-[640px]:max-w-56 max-[640px]:opacity-100 motion-reduce:transition-none';
 	type ApiFolder = {
 		ID: string;
 		ParentFolderID: string | null;
@@ -473,7 +475,7 @@
 				</div>
 			{/if}
 			<div
-				class="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2 max-[640px]:w-full"
+				class="group/toolbar ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2 max-[640px]:w-full"
 			>
 				{#if selectedEntries.length > 0 || (viewMode === 'grid' && selectableCount > 0)}
 					<div class="inline-flex max-w-full flex-wrap items-center gap-1">
@@ -481,24 +483,37 @@
 							<button
 								class="inline-flex h-8 cursor-pointer items-center rounded px-2 text-sm text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)"
 								type="button"
-								onclick={toggleAll}>Select all</button
+								aria-label="Select all loaded entries"
+								title="Select all"
+								onclick={toggleAll}
 							>
+								<ListChecks class="size-4" aria-hidden="true" />
+								<span class={toolbarLabelClass}>Select all</span>
+							</button>
 						{/if}
 						{#if selectedEntries.length}
 							<span class="px-2 text-sm text-(--muted)">{selectedEntries.length} selected</span>
 							<button
 								class="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded px-2 text-sm text-(--text) hover:bg-(--surface-highest) disabled:cursor-not-allowed disabled:opacity-50"
 								type="button"
+								aria-label="Restore selected items"
+								title="Restore selected items"
 								disabled={mutating}
 								onclick={() => void restore(selectedEntries)}
-								><RotateCcw class="size-4" aria-hidden="true" />Restore</button
+								><RotateCcw class="size-4" aria-hidden="true" /><span class={toolbarLabelClass}
+									>Restore</span
+								></button
 							>
 							<button
 								class="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded px-2 text-sm text-red-400 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
 								type="button"
+								aria-label="Permanently delete selected items"
+								title="Permanently delete selected items"
 								disabled={mutating}
 								onclick={() => requestPermanentDelete(selectedEntries)}
-								><Trash2 class="size-4" aria-hidden="true" />Delete permanently</button
+								><Trash2 class="size-4" aria-hidden="true" /><span class={toolbarLabelClass}
+									>Delete permanently</span
+								></button
 							>
 							<button
 								class="inline-flex size-8 cursor-pointer items-center justify-center rounded text-(--muted) hover:bg-(--surface-highest) hover:text-(--text)"
