@@ -71,6 +71,11 @@ func (r *Repository) GetPasswordRecoveryInfoByEmail(ctx context.Context, db data
 	return user, nil
 }
 
+func (r *Repository) UpdateRecoveryKey(ctx context.Context, db database.PgExecutor, userID string, encryptedMasterKeyRecovery, recoveryProofPublicKey []byte) error {
+	_, err := db.Exec(ctx, `UPDATE users SET encrypted_master_key_recovery = $2, recovery_proof_public_key = $3 WHERE id = $1`, userID, encryptedMasterKeyRecovery, recoveryProofPublicKey)
+	return err
+}
+
 func (r *Repository) GetUserByID(ctx context.Context, db database.PgExecutor, userID string) (models.User, error) {
 	var user models.User
 	query := `SELECT

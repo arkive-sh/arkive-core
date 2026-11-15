@@ -2,13 +2,15 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
-	import { LockKeyhole } from '@lucide/svelte';
+	import { Copy, LockKeyhole, Printer } from '@lucide/svelte';
 	import Button from '#lib/components/Button.svelte';
+	import Modal from '#lib/components/Modal.svelte';
 	import { api } from '#lib/api.ts';
 	import { clearThumbnailCache } from '#lib/thumbnail-cache.ts';
 	import { formatBytes } from '#lib/utils/format.ts';
 	import { toast } from '#lib/toast.ts';
 	import { lockVault, setKeepVaultUnlocked, shouldKeepVaultUnlocked } from '#lib/vault/session.ts';
+	import { callVaultWorker } from '#lib/vault/worker-client.ts';
 	import type { PageProps } from './$types';
 
 	type SettingsTab = 'profile' | 'security' | 'storage';
@@ -16,6 +18,11 @@
 		usedBytes: number;
 		reservedBytes: number;
 		maxStorageBytes: number;
+	};
+	type RecoveryKeyDraft = {
+		recoveryKey: string;
+		encryptedMasterKeyRecovery: string;
+		recoveryProofPublicKey: string;
 	};
 	const tabs: { id: SettingsTab; label: string }[] = [
 		{ id: 'profile', label: 'Profile' },
@@ -30,6 +37,14 @@
 	let storageError = $state('');
 	let clearingCache = $state(false);
 	let keepVaultOnRefresh = $state(false);
+	let recoveryConfirmOpen = $state(false);
+	let recoveryGenerating = $state(false);
+	let recoveryActivating = $state(false);
+	let recoveryAcknowledged = $state(false);
+	let recoveryKeyActive = $state(false);
+	let recoveryActivationUncertain = $state(false);
+	let recoveryKeyDraft = $state<RecoveryKeyDraft | null>(null);
+	let recoveryError = $state('');
 	const totalStorageBytes = $derived(
 		storageUsage ? storageUsage.usedBytes + storageUsage.reservedBytes : 0,
 	);
@@ -90,6 +105,63 @@
 		await goto(resolve('/(app)/lock'));
 	}
 
+	async function generateRecoveryKey(): Promise<void> {
+		if (recoveryGenerating) return;
+		recoveryConfirmOpen = false;
+		recoveryError = '';
+		recoveryAcknowledged = false;
+		recoveryKeyActive = false;
+		recoveryActivationUncertain = false;
+		recoveryGenerating = true;
+		try {
+			recoveryKeyDraft = await callVaultWorker('prepareVaultRecovery', { userID: data.user.id });
+		} catch (error) {
+			recoveryError = error instanceof Error ? error.message : 'Could not generate a recovery key.';
+		} finally {
+			recoveryGenerating = false;
+		}
+	}
+
+	async function activateRecoveryKey(): Promise<void> {
+		if (!recoveryKeyDraft || !recoveryAcknowledged || recoveryActivating) return;
+		recoveryActivating = true;
+		recoveryError = '';
+		try {
+			await api.put('/api/settings/recovery-key', {
+				encryptedMasterKeyRecovery: recoveryKeyDraft.encryptedMasterKeyRecovery,
+				recoveryProofPublicKey: recoveryKeyDraft.recoveryProofPublicKey,
+			});
+			recoveryKeyActive = true;
+			recoveryActivationUncertain = false;
+			toast.success('New vault recovery key activated.');
+		} catch {
+			recoveryActivationUncertain = true;
+			recoveryError =
+				'Activation could not be confirmed. Keep this key and retry; Arkive may already have activated it.';
+		} finally {
+			recoveryActivating = false;
+		}
+	}
+
+	async function copyRecoveryKey(): Promise<void> {
+		if (!recoveryKeyDraft) return;
+		try {
+			await navigator.clipboard.writeText(recoveryKeyDraft.recoveryKey);
+			toast.success('Recovery key copied.');
+		} catch {
+			toast.error('Could not copy the recovery key.');
+		}
+	}
+
+	function discardRecoveryKey(): void {
+		if (recoveryActivating || recoveryActivationUncertain) return;
+		recoveryKeyDraft = null;
+		recoveryAcknowledged = false;
+		recoveryKeyActive = false;
+		recoveryActivationUncertain = false;
+		recoveryError = '';
+	}
+
 	async function updateKeepVaultOnRefresh(event: Event): Promise<void> {
 		const enabled = (event.currentTarget as HTMLInputElement).checked;
 
@@ -107,7 +179,7 @@
 	<title>Settings | Arkive</title>
 </svelte:head>
 
-<section class="mx-auto w-full max-w-5xl px-5 py-7 min-[640px]:px-8">
+<section class="mx-auto w-full max-w-5xl px-5 py-7 min-[640px]:px-8 print:hidden">
 	<header class="border-b border-(--border-soft) pb-5">
 		<h1 class="m-0 text-2xl leading-8 font-semibold text-(--text)">Settings</h1>
 		<p class="mt-1 mb-0 text-sm leading-5 text-(--muted)">
@@ -208,6 +280,98 @@
 						untrusted devices.
 					</p>
 				</div>
+				<div class="border-b border-(--border-soft) py-4">
+					<div
+						class="flex flex-col gap-4 min-[640px]:flex-row min-[640px]:items-start min-[640px]:justify-between"
+					>
+						<div>
+							<h3 class="m-0 text-sm leading-5 font-medium text-(--text)">Vault recovery key</h3>
+							<p class="mt-1 mb-0 text-sm leading-5 text-(--muted)">
+								Forgot your password? Use this key with the reset link to set a new one and get back
+								into your vault. Keep it somewhere safe and never share it. Activating a replacement
+								makes this key stop working; changing your password does not.
+							</p>
+						</div>
+						<Button
+							text={recoveryGenerating ? 'Generating…' : 'Generate replacement key'}
+							variant="secondary"
+							disabled={recoveryGenerating || recoveryKeyDraft !== null}
+							class="shrink-0"
+							onclick={() => (recoveryConfirmOpen = true)}
+						/>
+					</div>
+					{#if recoveryError && !recoveryKeyDraft}
+						<p class="mt-3 mb-0 text-sm text-(--danger)" role="alert">{recoveryError}</p>
+					{/if}
+					{#if recoveryKeyDraft}
+						<div class="mt-4 border-t border-(--border-soft) pt-4">
+							<p class="m-0 text-sm leading-5 text-(--muted)" role="status">
+								{recoveryKeyActive
+									? 'Replacement key activated. The previous recovery key no longer works.'
+									: 'Save this key before activating it. The previous key remains valid until activation.'}
+							</p>
+							<code
+								class="mt-3 block rounded-md border border-(--border) bg-(--surface-raised) p-3 font-mono text-sm leading-6 break-all text-(--text)"
+							>
+								{recoveryKeyDraft.recoveryKey}
+							</code>
+							<div class="mt-3 flex flex-wrap gap-2">
+								{#snippet copyRecoveryIcon()}<Copy class="size-4" aria-hidden="true" />{/snippet}
+								<Button
+									text="Copy key"
+									variant="secondary"
+									icon={copyRecoveryIcon}
+									onclick={copyRecoveryKey}
+								/>
+								{#snippet printRecoveryIcon()}<Printer
+										class="size-4"
+										aria-hidden="true"
+									/>{/snippet}
+								<Button
+									text="Print / Save as PDF"
+									variant="secondary"
+									icon={printRecoveryIcon}
+									onclick={() => window.print()}
+								/>
+								{#if recoveryKeyActive}
+									<Button text="Done" variant="secondary" onclick={discardRecoveryKey} />
+								{:else}
+									<Button
+										text="Discard"
+										variant="secondary"
+										disabled={recoveryActivating || recoveryActivationUncertain}
+										onclick={discardRecoveryKey}
+									/>
+								{/if}
+							</div>
+							{#if !recoveryKeyActive}
+								<label class="mt-4 flex cursor-pointer items-start gap-3">
+									<input
+										class="mt-0.5 size-4 shrink-0 accent-(--accent)"
+										type="checkbox"
+										bind:checked={recoveryAcknowledged}
+									/>
+									<span class="text-sm leading-5 text-(--muted)">
+										I have securely saved this new key. I understand activating it will permanently
+										invalidate the previous key.
+									</span>
+								</label>
+								{#if recoveryError}
+									<p class="mt-3 mb-0 text-sm text-(--danger)" role="alert">{recoveryError}</p>
+								{/if}
+								<Button
+									text="Activate replacement key"
+									busyText="Activating…"
+									busy={recoveryActivating}
+									variant="primary"
+									class="mt-4"
+									disabled={!recoveryAcknowledged}
+									onclick={activateRecoveryKey}
+								/>
+							{/if}
+						</div>
+					{/if}
+				</div>
 			</div>
 		{:else}
 			<div class="max-w-2xl">
@@ -279,3 +443,30 @@
 		{/if}
 	</div>
 </section>
+
+{#if recoveryKeyDraft}
+	<section class="hidden min-h-screen bg-white p-8 text-black print:block">
+		<h1 class="m-0 text-2xl font-semibold">Arkive Core vault recovery key</h1>
+		<p class="mt-4 text-sm">
+			Keep this key somewhere safe. It is the only way to recover your vault.
+		</p>
+		<p class="mt-8 break-all font-mono text-lg">{recoveryKeyDraft.recoveryKey}</p>
+		<p class="mt-8 text-sm">Generated by Arkive Core.</p>
+	</section>
+{/if}
+
+<Modal
+	open={recoveryConfirmOpen}
+	label="Generate replacement recovery key"
+	title="Generate a replacement key?"
+	onClose={() => (recoveryConfirmOpen = false)}
+>
+	<p class="m-0 text-sm leading-5 text-(--muted)">
+		Arkive cannot show your current key. A replacement will be generated in this browser. Save it
+		securely and never share it. Your current key remains valid until you activate the replacement.
+	</p>
+	{#snippet actions()}
+		<Button text="Cancel" variant="secondary" onclick={() => (recoveryConfirmOpen = false)} />
+		<Button text="Generate key" variant="primary" onclick={generateRecoveryKey} />
+	{/snippet}
+</Modal>

@@ -144,7 +144,10 @@
 	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
-<div class="min-h-screen overflow-x-clip bg-(--bg)" style={`--sidebar-width:${sidebarWidth}px`}>
+<div
+	class="min-h-screen overflow-x-clip bg-(--bg) print:min-h-0 print:bg-white"
+	style={`--sidebar-width:${sidebarWidth}px`}
+>
 	<AppHeader
 		user={data.user}
 		{mobileView}
@@ -184,7 +187,7 @@
 		onNavigate={() => mobileView && setMobileOpen(false)}
 	/>
 	<main
-		class={`min-h-[calc(100vh-56px)] overflow-x-clip ${sidebarTransitioning ? 'transition-[margin-left] duration-240 ease-[ease]' : ''} ${desktopOpen ? 'min-[961px]:ml-(--sidebar-width)' : ''}`}
+		class={`min-h-[calc(100vh-56px)] overflow-x-clip print:ml-0! print:min-h-0! print:overflow-visible! ${sidebarTransitioning ? 'transition-[margin-left] duration-240 ease-[ease]' : ''} ${desktopOpen ? 'min-[961px]:ml-(--sidebar-width)' : ''}`}
 		id="main-content"
 	>
 		{@render children()}

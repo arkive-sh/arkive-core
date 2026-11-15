@@ -80,7 +80,7 @@
 </script>
 
 <button
-	class={`fixed inset-0 z-10 cursor-pointer bg-black/40 transition-opacity duration-200 ease-[ease] min-[961px]:hidden ${mobileView && mobileOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}
+	class={`fixed inset-0 z-10 cursor-pointer bg-black/40 transition-opacity duration-200 ease-[ease] min-[961px]:hidden print:hidden ${mobileView && mobileOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}
 	type="button"
 	aria-hidden="true"
 	tabindex="-1"
@@ -91,7 +91,7 @@
 <aside
 	id="app-sidebar"
 	data-folder-tree-scroll-root
-	class={`fixed inset-y-0 left-0 z-20 grid w-[min(248px,86vw)] grid-rows-[auto_1fr_auto] overflow-y-auto border-r border-(--border) pt-4 pb-4 transition-transform duration-240 ease-[ease] translate-x-[-110%] shadow-(--shadow) ${mobileView && mobileOpen ? 'max-[960px]:translate-x-0' : ''} min-[961px]:w-(--sidebar-width) ${desktopOpen ? 'min-[961px]:translate-x-0' : 'min-[961px]:translate-x-[-110%]'} min-[961px]:shadow-none`}
+	class={`fixed inset-y-0 left-0 z-20 grid w-[min(248px,86vw)] grid-rows-[auto_1fr_auto] overflow-y-auto border-r border-(--border) pt-4 pb-4 transition-transform duration-240 ease-[ease] translate-x-[-110%] shadow-(--shadow) print:hidden ${mobileView && mobileOpen ? 'max-[960px]:translate-x-0' : ''} min-[961px]:w-(--sidebar-width) ${desktopOpen ? 'min-[961px]:translate-x-0' : 'min-[961px]:translate-x-[-110%]'} min-[961px]:shadow-none`}
 	aria-label="Primary navigation"
 	aria-hidden={(mobileView && !mobileOpen) || (!mobileView && !desktopOpen)}
 	inert={(mobileView && !mobileOpen) || (!mobileView && !desktopOpen)}
@@ -173,15 +173,15 @@
 					<span>Trash</span>
 				</a>
 			</div>
-			{#if trashActive && trashTreeOpen && vaultUnlocked}
+			{#if trashTreeOpen && vaultUnlocked}
 				<div role="group" aria-label="Trash folder tree" class="mt-1">
 					<FolderTree
 						source={trashTreeSource}
 						enabled={vaultUnlocked}
 						rootFolderId={null}
 						rootName="Trash"
-						{currentFolderId}
-						{currentFileId}
+						currentFolderId={trashActive ? currentFolderId : null}
+						currentFileId={trashActive ? currentFileId : null}
 						onOpenFolder={(folderId) => openTrashFolder(folderId)}
 						onOpenFile={openTrashFile}
 					/>

@@ -45,9 +45,11 @@
 </svelte:head>
 
 <QueryClientProvider client={queryClient}>
-	<div class="min-h-screen bg-(--bg) font-sans text-sm leading-5 text-(--text) antialiased">
-		<ToastHost />
-		<TransferCenter manager={transferManager} />
+	<div
+		class="min-h-screen bg-(--bg) font-sans text-sm leading-5 text-(--text) antialiased print:bg-white print:text-black"
+	>
+		<div class="print:hidden"><ToastHost /></div>
+		<div class="print:hidden"><TransferCenter manager={transferManager} /></div>
 		{@render children()}
 	</div>
 </QueryClientProvider>

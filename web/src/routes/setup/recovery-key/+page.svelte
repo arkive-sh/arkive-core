@@ -3,14 +3,13 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import axios from 'axios';
-	import { Copy, Download, Printer, ShieldCheck, TriangleAlert } from '@lucide/svelte';
+	import { Copy, Printer, ShieldCheck, TriangleAlert } from '@lucide/svelte';
 	import Button from '#lib/components/Button.svelte';
 	import { api, type APIErrorResponse } from '#lib/api.ts';
 	import { toast } from '#lib/toast.ts';
 	import { callVaultWorker } from '#lib/vault/worker-client.ts';
 	import { fromBase64 } from '#lib/vault/bytes.ts';
 	import { SETUP_MASTER_KEY_STORAGE, type InitialRecoveryRequest } from '../types';
-	import { downloadRecoveryPDF } from './recovery-pdf';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -89,10 +88,6 @@
 		} catch {
 			toast.error('Could not copy the recovery key.');
 		}
-	}
-
-	function saveRecoveryPDF(): void {
-		if (recoveryKey) downloadRecoveryPDF(recoveryKey);
 	}
 
 	function handleError(error: unknown): void {
@@ -187,14 +182,6 @@
 						onclick={copyRecoveryKey}
 						icon={copyIcon}
 					/>
-					{#snippet printIcon()}<Printer class="size-4" aria-hidden="true" />{/snippet}
-					<Button
-						text="Print"
-						variant="secondary"
-						disabled={!recoveryKey}
-						onclick={() => window.print()}
-						icon={printIcon}
-					/>
 				</div>
 				{#if generating}
 					<p class="m-0 text-sm text-(--muted)" role="status">Generating recovery key...</p>
@@ -250,14 +237,14 @@
 					class="min-h-13 flex-1 text-xs font-extrabold tracking-[0.08em] uppercase"
 					icon={submitIcon}
 				/>
-				{#snippet downloadIcon()}<Download class="size-4" aria-hidden="true" />{/snippet}
+				{#snippet printIcon()}<Printer class="size-4" aria-hidden="true" />{/snippet}
 				<Button
-					text="Download Recovery PDF"
+					text="Print / Save as PDF"
 					variant="secondary"
 					disabled={!recoveryKey}
-					onclick={saveRecoveryPDF}
+					onclick={() => window.print()}
 					class="min-h-13 flex-1 text-xs font-extrabold tracking-[0.08em] uppercase"
-					icon={downloadIcon}
+					icon={printIcon}
 				/>
 			</footer>
 		</form>

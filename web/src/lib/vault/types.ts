@@ -93,6 +93,14 @@ export interface VaultWorkerCalls {
 			recoveryProofPublicKey: string;
 		};
 	};
+	prepareVaultRecovery: {
+		params: { userID: string };
+		result: {
+			recoveryKey: string;
+			encryptedMasterKeyRecovery: string;
+			recoveryProofPublicKey: string;
+		};
+	};
 	unlockVault: {
 		params: {
 			exportKey: ArrayBuffer | null;

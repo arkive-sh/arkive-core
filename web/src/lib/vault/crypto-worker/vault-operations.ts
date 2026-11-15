@@ -170,6 +170,37 @@ async function handlePrepareInitialRecovery(params: WorkerInput<'prepareInitialR
 	}
 }
 
+async function handlePrepareVaultRecovery(params: WorkerInput<'prepareVaultRecovery'>) {
+	const userID = String(params.userID || '').trim();
+	const generation = workerState.vaultGeneration;
+
+	if (!userID) throw new Error('Recovery key context is unavailable');
+
+	let masterKey;
+	let recoveryKey;
+	let encryptedMasterKeyRecovery;
+	let recoveryProofPublicKey;
+
+	try {
+		masterKey = activeMasterKey().slice();
+		recoveryKey = randomBytes(32);
+		encryptedMasterKeyRecovery = await wrapRecoveryMasterKey(masterKey, recoveryKey, userID);
+		recoveryProofPublicKey = await deriveRecoveryProofPublicKey(recoveryKey, userID);
+		assertVaultGeneration(generation);
+
+		return {
+			recoveryKey: await formatRecoveryKey(recoveryKey, hashes),
+			encryptedMasterKeyRecovery: toBase64(encryptedMasterKeyRecovery),
+			recoveryProofPublicKey: toBase64(recoveryProofPublicKey),
+		};
+	} finally {
+		masterKey = clearBytes(masterKey);
+		recoveryKey = clearBytes(recoveryKey);
+		encryptedMasterKeyRecovery = clearBytes(encryptedMasterKeyRecovery);
+		recoveryProofPublicKey = clearBytes(recoveryProofPublicKey);
+	}
+}
+
 async function handleLockVault() {
 	lockVault();
 
@@ -250,6 +281,7 @@ export const vault_operations = {
 	unlockVault: handleUnlockVault,
 	createInitialVault: handleCreateInitialVault,
 	prepareInitialRecovery: handlePrepareInitialRecovery,
+	prepareVaultRecovery: handlePrepareVaultRecovery,
 	lockVault: handleLockVault,
 	exportVaultSession: handleExportVaultSession,
 	restoreVaultSession: handleRestoreVaultSession,
@@ -259,6 +291,7 @@ export const vault_operations = {
 	| 'unlockVault'
 	| 'createInitialVault'
 	| 'prepareInitialRecovery'
+	| 'prepareVaultRecovery'
 	| 'lockVault'
 	| 'exportVaultSession'
 	| 'restoreVaultSession'

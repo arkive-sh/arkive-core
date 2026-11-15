@@ -64,7 +64,7 @@
 </script>
 
 <header
-	class={`sticky top-0 z-15 border-b border-(--border) bg-(--bg) ${sidebarTransitioning ? 'transition-[margin-left] duration-240 ease-[ease]' : ''} ${desktopOpen ? 'min-[961px]:ml-(--sidebar-width)' : ''}`}
+	class={`sticky top-0 z-15 border-b border-(--border) bg-(--bg) print:hidden ${sidebarTransitioning ? 'transition-[margin-left] duration-240 ease-[ease]' : ''} ${desktopOpen ? 'min-[961px]:ml-(--sidebar-width)' : ''}`}
 >
 	<div
 		class="flex min-h-14 flex-wrap items-center justify-between gap-4 px-3 pt-2 pb-3 min-[721px]:px-5 min-[721px]:pb-2"

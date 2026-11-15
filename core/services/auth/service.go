@@ -222,6 +222,13 @@ func (s *Service) GetUserByID(ctx context.Context, userID string) (models.User, 
 	return s.authRepo.GetUserByID(ctx, s.db, userID)
 }
 
+func (s *Service) UpdateRecoveryKey(ctx context.Context, userID string, encryptedMasterKeyRecovery, recoveryProofPublicKey []byte) error {
+	if strings.TrimSpace(userID) == "" || len(encryptedMasterKeyRecovery) == 0 || len(encryptedMasterKeyRecovery) > 1024 || len(recoveryProofPublicKey) != ed25519.PublicKeySize {
+		return ErrInvalidInput
+	}
+	return s.authRepo.UpdateRecoveryKey(ctx, s.db, userID, encryptedMasterKeyRecovery, recoveryProofPublicKey)
+}
+
 func (s *Service) RequestPasswordReset(ctx context.Context, email string) (PasswordResetRequestResult, error) {
 	email = strings.TrimSpace(email)
 	if email == "" {
