@@ -110,6 +110,7 @@ func main() {
 			AllowOrigins:     cfg.CORSAllowedOrigins,
 			AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 			AllowHeaders:     []string{"Content-Type", "Authorization", "If-None-Match"},
+			ExposeHeaders:    []string{"Retry-After"},
 			AllowCredentials: true,
 		})
 	}

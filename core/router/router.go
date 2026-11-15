@@ -58,9 +58,10 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 		api.Use(corsMiddleware)
 		r.OPTIONS("/api/*path", corsMiddleware)
 	}
-	api.POST("/public/shares/:token/unlock", middleware.LimitBody(16<<10), handlers.APIPublicShareUnlock(shareService, cfg.CookieSecret))
+	api.POST("/public/shares/:token/unlock", middleware.LimitRequestsPerIP(cfg.RateLimitRPM), middleware.LimitBody(16<<10), handlers.APIPublicShareUnlock(shareService, cfg.CookieSecret))
 	publicAuth := api.Group("")
 	// Bound auth and setup JSON before ShouldBindJSON reads it; uploads have their own larger limit.
+	publicAuth.Use(middleware.LimitRequestsPerIP(cfg.RateLimitRPM))
 	publicAuth.Use(middleware.LimitBody(16 << 10))
 	{
 		publicAuth.GET("/setup/status", handlers.APISetupStatus(setupService))

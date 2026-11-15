@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ type Config struct {
 	BaseURL               string
 	CORSAllowedOrigins    []string
 	TrustedProxies        []string
+	RateLimitRPM          int
 	CookieSecret          string
 	OpaqueServerSetup     string
 	Env                   string
@@ -78,6 +80,13 @@ func Load() (Config, error) {
 			trustedProxies = append(trustedProxies, proxy)
 		}
 	}
+	rateLimitRPM := 10
+	if value := strings.TrimSpace(os.Getenv("RATE_LIMIT_RPM")); value != "" {
+		rateLimitRPM, err = strconv.Atoi(value)
+		if err != nil || rateLimitRPM < 0 {
+			return Config{}, errors.New("RATE_LIMIT_RPM must be a non-negative integer")
+		}
+	}
 
 	return Config{
 		DatabaseURL:           dsn,
@@ -87,6 +96,7 @@ func Load() (Config, error) {
 		BaseURL:               baseURL,
 		CORSAllowedOrigins:    corsAllowedOrigins,
 		TrustedProxies:        trustedProxies,
+		RateLimitRPM:          rateLimitRPM,
 		CookieSecret:          cookieSecret,
 		OpaqueServerSetup:     opaqueServerSetup,
 		Env:                   env,

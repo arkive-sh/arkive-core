@@ -18,7 +18,15 @@ api.interceptors.response.use(undefined, (error: unknown) => {
 		const responseError = error.response?.data?.error;
 		const message = responseError?.details?.fields?.general || responseError?.message;
 
-		if (message) error.message = message;
+		if (error.response?.status === 429) {
+			const retryAfter = Number(error.response.headers.get('Retry-After'));
+			const rateLimitMessage =
+				Number.isFinite(retryAfter) && retryAfter > 0
+					? `Too many requests. Try again in about ${Math.ceil(retryAfter)} seconds.`
+					: 'Too many requests. Please wait a moment, then try again.';
+			error.message = rateLimitMessage;
+			if (responseError) responseError.message = rateLimitMessage;
+		} else if (message) error.message = message;
 		else if (!error.response)
 			error.message = 'Unable to connect to the server. Check your connection and try again.';
 	}
