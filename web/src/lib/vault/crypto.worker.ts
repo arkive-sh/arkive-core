@@ -52,7 +52,7 @@ workerScope.addEventListener('message', async (event) => {
 	const payload = event.data;
 
 	// WebCrypto is asynchronous; discard outputs from work that finishes after a lock.
-	if (payload.method === 'unlockVault') lockVault();
+	if (payload.method === 'unlockVault' || payload.method === 'restoreVaultSession') lockVault();
 	const generation = workerState.vaultGeneration;
 	let result: WorkerResult | undefined;
 

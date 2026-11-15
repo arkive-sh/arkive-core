@@ -107,7 +107,7 @@
 	});
 
 	onMount(() => {
-		void waitUntilReady().then(() => (vaultReady = true));
+		void waitUntilReady(data.user.id).then(() => (vaultReady = true));
 		try {
 			if (localStorage.getItem(sidebarOpenStorageKey) === 'false') desktopOpen = false;
 		} catch {

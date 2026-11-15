@@ -51,6 +51,7 @@ type Config struct {
 }
 
 type LoginUnlockResult struct {
+	UserID             string
 	SessionToken       string
 	ExpiresAt          time.Time
 	VaultSalt          []byte
@@ -167,7 +168,7 @@ func (s *Service) FinishOpaqueLogin(ctx context.Context, attemptID string, final
 	if err := tx.Commit(ctx); err != nil {
 		return LoginUnlockResult{}, err
 	}
-	return LoginUnlockResult{SessionToken: sessionToken, ExpiresAt: expiresAt, VaultSalt: user.VaultSalt, EncryptedMasterKey: user.EncryptedMasterKey}, nil
+	return LoginUnlockResult{UserID: user.ID, SessionToken: sessionToken, ExpiresAt: expiresAt, VaultSalt: user.VaultSalt, EncryptedMasterKey: user.EncryptedMasterKey}, nil
 }
 
 func (s *Service) LogoutSession(ctx context.Context, sessionToken string) error {

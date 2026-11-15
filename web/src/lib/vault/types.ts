@@ -103,6 +103,11 @@ export interface VaultWorkerCalls {
 		result: VaultState;
 	};
 	lockVault: { params: Record<string, never>; result: VaultState };
+	exportVaultSession: {
+		params: Record<string, never>;
+		result: { masterKey: Uint8Array<ArrayBuffer> };
+	};
+	restoreVaultSession: { params: { masterKeyBytes: VaultBytes | null }; result: VaultState };
 	preparePasswordReset: {
 		params: {
 			encryptedMasterKeyRecovery: string;

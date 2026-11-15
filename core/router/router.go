@@ -18,6 +18,7 @@ import (
 	"arkive/core/services/auth"
 	filessvc "arkive/core/services/files"
 	folderssvc "arkive/core/services/folders"
+	settingssvc "arkive/core/services/settings"
 	"arkive/core/services/setup"
 	"arkive/core/services/shares"
 	syncsvc "arkive/core/services/sync"
@@ -39,6 +40,7 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 		OpaqueServerSetup:     cfg.OpaqueServerSetup,
 	})
 	settingsRepo := settingsrepo.New()
+	settingsService := settingssvc.NewService(db, settingsRepo, usersRepo)
 	setupService := setup.NewService(db, authRepo, usersRepo, settingsRepo, cfg.OpaqueServerSetup)
 	shareService := shares.NewService(db, filerepo.New(), foldersrepo.New(), sharerepo.New())
 	syncService := syncsvc.NewService(db, syncrepo.New())
@@ -75,6 +77,7 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 	}
 	{
 		api.GET("/me", middleware.RequireSessionJSON(authService), handlers.APIMe(authService))
+		api.GET("/settings/storage-usage", middleware.RequireSessionJSON(authService), handlers.APIStorageUsage(settingsService))
 		api.GET("/health", handlers.Health(db))
 		api.GET("/public/shares/:token", handlers.APIPublicShareRecord(shareService, filesService, cfg.CookieSecret))
 		api.POST("/public/shares/:token/consume", handlers.APIPublicShareConsume(shareService, filesService, cfg.CookieSecret))

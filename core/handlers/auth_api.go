@@ -77,6 +77,7 @@ func APIOpaqueLoginFinish(svc *auth.Service) gin.HandlerFunc {
 
 		cookies.SetSession(c, result.SessionToken, result.ExpiresAt)
 		c.JSON(http.StatusOK, gin.H{
+			"userID":             result.UserID,
 			"salt":               base64.StdEncoding.EncodeToString(result.VaultSalt),
 			"encryptedMasterKey": base64.StdEncoding.EncodeToString(result.EncryptedMasterKey),
 		})

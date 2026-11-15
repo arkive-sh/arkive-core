@@ -12,6 +12,7 @@ import (
 	"arkive/core/database"
 	"arkive/core/models"
 	settingsrepo "arkive/core/repositories/settings"
+	usersrepo "arkive/core/repositories/users"
 	"arkive/pkg/storage/localclient"
 	"arkive/pkg/validation"
 )
@@ -19,6 +20,7 @@ import (
 type Service struct {
 	db           database.PgPool
 	settingsRepo *settingsrepo.Repository
+	usersRepo    *usersrepo.Repository
 }
 
 type StorageInput struct {
@@ -45,10 +47,11 @@ type PreviewInput struct {
 	TextMaxMB  string
 }
 
-func NewService(db database.PgPool, settingsRepo *settingsrepo.Repository) *Service {
+func NewService(db database.PgPool, settingsRepo *settingsrepo.Repository, usersRepo *usersrepo.Repository) *Service {
 	return &Service{
 		db:           db,
 		settingsRepo: settingsRepo,
+		usersRepo:    usersRepo,
 	}
 }
 
@@ -72,6 +75,22 @@ func (s *Service) UploadSettings(ctx context.Context) (models.UploadSettings, er
 
 func (s *Service) PreviewSettings(ctx context.Context) (models.PreviewSettings, error) {
 	return s.settingsRepo.GetPreviewSettings(ctx, s.db)
+}
+
+func (s *Service) StorageUsage(ctx context.Context, userID string) (models.StorageUsage, error) {
+	usedBytes, reservedBytes, err := s.usersRepo.GetStorageUsage(ctx, s.db, userID)
+	if err != nil {
+		return models.StorageUsage{}, err
+	}
+	storage, err := s.settingsRepo.GetStorageSettings(ctx, s.db)
+	if err != nil {
+		return models.StorageUsage{}, err
+	}
+	return models.StorageUsage{
+		UsedBytes:       usedBytes,
+		ReservedBytes:   reservedBytes,
+		MaxStorageBytes: storage.MaxStorageBytes,
+	}, nil
 }
 
 func (s *Service) UpdateStorageSettings(ctx context.Context, userID string, input StorageInput) (models.StorageSettings, validation.Errors, error) {

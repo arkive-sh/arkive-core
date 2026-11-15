@@ -5,6 +5,7 @@ import { formatRecoveryKey, parseRecoveryKey } from '../recovery-key';
 import {
 	assertVaultGeneration,
 	aadBytes,
+	activeMasterKey,
 	clearBytes,
 	decryption,
 	encryption,
@@ -175,6 +176,26 @@ async function handleLockVault() {
 	return { unlocked: false };
 }
 
+function handleExportVaultSession() {
+	return { masterKey: activeMasterKey().slice() };
+}
+
+function handleRestoreVaultSession(params: WorkerInput<'restoreVaultSession'>) {
+	let masterKey;
+
+	try {
+		if (!params.masterKeyBytes) throw new Error('Vault session is unavailable');
+		masterKey = toUint8Array(params.masterKeyBytes);
+		params.masterKeyBytes = null;
+		if (masterKey.byteLength !== 32) throw new Error('Vault session is invalid');
+		workerState.unlockedMasterKey = masterKey.slice();
+
+		return { unlocked: true };
+	} finally {
+		masterKey = clearBytes(masterKey);
+	}
+}
+
 async function handlePreparePasswordReset(params: WorkerInput<'preparePasswordReset'>) {
 	let exportKey;
 	let encryptedMasterKeyRecovery;
@@ -230,6 +251,8 @@ export const vault_operations = {
 	createInitialVault: handleCreateInitialVault,
 	prepareInitialRecovery: handlePrepareInitialRecovery,
 	lockVault: handleLockVault,
+	exportVaultSession: handleExportVaultSession,
+	restoreVaultSession: handleRestoreVaultSession,
 	preparePasswordReset: handlePreparePasswordReset,
 } satisfies Pick<
 	WorkerHandlers,
@@ -237,5 +260,7 @@ export const vault_operations = {
 	| 'createInitialVault'
 	| 'prepareInitialRecovery'
 	| 'lockVault'
+	| 'exportVaultSession'
+	| 'restoreVaultSession'
 	| 'preparePasswordReset'
 >;

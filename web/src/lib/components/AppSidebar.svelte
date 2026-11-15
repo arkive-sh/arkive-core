@@ -48,7 +48,9 @@
 	const navigation = [{ route: '/(app)/shares', label: 'Shares', icon: Share2 }] as const;
 	const filesHref = resolve('/(app)');
 	const trashHref = resolve('/(app)/trash');
+	const settingsHref = resolve('/(app)/settings');
 	const trashActive = $derived(isActive(trashHref));
+	const settingsActive = $derived(isActive(settingsHref));
 	const filesTreeSource = createFilesFolderTreeSource(() => vaultId);
 	const trashTreeSource = createTrashFolderTreeSource(() => vaultId);
 
@@ -201,16 +203,15 @@
 		{/each}
 	</nav>
 	<div class="border-t border-(--border-soft) px-3 pt-3">
-		<!-- eslint-disable svelte/no-navigation-without-resolve -->
 		<a
-			class="flex min-h-10 items-center gap-3 rounded px-3 text-sm leading-5 text-(--muted) transition-colors hover:bg-(--surface-raised) hover:text-(--text) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--accent)"
-			href="/settings"
+			class={`flex min-h-10 items-center gap-3 rounded px-3 text-sm leading-5 transition-colors hover:bg-(--surface-raised) hover:text-(--text) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--accent) ${settingsActive ? 'bg-(--accent)/15 text-(--accent)' : 'text-(--muted)'}`}
+			href={settingsHref}
+			aria-current={settingsActive ? 'page' : undefined}
 			onclick={onNavigate}
 		>
 			<Settings class="size-5 shrink-0 stroke-2" aria-hidden="true" />
 			<span>Settings</span>
 		</a>
-		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 	</div>
 	<SidebarResizeHandle width={sidebarWidth} visible={!mobileView} {onResize} />
 </aside>

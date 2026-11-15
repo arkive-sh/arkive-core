@@ -209,3 +209,14 @@ export async function deleteCachedThumbnails(fileIds: readonly string[]): Promis
 		// Cache cleanup is best effort and must not block file actions.
 	}
 }
+
+export async function clearThumbnailCache(): Promise<void> {
+	const database = await openDatabase();
+
+	if (!database) return;
+
+	const transaction = database.transaction(STORE_NAME, 'readwrite');
+	const done = transactionDone(transaction);
+	transaction.objectStore(STORE_NAME).clear();
+	await done;
+}

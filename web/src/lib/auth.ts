@@ -9,9 +9,9 @@ export async function loginAndUnlock(email: string, password: string): Promise<v
 	try {
 		login = await opaqueAuth.login(email, password);
 		exportKey = login.exportKey;
-		const { salt, encryptedMasterKey } = login;
+		const { userID, salt, encryptedMasterKey } = login;
 		login = null;
-		await unlockForLogin(exportKey, salt, encryptedMasterKey);
+		await unlockForLogin(exportKey, salt, encryptedMasterKey, userID);
 	} catch (error) {
 		await lockVault().catch(() => {});
 

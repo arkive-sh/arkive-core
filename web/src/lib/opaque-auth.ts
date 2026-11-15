@@ -8,6 +8,7 @@ interface LoginStartResponse {
 }
 
 interface LoginFinishResponse {
+	userID: string;
 	salt: string;
 	encryptedMasterKey: string;
 }
