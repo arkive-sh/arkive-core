@@ -188,7 +188,7 @@
 	</header>
 
 	<div
-		class="flex gap-6 overflow-x-auto border-b border-(--border-soft)"
+		class="flex gap-4 border-b border-(--border-soft) min-[640px]:gap-6"
 		role="tablist"
 		aria-label="Settings"
 		tabindex="-1"

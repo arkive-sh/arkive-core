@@ -1,9 +1,16 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { ChevronRight, FolderOpen, Settings, Share2, Trash2, X } from '@lucide/svelte';
+	import { useQueryClient } from '@tanstack/svelte-query';
+	import { get } from 'svelte/store';
+	import { ChevronRight, FolderOpen, LogOut, Settings, Share2, Trash2, X } from '@lucide/svelte';
+	import { logoutAndLock } from '#lib/auth.ts';
 	import FolderTree from './FolderTree.svelte';
 	import SidebarResizeHandle from './SidebarResizeHandle.svelte';
+	import Tooltip from './Tooltip.svelte';
 	import { createFilesFolderTreeSource, createTrashFolderTreeSource } from './folder-tree.svelte';
+	import { useTransferManager } from '#lib/transfers/manager.ts';
+	import { toast } from '#lib/toast.ts';
 	import type { FileManagerEntry } from '../../routes/(app)/files/types';
 
 	type Props = {
@@ -45,7 +52,10 @@
 	}: Props = $props();
 	let folderTreeOpen = $state(true);
 	let trashTreeOpen = $state(true);
+	let loggingOut = $state(false);
 	const navigation = [{ route: '/(app)/shares', label: 'Shares', icon: Share2 }] as const;
+	const transfers = useTransferManager();
+	const queryClient = useQueryClient();
 	const filesHref = resolve('/(app)');
 	const trashHref = resolve('/(app)/trash');
 	const settingsHref = resolve('/(app)/settings');
@@ -77,6 +87,30 @@
 		onOpenTrashFile(entry.id, entry.parentFolderId ?? null);
 		onNavigate();
 	}
+
+	async function logout(): Promise<void> {
+		if (loggingOut) return;
+		loggingOut = true;
+		queryClient.clear();
+		const transferIDs = get(transfers.state).jobs.map((job) => job.id);
+		const clearTransfers = (async () => {
+			await transfers.cancelAll();
+			transfers.removeMany(transferIDs);
+		})();
+		transfers.setOpen(false);
+		try {
+			try {
+				await logoutAndLock();
+			} finally {
+				await clearTransfers;
+			}
+			await goto(resolve('/login'), { replace: true });
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : 'Logout failed. Please try again.');
+		} finally {
+			loggingOut = false;
+		}
+	}
 </script>
 
 <button
@@ -90,8 +124,7 @@
 
 <aside
 	id="app-sidebar"
-	data-folder-tree-scroll-root
-	class={`fixed inset-y-0 left-0 z-20 grid w-[min(248px,86vw)] grid-rows-[auto_1fr_auto] overflow-y-auto border-r border-(--border) pt-4 pb-4 transition-transform duration-240 ease-[ease] translate-x-[-110%] shadow-(--shadow) print:hidden ${mobileView && mobileOpen ? 'max-[960px]:translate-x-0' : ''} min-[961px]:w-(--sidebar-width) ${desktopOpen ? 'min-[961px]:translate-x-0' : 'min-[961px]:translate-x-[-110%]'} min-[961px]:shadow-none`}
+	class={`fixed inset-y-0 left-0 z-20 grid w-[min(248px,86vw)] grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden border-r border-(--border) pt-4 pb-4 transition-transform duration-240 ease-[ease] translate-x-[-110%] shadow-(--shadow) print:hidden ${mobileView && mobileOpen ? 'max-[960px]:translate-x-0' : ''} min-[961px]:w-(--sidebar-width) ${desktopOpen ? 'min-[961px]:translate-x-0' : 'min-[961px]:translate-x-[-110%]'} min-[961px]:shadow-none`}
 	aria-label="Primary navigation"
 	aria-hidden={(mobileView && !mobileOpen) || (!mobileView && !desktopOpen)}
 	inert={(mobileView && !mobileOpen) || (!mobileView && !desktopOpen)}
@@ -108,7 +141,11 @@
 		</button>
 	</div>
 
-	<nav class="flex flex-col gap-1 px-3 pt-3" aria-label="Main navigation">
+	<nav
+		data-folder-tree-scroll-root
+		class="min-h-0 overflow-x-hidden overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden flex flex-col gap-1 px-3 pt-3"
+		aria-label="Main navigation"
+	>
 		<div>
 			<div class="flex min-w-0 items-center gap-1">
 				<button
@@ -202,9 +239,9 @@
 			</a>
 		{/each}
 	</nav>
-	<div class="border-t border-(--border-soft) px-3 pt-3">
+	<div class="flex items-center gap-1 border-t border-(--border-soft) px-3 pt-3">
 		<a
-			class={`flex min-h-10 items-center gap-3 rounded px-3 text-sm leading-5 transition-colors hover:bg-(--surface-raised) hover:text-(--text) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--accent) ${settingsActive ? 'bg-(--accent)/15 text-(--accent)' : 'text-(--muted)'}`}
+			class={`flex min-h-10 min-w-0 flex-1 items-center gap-3 rounded px-3 text-sm leading-5 transition-colors hover:bg-(--surface-raised) hover:text-(--text) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--accent) ${settingsActive ? 'bg-(--accent)/15 text-(--accent)' : 'text-(--muted)'}`}
 			href={settingsHref}
 			aria-current={settingsActive ? 'page' : undefined}
 			onclick={onNavigate}
@@ -212,6 +249,18 @@
 			<Settings class="size-5 shrink-0 stroke-2" aria-hidden="true" />
 			<span>Settings</span>
 		</a>
+		<Tooltip label="Log out" side="right">
+			<button
+				class="inline-flex size-10 shrink-0 cursor-pointer items-center justify-center rounded text-(--muted) transition-colors hover:bg-(--surface-raised) hover:text-(--text) disabled:cursor-wait disabled:opacity-60"
+				type="button"
+				aria-label="Log out"
+				aria-busy={loggingOut}
+				disabled={loggingOut}
+				onclick={logout}
+			>
+				<LogOut class="size-5 stroke-2" aria-hidden="true" />
+			</button>
+		</Tooltip>
 	</div>
 	<SidebarResizeHandle width={sidebarWidth} visible={!mobileView} {onResize} />
 </aside>

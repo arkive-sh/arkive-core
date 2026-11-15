@@ -1,17 +1,8 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
-	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
-	import { get } from 'svelte/store';
-	import { Bell, CircleUser, Lock, Search, Unlock } from '@lucide/svelte';
-	import { logoutAndLock } from '#lib/auth.ts';
-	import Dropdown from '#lib/components/Dropdown.svelte';
+	import { Lock, Search, Unlock } from '@lucide/svelte';
 	import SidebarToggle from '#lib/components/SidebarToggle.svelte';
-	import { useTransferManager } from '#lib/transfers/manager.ts';
-	import { toast } from '#lib/toast.ts';
 
 	type Props = {
-		user: { name: string; username: string; email: string };
 		mobileView: boolean;
 		mobileOpen: boolean;
 		desktopOpen: boolean;
@@ -23,7 +14,6 @@
 	};
 
 	let {
-		user,
 		mobileView,
 		mobileOpen,
 		desktopOpen,
@@ -33,34 +23,6 @@
 		onToggleVault,
 		onOpenSearch,
 	}: Props = $props();
-	const transfers = useTransferManager();
-	const queryClient = useQueryClient();
-	const logoutMutation = createMutation(() => ({
-		mutationFn: async () => {
-			const transferIDs = get(transfers.state).jobs.map((job) => job.id);
-			const clearTransfers = (async () => {
-				await transfers.cancelAll();
-				transfers.removeMany(transferIDs);
-			})();
-			transfers.setOpen(false);
-			try {
-				await logoutAndLock();
-			} finally {
-				await clearTransfers;
-			}
-		},
-	}));
-	let loggingOut = $derived(logoutMutation.isPending);
-
-	async function logout() {
-		queryClient.clear();
-		try {
-			await logoutMutation.mutateAsync();
-			await goto(resolve('/login'), { replace: true });
-		} catch (error) {
-			toast.error(error instanceof Error ? error.message : 'Logout failed. Please try again.');
-		}
-	}
 </script>
 
 <header
@@ -96,7 +58,7 @@
 			</div>
 		</div>
 
-		<div class="ml-auto flex items-center gap-3">
+		<div class="ml-auto flex items-center">
 			<button
 				class="inline-flex size-9 cursor-pointer items-center justify-center rounded bg-transparent p-0 text-(--muted) transition-colors hover:bg-(--surface-raised) hover:text-(--text)"
 				type="button"
@@ -111,46 +73,6 @@
 					<Unlock class="size-5 stroke-2" aria-hidden="true" />
 				{/if}
 			</button>
-			<a
-				class="inline-flex size-9 items-center justify-center rounded text-(--muted) transition-colors hover:bg-(--surface-raised) hover:text-(--text)"
-				href={resolve('/(app)#recent-activity')}
-				aria-label="Jump to recent activity"
-			>
-				<Bell class="size-5 stroke-2" aria-hidden="true" />
-			</a>
-			<Dropdown
-				label="Open account menu"
-				id="app-user-dropdown"
-				rootClass="app-user-dropdown"
-				triggerClass="size-9 rounded text-(--muted) transition-colors hover:bg-(--surface-raised) hover:text-(--text)"
-			>
-				{#snippet trigger()}
-					<CircleUser class="size-5.5 stroke-2" aria-hidden="true" />
-				{/snippet}
-				<div class="grid gap-1 px-2 pt-1.5 pb-2">
-					<span class="text-[13px] leading-4.5 font-semibold text-(--text)"
-						>{user.name || 'Account'}</span
-					>
-					<span class="text-[13px] leading-4.5 text-(--muted)">@{user.username}</span>
-					<span class="break-all text-[13px] leading-4.5 text-(--muted)">{user.email}</span>
-				</div>
-				<div class="my-1.5 h-px bg-(--border)"></div>
-				<!-- eslint-disable svelte/no-navigation-without-resolve -->
-				<a
-					class="flex w-full items-center rounded-[10px] border border-transparent px-2.5 py-2 text-[13px] leading-4.5 text-(--text) transition-[background,border-color] duration-200 hover:border-(--border) hover:bg-(--bg-soft)"
-					href={resolve('/(app)') + 'settings'}
-					role="menuitem">Settings</a
-				>
-				<!-- eslint-enable svelte/no-navigation-without-resolve -->
-				<button
-					class="flex w-full cursor-pointer items-center rounded-[10px] border border-transparent px-2.5 py-2 text-left text-[13px] leading-4.5 text-(--text) transition-[background,border-color] duration-200 hover:border-(--border) hover:bg-(--bg-soft) disabled:cursor-wait disabled:opacity-60"
-					type="button"
-					role="menuitem"
-					disabled={loggingOut}
-					aria-busy={loggingOut}
-					onclick={logout}>{loggingOut ? 'Logging out…' : 'Log out'}</button
-				>
-			</Dropdown>
 		</div>
 	</div>
 </header>

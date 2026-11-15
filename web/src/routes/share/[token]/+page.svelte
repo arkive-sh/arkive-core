@@ -405,7 +405,7 @@
 <main
 	class="box-border min-h-dvh overflow-x-hidden bg-[radial-gradient(560px_280px_at_14%_0%,rgb(56_189_248_/_10%),transparent_68%),radial-gradient(640px_320px_at_86%_12%,rgb(18_26_34_/_70%),transparent_72%),#0b0e11] px-6 py-2 text-[#dee3e8] max-[920px]:px-3 max-[640px]:p-1.5"
 >
-	<div class="mx-auto flex min-h-dvh w-full max-w-[1296px] flex-col">
+	<div class="mx-auto flex w-full max-w-[1296px] flex-col" class:min-h-dvh={folderShare !== null}>
 		{#if loading}
 			<section
 				class="grid min-h-80 place-items-center rounded-lg border border-[#30363d] bg-[#161b22] p-8 text-center text-[#87929a]"
@@ -461,7 +461,7 @@
 			/>
 		{:else if metadata && shareEntry}
 			<section
-				class="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-lg border border-[#30363d] bg-[#161b22] shadow-[0_28px_90px_rgb(0_0_0_/_42%)]"
+				class="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_auto] overflow-hidden rounded-lg border border-[#30363d] bg-[#161b22] shadow-[0_28px_90px_rgb(0_0_0_/_42%)]"
 			>
 				<aside
 					class="grid min-w-0 gap-3 px-6 py-4 max-[920px]:px-[18px] max-[920px]:py-[14px] max-[640px]:gap-2.5 max-[640px]:px-3 max-[640px]:py-2.5"
@@ -489,7 +489,7 @@
 				</aside>
 
 				<div
-					class="relative grid min-h-0 min-w-0 place-items-center overflow-hidden border-t border-[#30363d] bg-[radial-gradient(circle_at_top,rgb(78_140_173_/_12%),transparent_46%),#0d1217]"
+					class="relative grid min-h-60 min-w-0 place-items-center overflow-hidden border-t border-[#30363d] bg-[radial-gradient(circle_at_top,rgb(78_140_173_/_12%),transparent_46%),#0d1217]"
 				>
 					<div class="grid w-full justify-items-center gap-5 p-6">
 						{#if permissions.preview && supportsPreview(metadata)}

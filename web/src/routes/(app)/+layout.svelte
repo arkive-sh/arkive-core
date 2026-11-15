@@ -149,7 +149,6 @@
 	style={`--sidebar-width:${sidebarWidth}px`}
 >
 	<AppHeader
-		user={data.user}
 		{mobileView}
 		{mobileOpen}
 		{desktopOpen}
