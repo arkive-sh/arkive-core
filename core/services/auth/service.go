@@ -145,7 +145,12 @@ func (s *Service) FinishOpaqueLogin(ctx context.Context, attemptID string, final
 		return LoginUnlockResult{}, err
 	}
 	state, stateErr := s.openOpaqueLoginState(strings.TrimSpace(attemptID), attempt.UserID, attempt.ExpiresAt, attempt.State)
-	if stateErr != nil || attempt.UserID == nil || opaque.FinishLogin(state, finalization) != nil {
+	// Verify opened states before checking user existence to keep the finish path uniform.
+	var finishErr error
+	if stateErr == nil {
+		finishErr = opaque.FinishLogin(state, finalization)
+	}
+	if stateErr != nil || finishErr != nil || attempt.UserID == nil {
 		if commitErr := tx.Commit(ctx); commitErr != nil {
 			return LoginUnlockResult{}, commitErr
 		}
