@@ -67,7 +67,7 @@ func (s *Service) ListTrash(ctx context.Context, input ListTrashInput) (ListTras
 	}
 
 	var path []models.Folder
-	if parentFolderID != "" && strings.TrimSpace(input.SeekEntryID) != "" {
+	if parentFolderID != "" {
 		path, err = s.trashRepo.GetFolderPath(ctx, s.db, userID, parentFolderID)
 		if err != nil {
 			return ListTrashResult{}, err

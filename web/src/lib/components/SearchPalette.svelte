@@ -4,7 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { useQueryClient } from '@tanstack/svelte-query';
-	import { Search } from '@lucide/svelte';
+	import { Folder, Search } from '@lucide/svelte';
 	import Modal from '#lib/components/Modal.svelte';
 	import { api } from '#lib/api.ts';
 	import { getCachedThumbnail } from '#lib/thumbnail-cache.ts';
@@ -22,7 +22,7 @@
 	} from '#lib/vault/search.ts';
 	import { waitUntilReady } from '#lib/vault/session.ts';
 
-	type Category = 'results' | 'shares' | 'settings';
+	type Category = 'results' | 'shares';
 	type SearchResult = {
 		id: string;
 		kind: string;
@@ -48,45 +48,28 @@
 			shares?: SearchAPIItem[];
 		};
 	};
+	type SearchScope = 'allFiles' | 'thisFolder' | 'trash';
 	type Props = {
 		open: boolean;
 		vaultUnlocked: boolean;
 		vaultId: string;
+		currentFolderId: string | null;
+		inTrashPage: boolean;
 		onOpen: () => void;
 		onClose: () => void;
 	};
 
-	const SETTINGS = [
-		{
-			id: 'settings-0',
-			title: 'Instance Overview',
-			terms: ['instance overview', 'instance', 'admin', 'email', 'storage', 'usage'],
-			url: '/settings#settings-account',
-			meta: 'Settings',
-		},
-		{
-			id: 'settings-1',
-			title: 'Storage Provider',
-			terms: ['storage provider', 'storage configuration', 'provider', 'local', 's3'],
-			url: '/settings#settings-provider',
-			meta: 'Settings',
-		},
-		{
-			id: 'settings-2',
-			title: 'Security',
-			terms: ['security', 'authentication', 'session', 'hardening'],
-			url: '/settings#settings-security',
-			meta: 'Settings',
-		},
-	];
-
-	let { open, vaultUnlocked, vaultId, onOpen, onClose }: Props = $props();
+	let { open, vaultUnlocked, vaultId, currentFolderId, inTrashPage, onOpen, onClose }: Props =
+		$props();
 	const queryClient = useQueryClient();
 	let query = $state('');
 	let results = $state<SearchResult[]>([]);
 	let loading = $state(false);
 	let hasSearched = $state(false);
 	let activeIndex = $state(0);
+	let allFilesScope = $state(true);
+	let thisFolderScope = $state(false);
+	let trashScope = $state(false);
 	let searchInput: HTMLInputElement | undefined;
 	let searchTimer: number | undefined;
 	let abortController: AbortController | undefined;
@@ -94,24 +77,25 @@
 	const thumbnailURLs = new SvelteSet<string>();
 	let fileFolderResults = $derived(results.filter((result) => result.category === 'results'));
 	let shareResults = $derived(results.filter((result) => result.category === 'shares'));
-	let settingsResults = $derived(results.filter((result) => result.category === 'settings'));
+	let hasSearchScope = $derived(allFilesScope || thisFolderScope || trashScope);
+
+	function selectedScopes(): SearchScope[] {
+		const scopes: SearchScope[] = [];
+
+		if (allFilesScope) scopes.push('allFiles');
+		if (thisFolderScope) scopes.push('thisFolder');
+		if (trashScope) scopes.push('trash');
+
+		return scopes;
+	}
 
 	function normalizeQuery(value: string) {
 		return value
 			.toLowerCase()
 			.normalize('NFKD')
 			.replace(/[^\p{L}\p{N}.]+/gu, ' ')
+			.replace(/\s+/g, ' ')
 			.trim();
-	}
-
-	function queryTrigrams(value: string): string[] {
-		if (value.length < 3) return value ? [value] : [];
-
-		return [
-			...new Set(
-				Array.from({ length: value.length - 2 }, (_, index) => value.slice(index, index + 3)),
-			),
-		];
 	}
 
 	function rankName(query: string, name: string): number {
@@ -121,29 +105,8 @@
 		if (normalizedName === normalizedQuery) return 4;
 		if (normalizedName.startsWith(normalizedQuery)) return 3;
 		if (normalizedName.includes(normalizedQuery)) return 2;
-		const terms = queryTrigrams(normalizedQuery).slice(0, 32);
 
-		if (!terms.length) return 0;
-		const indexedTerms = new Set(queryTrigrams(normalizedName));
-
-		return terms.filter((term) => indexedTerms.has(term)).length / terms.length;
-	}
-
-	function searchSettings(query: string): SearchResult[] {
-		const normalized = normalizeQuery(query);
-
-		if (!normalized) return [];
-
-		return SETTINGS.filter((setting) =>
-			setting.terms.some((term) => normalizeQuery(term).includes(normalized)),
-		).map((setting) => ({
-			id: setting.id,
-			kind: 'setting',
-			title: setting.title,
-			meta: setting.meta,
-			url: setting.url,
-			category: 'settings',
-		}));
+		return 0;
 	}
 
 	function clearThumbnails() {
@@ -219,7 +182,7 @@
 	}
 
 	async function runSearch(query: string) {
-		const settings = searchSettings(query);
+		const scopes = selectedScopes();
 		const controller = new AbortController();
 		abortController?.abort();
 		abortController = controller;
@@ -232,7 +195,7 @@
 			if (controller.signal.aborted || latestQuery !== query) return;
 			if (!tokens.length) {
 				if (latestQuery === query) {
-					results = settings;
+					results = [];
 					hasSearched = true;
 				}
 
@@ -240,12 +203,17 @@
 			}
 
 			const data = await queryClient.fetchQuery({
-				queryKey: ['search', vaultId, tokens],
+				queryKey: ['search', vaultId, scopes, currentFolderId, tokens],
 				queryFn: async ({ signal }) =>
 					(
 						await api.post<SearchResponse>(
 							'/api/search',
-							{ tokens, limit: 40 },
+							{
+								tokens,
+								limit: 40,
+								scopes,
+								folderId: scopes.includes('thisFolder') ? currentFolderId : undefined,
+							},
 							{ signal, headers: { Accept: 'application/json' } },
 						)
 					).data,
@@ -258,18 +226,28 @@
 				(data.results?.folders ?? []).map(async (folder): Promise<SearchResult | null> => {
 					try {
 						const opened = await decryptSearchFolder(folder);
+						const title = opened.name?.name || opened.metadata?.name || 'Encrypted folder';
+						const matchScore = rankName(query, title);
+						const url =
+							folder.isTrashed || folder.isTrashContainer
+								? `/trash?folder_id=${encodeURIComponent(folder.id)}`
+								: `/?folder_id=${encodeURIComponent(folder.id)}`;
+
+						if (matchScore < 2) return null;
 
 						return {
 							id: folder.id,
 							kind: 'folder',
-							title: opened.name?.name || opened.metadata?.name || 'Encrypted folder',
+							title,
 							meta: 'Folder',
 							score: Number(folder.score || 0),
-							matchScore: rankName(
-								query,
-								opened.name?.name || opened.metadata?.name || 'Encrypted folder',
-							),
-							url: `/?folder_id=${encodeURIComponent(folder.id)}`,
+							matchScore,
+							status: folder.isTrashed
+								? 'In Trash'
+								: folder.isTrashContainer
+									? 'Contains deleted items'
+									: undefined,
+							url,
 							category: 'results',
 						};
 					} catch {
@@ -281,17 +259,28 @@
 				(data.results?.files ?? []).map(async (file): Promise<SearchResult | null> => {
 					try {
 						const opened = await decryptSearchFile(file);
+						const title = opened.metadata?.name || 'Encrypted file';
+						const matchScore = rankName(query, title);
+						const trashFolder = file.folderId
+							? `folder_id=${encodeURIComponent(file.folderId)}&`
+							: '';
+						const url = file.isTrashed
+							? `/trash?${trashFolder}focus_file=${encodeURIComponent(file.id)}`
+							: fileLocationHref(file.id, file.folderId);
+
+						if (matchScore < 2) return null;
 
 						return {
 							id: file.id,
 							kind: 'file',
-							title: opened.metadata?.name || 'Encrypted file',
+							title,
 							meta: opened.metadata?.mime || 'Encrypted',
 							score: Number(file.score || 0),
-							matchScore: rankName(query, opened.metadata?.name || 'Encrypted file'),
+							matchScore,
+							status: file.isTrashed ? 'In Trash' : undefined,
 							preview: opened.metadata?.preview,
 							file,
-							url: fileLocationHref(file.id, file.folderId),
+							url,
 							category: 'results',
 						};
 					} catch {
@@ -314,13 +303,13 @@
 				...result,
 				category: 'shares' as const,
 			}));
-			results = [...ranked, ...shares, ...settings];
+			results = [...ranked, ...shares];
 			activeIndex = 0;
 			hasSearched = true;
 			void hydrateThumbnails(ranked.slice(0, 20), query, controller.signal);
 		} catch {
 			if (!controller.signal.aborted && latestQuery === query) {
-				results = settings;
+				results = [];
 				hasSearched = true;
 			}
 		} finally {
@@ -328,23 +317,46 @@
 		}
 	}
 
-	function scheduleSearch(event: Event) {
-		query = (event.currentTarget as HTMLInputElement).value;
-		const value = query.trim();
+	function scheduleSearchValue(value: string) {
+		value = value.trim();
 		latestQuery = value;
 		if (searchTimer !== undefined) window.clearTimeout(searchTimer);
 		abortController?.abort();
 		void queryClient.cancelQueries({ queryKey: ['search', vaultId] });
 		clearThumbnails();
-		results = searchSettings(value);
+		results = [];
 		activeIndex = 0;
 		hasSearched = false;
 		loading = false;
 		if (!value) return;
+		if (!selectedScopes().length) {
+			hasSearched = true;
+
+			return;
+		}
 		searchTimer = window.setTimeout(() => {
 			searchTimer = undefined;
 			void runSearch(value);
 		}, 300);
+	}
+
+	function scheduleSearch(event: Event) {
+		query = (event.currentTarget as HTMLInputElement).value;
+		scheduleSearchValue(query);
+	}
+
+	function setSearchScope(scope: SearchScope, enabled: boolean) {
+		if (scope === 'allFiles') {
+			allFilesScope = enabled;
+			if (enabled) thisFolderScope = false;
+		} else if (scope === 'thisFolder') {
+			thisFolderScope = enabled;
+			if (enabled) allFilesScope = false;
+		} else {
+			trashScope = enabled;
+		}
+
+		scheduleSearchValue(query);
 	}
 
 	function handleInputKeydown(event: KeyboardEvent) {
@@ -388,6 +400,9 @@
 			return;
 		}
 		if (!open) return;
+		allFilesScope = !inTrashPage;
+		thisFolderScope = false;
+		trashScope = inTrashPage;
 		query = '';
 		results = [];
 		loading = false;
@@ -430,8 +445,8 @@
 				id="search-panel-input"
 				class="w-full border-0 bg-transparent text-lg leading-6 text-(--text) outline-none placeholder:text-(--muted)"
 				type="search"
-				placeholder="Search files, shares, or settings..."
-				aria-label="Search files, shares, or settings"
+				placeholder="Search files and folders..."
+				aria-label="Search files and folders"
 				autocomplete="off"
 				value={query}
 				oninput={scheduleSearch}
@@ -443,6 +458,48 @@
 			>
 		</div>
 	{/snippet}
+
+	<fieldset
+		class="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-(--border) px-5 py-3"
+	>
+		<legend class="sr-only">Search scope</legend>
+		<label class="inline-flex items-center gap-2 text-sm text-(--text)">
+			<input
+				class="size-4 accent-(--accent)"
+				type="checkbox"
+				checked={allFilesScope}
+				onchange={(event) =>
+					setSearchScope('allFiles', (event.currentTarget as HTMLInputElement).checked)}
+			/>
+			<span>All files</span>
+		</label>
+		<label
+			class={`inline-flex items-center gap-2 text-sm ${currentFolderId && !inTrashPage ? 'text-(--text)' : 'text-(--muted)'}`}
+			title={currentFolderId && !inTrashPage
+				? 'Search this folder and its subfolders'
+				: 'Open a folder to search within it'}
+		>
+			<input
+				class="size-4 accent-(--accent)"
+				type="checkbox"
+				checked={thisFolderScope}
+				disabled={!currentFolderId || inTrashPage}
+				onchange={(event) =>
+					setSearchScope('thisFolder', (event.currentTarget as HTMLInputElement).checked)}
+			/>
+			<span>This folder</span>
+		</label>
+		<label class="inline-flex items-center gap-2 text-sm text-(--text)">
+			<input
+				class="size-4 accent-(--accent)"
+				type="checkbox"
+				checked={trashScope}
+				onchange={(event) =>
+					setSearchScope('trash', (event.currentTarget as HTMLInputElement).checked)}
+			/>
+			<span>Trash</span>
+		</label>
+	</fieldset>
 
 	<div class="grid max-h-[min(60vh,560px)] gap-4 overflow-y-auto p-3" aria-label="Search results">
 		{#if fileFolderResults.length}
@@ -463,19 +520,26 @@
 							onclick={closeSearch}
 						>
 							<span class="flex min-w-0 items-center gap-3.5">
-								<span
-									class="inline-flex size-8 shrink-0 items-center justify-center overflow-hidden rounded border border-[rgba(62,72,79,0.85)] bg-[rgba(48,53,57,0.42)] text-xs uppercase group-hover:text-(--accent-ink)"
-								>
-									{#if result.thumbnailUrl}
-										<img
-											class="size-full object-cover"
-											src={result.thumbnailUrl}
-											alt={result.title}
-											loading="lazy"
-											decoding="async"
-										/>
-									{:else}{result.kind === 'file' ? 'F' : 'D'}{/if}
-								</span>
+								{#if result.kind === 'folder'}
+									<Folder
+										class={`size-8 shrink-0 ${index === activeIndex ? 'text-(--accent-ink)' : 'text-(--accent) group-hover:text-(--accent-ink)'}`}
+										aria-hidden="true"
+									/>
+								{:else}
+									<span
+										class="inline-flex size-8 shrink-0 items-center justify-center overflow-hidden rounded border border-[rgba(62,72,79,0.85)] bg-[rgba(48,53,57,0.42)] text-xs uppercase group-hover:text-(--accent-ink)"
+									>
+										{#if result.thumbnailUrl}
+											<img
+												class="size-full object-cover"
+												src={result.thumbnailUrl}
+												alt={result.title}
+												loading="lazy"
+												decoding="async"
+											/>
+										{:else}F{/if}
+									</span>
+								{/if}
 								<span class="grid min-w-0 gap-1">
 									<span class="truncate text-[15px] leading-5">{result.title}</span>
 									{#if result.meta}<span
@@ -533,49 +597,14 @@
 				</div>
 			</section>
 		{/if}
-		{#if settingsResults.length}
-			<section class="grid gap-2">
-				<h2
-					class="px-2.5 text-[11px] leading-4 font-semibold tracking-wider text-[#9eb8ce] uppercase"
-				>
-					Settings
-				</h2>
-				<div class="grid gap-0.5">
-					{#each settingsResults as result (result.id)}
-						{@const index = results.indexOf(result)}
-						<!-- eslint-disable svelte/no-navigation-without-resolve -->
-						<a
-							id={`search-result-${index}`}
-							href={resolve('/(app)') + result.url.slice(1)}
-							class={`group flex items-center justify-between gap-4 rounded-md px-3.5 py-3.5 ${index === activeIndex ? 'bg-(--accent) text-(--accent-ink)' : 'text-(--text) hover:bg-(--accent) hover:text-(--accent-ink)'}`}
-							onclick={closeSearch}
-						>
-							<span class="flex min-w-0 items-center gap-3.5"
-								><span
-									class="inline-flex size-8 shrink-0 items-center justify-center rounded border border-[rgba(62,72,79,0.85)] bg-[rgba(48,53,57,0.42)] text-xs uppercase group-hover:text-(--accent-ink)"
-									>C</span
-								><span class="grid min-w-0 gap-1"
-									><span class="truncate text-[15px] leading-5">{result.title}</span
-									>{#if result.meta}<span
-											class="truncate text-[13px] leading-4 text-(--muted) group-hover:text-[rgba(0,53,74,0.78)]"
-											>{result.meta}</span
-										>{/if}</span
-								></span
-							>
-							{#if result.status}<span
-									class="text-xs font-bold text-(--muted) uppercase group-hover:text-[rgba(0,53,74,0.78)]"
-									>{result.status}</span
-								>{/if}
-						</a>
-						<!-- eslint-enable svelte/no-navigation-without-resolve -->
-					{/each}
-				</div>
-			</section>
-		{/if}
 		{#if loading}<div class="px-3.5 py-3 text-[13px] leading-4.5 text-[#9eb8ce]">
 				Searching...
 			</div>{/if}
-		{#if hasSearched && !loading && !results.length}<div
+		{#if hasSearched && !loading && !hasSearchScope}<div
+				class="px-3.5 py-3 text-[13px] leading-4.5 text-(--muted)"
+			>
+				Select at least one search scope.
+			</div>{:else if hasSearched && !loading && !results.length}<div
 				class="px-3.5 py-3 text-[13px] leading-4.5 text-(--muted)"
 			>
 				No results found.

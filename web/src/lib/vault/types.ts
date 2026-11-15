@@ -23,6 +23,7 @@ export interface EncryptedSearchFile {
 	encryptedMetadata: string;
 	encryptedFileKey: string;
 	score: number;
+	isTrashed?: boolean;
 	url: string;
 }
 
@@ -33,6 +34,8 @@ export interface EncryptedSearchFolder {
 	encryptedName: string;
 	encryptedMetadata: string;
 	score: number;
+	isTrashed?: boolean;
+	isTrashContainer?: boolean;
 	url: string;
 }
 

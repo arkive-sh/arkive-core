@@ -5,11 +5,13 @@ import (
 	"encoding/base64"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"arkive/core/models"
 	"arkive/pkg/storage"
+	"arkive/pkg/validation"
 )
 
 type EncryptedFileRecord struct {
@@ -35,7 +37,7 @@ func (s *Service) CountArchivedFiles(ctx context.Context, userID string) (int64,
 	return s.fileRepo.CountArchivedFilesForUser(ctx, s.db, userID)
 }
 
-func (s *Service) SearchCompletedUploadsByTokens(ctx context.Context, userID, vaultID string, tokenHashes [][]byte, minimumMatches, limit int) ([]models.File, error) {
+func (s *Service) SearchFilesByTokens(ctx context.Context, userID, vaultID string, tokenHashes [][]byte, minimumMatches, limit int, folderID *string, includeTrash bool) ([]models.File, error) {
 	var err error
 	userID, err = validateUserID(userID)
 	if err != nil {
@@ -54,7 +56,17 @@ func (s *Service) SearchCompletedUploadsByTokens(ctx context.Context, userID, va
 	if minimumMatches < 1 || minimumMatches > len(tokenHashes) {
 		return nil, ErrInvalidInput
 	}
-	return s.fileRepo.SearchCompletedForTokens(ctx, s.db, userID, vaultID, tokenHashes, minimumMatches, limit)
+	if includeTrash && folderID != nil {
+		return nil, ErrInvalidInput
+	}
+	if folderID != nil {
+		validated, ok := validation.NormalizeUUID(strings.TrimSpace(*folderID))
+		if !ok {
+			return nil, ErrInvalidInput
+		}
+		folderID = &validated
+	}
+	return s.fileRepo.SearchForTokens(ctx, s.db, userID, vaultID, tokenHashes, minimumMatches, limit, folderID, includeTrash, time.Now().Add(-TrashRetention))
 }
 
 func (s *Service) GetFileForDisplay(ctx context.Context, userID, fileID string) (models.File, error) {

@@ -2,6 +2,8 @@ package filerepo
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"arkive/core/database"
 	"arkive/core/models"
@@ -31,27 +33,53 @@ func (r *Repository) ReplaceSearchTokensForFile(ctx context.Context, db database
 	return r.InsertSearchTokensForFile(ctx, db, userID, vaultID, fileID, tokens)
 }
 
-func (r *Repository) SearchCompletedForTokens(ctx context.Context, db database.PgExecutor, userID, vaultID string, tokenHashes [][]byte, minimumMatches, limit int) ([]models.File, error) {
+func (r *Repository) SearchForTokens(ctx context.Context, db database.PgExecutor, userID, vaultID string, tokenHashes [][]byte, minimumMatches, limit int, folderID *string, includeTrash bool, trashCutoff time.Time) ([]models.File, error) {
 	if limit <= 0 {
 		limit = 20
 	}
-	rows, err := db.Query(ctx, `SELECT
+	queryPrefix := ""
+	folderFilter := ""
+	args := []any{userID, vaultID, tokenHashes, minimumMatches, limit}
+	if folderID != nil {
+		queryPrefix = `WITH RECURSIVE search_scope(id) AS (
+			SELECT id FROM folders
+			WHERE id = $6::uuid AND user_id = $1 AND deleted_at IS NULL
+				AND purged_at IS NULL AND purge_requested_at IS NULL
+			UNION
+			SELECT child.id FROM folders child
+			JOIN search_scope parent ON child.parent_folder_id = parent.id
+			WHERE child.user_id = $1 AND child.deleted_at IS NULL
+				AND child.purged_at IS NULL AND child.purge_requested_at IS NULL
+		)
+		`
+		folderFilter = `AND f.folder_id IN (SELECT id FROM search_scope)`
+		args = append(args, *folderID)
+	}
+	trashFilter := "AND f.deleted_at IS NULL AND f.expires_at IS NULL"
+	if includeTrash {
+		cutoffParam := len(args) + 1
+		trashFilter = fmt.Sprintf(`AND f.deleted_at > $%d
+			AND f.purged_at IS NULL AND f.purge_requested_at IS NULL`, cutoffParam)
+		args = append(args, trashCutoff)
+	}
+	rows, err := db.Query(ctx, queryPrefix+`SELECT
 		f.id,
 		f.user_id,
 		f.folder_id,
 		f.encrypted_metadata,
 		f.encrypted_file_key,
-		SUM(fst.weight) AS score
+		SUM(fst.weight) AS score,
+		f.deleted_at
 	FROM
 		file_search_tokens fst
-	INNER JOIN files f ON f.id = fst.file_id
+	INNER JOIN files f ON f.id = fst.file_id AND f.user_id = fst.user_id
 	WHERE
 		fst.user_id = $1
 		AND fst.vault_id = $2
 		AND fst.token_hash = ANY($3::bytea[])
 		AND f.upload_status = 'complete'
-		AND f.expires_at IS NULL
-		AND f.deleted_at IS NULL
+		`+trashFilter+`
+		`+folderFilter+`
 	GROUP BY
 		f.id
 	HAVING
@@ -61,7 +89,7 @@ func (r *Repository) SearchCompletedForTokens(ctx context.Context, db database.P
 		score DESC,
 		f.updated_at DESC,
 		f.id
-	LIMIT $5`, userID, vaultID, tokenHashes, minimumMatches, limit)
+		LIMIT $5`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -78,6 +106,7 @@ func (r *Repository) SearchCompletedForTokens(ctx context.Context, db database.P
 			&file.EncryptedMetadata,
 			&file.EncryptedFileKey,
 			&file.SearchScore,
+			&file.DeletedAt,
 		); err != nil {
 			return nil, err
 		}

@@ -21,6 +21,10 @@
 	let vaultReady = $state(false);
 	let sidebarTransitionTimer: ReturnType<typeof setTimeout> | undefined;
 	const sidebarOpenStorageKey = 'arkive.sidebar.open';
+	let searchInTrashPage = $derived(page.url.pathname === resolve('/(app)/trash'));
+	let searchFolderId = $derived(
+		page.url.pathname === resolve('/(app)') ? page.url.searchParams.get('folder_id') : null,
+	);
 
 	function setMobileOpen(open: boolean) {
 		mobileOpen = open;
@@ -156,6 +160,8 @@
 		open={searchOpen}
 		vaultUnlocked={$vaultUnlocked}
 		vaultId={data.user.id}
+		currentFolderId={searchFolderId}
+		inTrashPage={searchInTrashPage}
 		onOpen={openSearch}
 		onClose={closeSearch}
 	/>

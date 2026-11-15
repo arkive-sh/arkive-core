@@ -11,6 +11,7 @@ import (
 	folderssvc "arkive/core/services/folders"
 	"arkive/pkg/apierror"
 	appcontext "arkive/pkg/context"
+	"arkive/pkg/validation"
 )
 
 type searchResult struct {
@@ -31,6 +32,7 @@ type encryptedSearchFileResult struct {
 	EncryptedMetadata string  `json:"encryptedMetadata"`
 	EncryptedFileKey  string  `json:"encryptedFileKey"`
 	Score             int64   `json:"score"`
+	IsTrashed         bool    `json:"isTrashed"`
 	URL               string  `json:"url"`
 }
 
@@ -42,12 +44,16 @@ type encryptedSearchFolderResult struct {
 	EncryptedName     string  `json:"encryptedName"`
 	EncryptedMetadata string  `json:"encryptedMetadata"`
 	Score             int64   `json:"score"`
+	IsTrashed         bool    `json:"isTrashed"`
+	IsTrashContainer  bool    `json:"isTrashContainer"`
 	URL               string  `json:"url"`
 }
 
 type searchRequest struct {
-	Tokens []string `json:"tokens"`
-	Limit  int      `json:"limit"`
+	Tokens   []string `json:"tokens"`
+	Limit    int      `json:"limit"`
+	Scopes   []string `json:"scopes"`
+	FolderID *string  `json:"folderId"`
 }
 
 const maxSearchCandidates = 40
@@ -67,6 +73,42 @@ func APISearch(filesService *filessvc.Service, folderService *folderssvc.Service
 		}
 		if len(req.Tokens) == 0 {
 			c.JSON(http.StatusOK, gin.H{"results": gin.H{}})
+			return
+		}
+		if len(req.Scopes) == 0 {
+			req.Scopes = []string{"allFiles"}
+		}
+		if len(req.Scopes) > 3 {
+			apierror.InvalidPayload(c)
+			return
+		}
+		scopes := make(map[string]bool, len(req.Scopes))
+		for _, scope := range req.Scopes {
+			switch scope {
+			case "allFiles", "thisFolder", "trash":
+				scopes[scope] = true
+			default:
+				apierror.InvalidPayload(c)
+				return
+			}
+		}
+		if scopes["allFiles"] && scopes["thisFolder"] {
+			apierror.InvalidPayload(c)
+			return
+		}
+		if scopes["thisFolder"] {
+			if req.FolderID == nil {
+				apierror.InvalidPayload(c)
+				return
+			}
+			folderID, ok := validation.NormalizeUUID(*req.FolderID)
+			if !ok {
+				apierror.InvalidPayload(c)
+				return
+			}
+			req.FolderID = &folderID
+		} else if req.FolderID != nil {
+			apierror.InvalidPayload(c)
 			return
 		}
 		if len(req.Tokens) > filessvc.MaxSearchQueryTokens {
@@ -99,34 +141,48 @@ func APISearch(filesService *filessvc.Service, folderService *folderssvc.Service
 		} else if limit > maxSearchCandidates {
 			limit = maxSearchCandidates
 		}
-		// shortcut: queries with no shared trigram cannot match; add prefix/bigram tokens if needed.
-		minimumMatches := max(1, (len(tokenHashes)+2)/3)
+		// Require every blind query token; the browser verifies contiguous text after decryption.
+		minimumMatches := len(tokenHashes)
 
-		files, err := filesService.SearchCompletedUploadsByTokens(c.Request.Context(), user.ID, user.ID, tokenHashes, minimumMatches, limit)
-		if err != nil {
-			if err == filessvc.ErrInvalidInput {
-				apierror.InvalidPayload(c)
-				return
+		files := make([]models.File, 0, limit)
+		folders := make([]models.Folder, 0, limit)
+		searchScope := func(folderID *string, inTrash bool) error {
+			matchedFiles, err := filesService.SearchFilesByTokens(c.Request.Context(), user.ID, user.ID, tokenHashes, minimumMatches, limit, folderID, inTrash)
+			if err != nil {
+				return err
 			}
-			apierror.Internal(c, "Search failed")
-			return
+			matchedFolders, err := folderService.SearchFoldersByTokens(c.Request.Context(), user.ID, user.ID, tokenHashes, minimumMatches, limit, folderID, inTrash)
+			if err != nil {
+				return err
+			}
+			files = append(files, matchedFiles...)
+			folders = append(folders, matchedFolders...)
+			return nil
 		}
-		folders, err := folderService.SearchFoldersByTokens(c.Request.Context(), user.ID, user.ID, tokenHashes, minimumMatches, limit)
-		if err != nil {
-			if err == folderssvc.ErrInvalidInput {
-				apierror.InvalidPayload(c)
+		for _, scope := range []string{"allFiles", "thisFolder", "trash"} {
+			if !scopes[scope] {
+				continue
+			}
+			var folderID *string
+			inTrash := scope == "trash"
+			if scope == "thisFolder" {
+				folderID = req.FolderID
+			}
+			if err := searchScope(folderID, inTrash); err != nil {
+				if err == filessvc.ErrInvalidInput || err == folderssvc.ErrInvalidInput {
+					apierror.InvalidPayload(c)
+					return
+				}
+				apierror.Internal(c, "Search failed")
 				return
 			}
-			apierror.Internal(c, "Search failed")
-			return
 		}
 
 		c.JSON(http.StatusOK, gin.H{
 			"results": gin.H{
-				"folders":  mapEncryptedFolderResults(folders),
-				"files":    mapEncryptedFileResults(files),
-				"shares":   []searchResult{},
-				"settings": []searchResult{},
+				"folders": mapEncryptedFolderResults(folders),
+				"files":   mapEncryptedFileResults(files),
+				"shares":  []searchResult{},
 			},
 		})
 	}
@@ -143,6 +199,8 @@ func mapEncryptedFolderResults(folders []models.Folder) []encryptedSearchFolderR
 			EncryptedName:     base64.StdEncoding.EncodeToString(folder.EncryptedName),
 			EncryptedMetadata: base64.StdEncoding.EncodeToString(folder.EncryptedMetadata),
 			Score:             folder.SearchScore,
+			IsTrashed:         folder.DeletedAt != nil,
+			IsTrashContainer:  folder.IsTrashContainer,
 			URL:               "/folders/" + folder.ID,
 		})
 	}
@@ -160,6 +218,7 @@ func mapEncryptedFileResults(files []models.File) []encryptedSearchFileResult {
 			EncryptedMetadata: base64.StdEncoding.EncodeToString(file.EncryptedMetadata),
 			EncryptedFileKey:  base64.StdEncoding.EncodeToString(file.EncryptedFileKey),
 			Score:             file.SearchScore,
+			IsTrashed:         file.DeletedAt != nil,
 			URL:               "/files/" + file.ID + "/view",
 		})
 	}

@@ -14,4 +14,5 @@ type Folder struct {
 	UpdatedAt         time.Time
 	DeletedAt         *time.Time
 	SearchScore       int64
+	IsTrashContainer  bool
 }

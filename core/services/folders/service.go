@@ -612,7 +612,7 @@ func (s *Service) RenameFolder(ctx context.Context, input RenameFolderInput) err
 	return nil
 }
 
-func (s *Service) SearchFoldersByTokens(ctx context.Context, userID, vaultID string, tokenHashes [][]byte, minimumMatches, limit int) ([]models.Folder, error) {
+func (s *Service) SearchFoldersByTokens(ctx context.Context, userID, vaultID string, tokenHashes [][]byte, minimumMatches, limit int, folderID *string, includeTrash bool) ([]models.Folder, error) {
 	userID = strings.TrimSpace(userID)
 	vaultID = strings.TrimSpace(vaultID)
 	if userID == "" || vaultID == "" {
@@ -627,7 +627,17 @@ func (s *Service) SearchFoldersByTokens(ctx context.Context, userID, vaultID str
 	if minimumMatches < 1 || minimumMatches > len(tokenHashes) {
 		return nil, ErrInvalidInput
 	}
-	return s.folderRepo.SearchFoldersForTokens(ctx, s.db, userID, vaultID, tokenHashes, minimumMatches, limit)
+	if includeTrash && folderID != nil {
+		return nil, ErrInvalidInput
+	}
+	if folderID != nil {
+		validated, err := validateUUIDValue(*folderID)
+		if err != nil {
+			return nil, ErrInvalidInput
+		}
+		folderID = &validated
+	}
+	return s.folderRepo.SearchFoldersForTokens(ctx, s.db, userID, vaultID, tokenHashes, minimumMatches, limit, folderID, includeTrash, time.Now().Add(-filessvc.TrashRetention))
 }
 
 func (s *Service) folderPath(ctx context.Context, db database.PgExecutor, userID, folderID string) ([]models.Folder, error) {
