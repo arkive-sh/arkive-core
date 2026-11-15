@@ -23,6 +23,10 @@
 	let {
 		rows,
 		focusFileId,
+		entryOffset = 0,
+		hasPreviousPage = false,
+		loadingPrevious = false,
+		onLoadPreviousPage,
 		selectedIds,
 		selectionEnabled = true,
 		previewEnabled = true,
@@ -51,6 +55,10 @@
 	}: {
 		rows: FileManagerEntry[];
 		focusFileId: string | null;
+		entryOffset?: number;
+		hasPreviousPage?: boolean;
+		loadingPrevious?: boolean;
+		onLoadPreviousPage?: () => void;
 		selectedIds: ReadonlySet<string>;
 		selectionEnabled?: boolean;
 		previewEnabled?: boolean;
@@ -80,6 +88,8 @@
 	let gridLayout = $state<HTMLDivElement>();
 	let gridContent = $state<HTMLDivElement>();
 	let pendingFocusIndex = $state<number | null>(null);
+	let focusPositioned = $state(false);
+	let positionedFocusId = $state<string | null>(null);
 	let columnCount = $state(1);
 	const canSelect = $derived(selectionEnabled && Boolean(onToggleSelection));
 	const cardGap = $derived(Math.min(8, Math.max(4, Math.round(tileSize * 0.04))));
@@ -90,6 +100,13 @@
 	const entryIconSize = $derived(Math.min(88, Math.max(48, Math.round(tileSize * 0.4))));
 	const checkboxSize = $derived(Math.min(16, Math.max(12, Math.round(tileSize * 0.1))));
 	const checkboxInset = $derived(Math.min(8, Math.max(3, Math.round(tileSize * 0.05))));
+	const estimatedRowSize = $derived(
+		entryIconSize +
+			cardGap * 2 +
+			nameFontSize * 1.25 +
+			(Number(showType) + Number(showSize) + Number(showDimensions)) *
+				(detailFontSize * 1.25 + contentGap),
+	);
 	const thumbnails = new SvelteMap<string, string>();
 	const objectUrls = new SvelteMap<string, string>();
 	const pendingIds = new SvelteSet<string>();
@@ -101,20 +118,11 @@
 	let activeLoads = 0;
 	const rowVirtualizer = createWindowVirtualizer({
 		count: 0,
-		estimateSize: () => {
-			const detailLines = Number(showType) + Number(showSize) + Number(showDimensions);
-
-			return (
-				entryIconSize +
-				cardGap * 2 +
-				nameFontSize * 1.25 +
-				detailLines * (detailFontSize * 1.25 + contentGap)
-			);
-		},
+		estimateSize: () => estimatedRowSize,
 		gap: 0,
 		overscan: 2,
 		getItemKey: (index) => {
-			const entry = rows[index * columnCount];
+			const entry = rows[index * columnCount - entryOffset];
 
 			return entry ? fileManagerEntryKey(entry) : index;
 		},
@@ -123,13 +131,20 @@
 	const totalGridSize = $derived($rowVirtualizer.getTotalSize());
 	const rowScrollMargin = $derived($rowVirtualizer.options.scrollMargin);
 	const renderedEntries = $derived(
-		virtualRows.flatMap(({ index }) => rows.slice(index * columnCount, (index + 1) * columnCount)),
+		virtualRows.flatMap(({ index }) => {
+			const first = index * columnCount - entryOffset;
+
+			return rows.slice(Math.max(0, first), Math.max(0, first + columnCount));
+		}),
 	);
 
 	$effect(() => {
 		const index = pendingFocusIndex;
 
-		if (index === null || !virtualRows.some((row) => row.index === Math.floor(index / columnCount)))
+		if (
+			index === null ||
+			!virtualRows.some((row) => row.index === Math.floor((entryOffset + index) / columnCount))
+		)
 			return;
 		const button = gridContent?.querySelector<HTMLButtonElement>(
 			`[data-entry-action][data-entry-index="${index}"]`,
@@ -143,7 +158,7 @@
 	$effect(() => {
 		const layout = gridLayout;
 		const content = gridContent;
-		const count = rows.length;
+		const count = entryOffset + rows.length;
 
 		if (!layout || !content || typeof window === 'undefined') return;
 
@@ -182,19 +197,48 @@
 
 	$effect(() => {
 		const targetId = focusFileId;
+
+		if (!targetId) {
+			positionedFocusId = null;
+			focusPositioned = true;
+
+			return;
+		}
+		focusPositioned = positionedFocusId === targetId;
+
+		if (positionedFocusId === targetId) return;
+
 		const index = rows.findIndex((entry) => entry.kind === 'file' && entry.id === targetId);
 
 		if (!targetId || index < 0) return;
 
 		let canceled = false;
 		void tick().then(() => {
-			if (!canceled)
-				get(rowVirtualizer).scrollToIndex(Math.floor(index / columnCount), { align: 'center' });
+			if (!canceled) {
+				get(rowVirtualizer).scrollToIndex(Math.floor((entryOffset + index) / columnCount), {
+					align: 'center',
+				});
+				positionedFocusId = targetId;
+				focusPositioned = true;
+			}
 		});
 
 		return () => {
 			canceled = true;
 		};
+	});
+
+	$effect(() => {
+		const firstVisibleIndex = virtualRows[0]?.index;
+
+		if (
+			hasPreviousPage &&
+			!loadingPrevious &&
+			focusPositioned &&
+			firstVisibleIndex !== undefined &&
+			firstVisibleIndex * columnCount <= entryOffset + 8
+		)
+			onLoadPreviousPage?.();
 	});
 
 	function measureGridRow(element: HTMLDivElement, index: number) {
@@ -232,7 +276,9 @@
 	function focusEntry(index: number): void {
 		if (index < 0 || index >= rows.length || rows[index].id === NEW_FOLDER_DRAFT_ID) return;
 		pendingFocusIndex = index;
-		get(rowVirtualizer).scrollToIndex(Math.floor(index / columnCount), { align: 'auto' });
+		get(rowVirtualizer).scrollToIndex(Math.floor((entryOffset + index) / columnCount), {
+			align: 'auto',
+		});
 	}
 
 	const handleEntryKeydown = createFileManagerViewKeyboardHandler(() => ({
@@ -342,14 +388,18 @@
 			This folder is empty.
 		{:else}
 			{#each virtualRows as virtualRow (virtualRow.key)}
-				{@const start = virtualRow.index * columnCount}
+				{@const start = virtualRow.index * columnCount - entryOffset}
+				{@const placeholderCount = Math.min(columnCount, Math.max(0, -start))}
 				<div
 					use:measureGridRow={virtualRow.index}
 					class="absolute top-0 left-0 grid w-full"
 					style={`grid-template-columns: repeat(${columnCount}, minmax(0, 1fr)); gap: ${cardGap}px; transform: translateY(${virtualRow.start - rowScrollMargin}px)`}
 				>
-					{#each rows.slice(start, start + columnCount) as entry, columnIndex (`${entry.kind}:${entry.id}`)}
-						{@const entryIndex = start + columnIndex}
+					{#each Array.from({ length: placeholderCount }, (_, index) => index) as index (index)}
+						<div aria-hidden="true" style={`height: ${estimatedRowSize}px`}></div>
+					{/each}
+					{#each rows.slice(Math.max(0, start), Math.max(0, start) + columnCount - placeholderCount) as entry, columnIndex (`${entry.kind}:${entry.id}`)}
+						{@const entryIndex = Math.max(0, start) + columnIndex}
 						{#if entry.id === NEW_FOLDER_DRAFT_ID}
 							{#if onCreateFolder && onCancelNewFolder}
 								<article data-file-entry class="min-w-0">
@@ -379,7 +429,7 @@
 							<article
 								data-file-entry
 								data-entry-index={entryIndex}
-								class={`group relative min-w-0 cursor-pointer rounded-md transition-colors ${selectedIds.has(fileManagerEntryKey(entry)) ? 'bg-(--surface-highest)' : ''} ${focusFileId === entry.id ? 'ring-2 ring-(--accent)' : ''}`}
+								class={`group relative min-w-0 cursor-pointer rounded-md transition-colors ${selectedIds.has(fileManagerEntryKey(entry)) ? 'bg-(--surface-highest)' : ''}`}
 								oncontextmenu={(event) => {
 									event.preventDefault();
 									onShowContextMenu(entry, event.clientX, event.clientY);

@@ -2,6 +2,7 @@ package foldersrepo
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"arkive/core/database"
@@ -143,6 +144,14 @@ func (r *Repository) ListChildFolders(ctx context.Context, db database.PgExecuto
 }
 
 func (r *Repository) ListChildFoldersAfter(ctx context.Context, db database.PgExecutor, userID string, parentID *string, limit int, afterCreatedAt *time.Time, afterID *string, inclusive bool) ([]models.Folder, error) {
+	return r.listChildFolders(ctx, db, userID, parentID, limit, afterCreatedAt, afterID, inclusive, false)
+}
+
+func (r *Repository) ListChildFoldersBefore(ctx context.Context, db database.PgExecutor, userID string, parentID *string, limit int, beforeCreatedAt *time.Time, beforeID *string) ([]models.Folder, error) {
+	return r.listChildFolders(ctx, db, userID, parentID, limit, beforeCreatedAt, beforeID, false, true)
+}
+
+func (r *Repository) listChildFolders(ctx context.Context, db database.PgExecutor, userID string, parentID *string, limit int, cursorCreatedAt *time.Time, cursorID *string, inclusive, before bool) ([]models.Folder, error) {
 	query := `WITH RECURSIVE folder_page AS MATERIALIZED (
 		SELECT
 			id, vault_id, parent_folder_id, encrypted_name, encrypted_metadata, created_at, updated_at
@@ -155,22 +164,29 @@ func (r *Repository) ListChildFoldersAfter(ctx context.Context, db database.PgEx
 				OR parent_folder_id = $2
 			)`
 	args := []any{userID, parentID, limit, limit - 1}
-	if afterCreatedAt != nil {
+	if cursorCreatedAt != nil {
 		operator := "<"
+		if before {
+			operator = ">"
+		}
 		if inclusive {
 			operator = "<="
 		}
 		query += ` AND (created_at, id) ` + operator + ` ($5, $6::uuid)`
-		args = append(args, afterCreatedAt, afterID)
+		args = append(args, cursorCreatedAt, cursorID)
 	}
-	query += `
-		ORDER BY created_at DESC, id DESC
+	order := "DESC"
+	if before {
+		order = "ASC"
+	}
+	query += fmt.Sprintf(`
+		ORDER BY created_at %s, id %s
 		LIMIT $3
 	), folder_size_roots AS (
 		-- Sum ciphertext sizes only for folders on this page; avoid persisted folder totals that need updates on every mutation.
 		SELECT id
 		FROM folder_page
-		ORDER BY created_at DESC, id DESC
+		ORDER BY folder_page.created_at %s, folder_page.id %s
 		LIMIT $4
 	), folder_tree(root_id, folder_id) AS (
 		SELECT id, id FROM folder_size_roots
@@ -201,7 +217,7 @@ func (r *Repository) ListChildFoldersAfter(ctx context.Context, db database.PgEx
 		COALESCE(folder_sizes.size_bytes, 0)::bigint
 	FROM folder_page
 	LEFT JOIN folder_sizes ON folder_sizes.root_id = folder_page.id
-	ORDER BY folder_page.created_at DESC, folder_page.id DESC`
+		ORDER BY folder_page.created_at %s, folder_page.id %s`, order, order, order, order, order, order)
 	rows, err := db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -232,7 +248,22 @@ func (r *Repository) ListChildFoldersAfter(ctx context.Context, db database.PgEx
 	if rows.Err() != nil {
 		return nil, rows.Err()
 	}
+	if before {
+		for left, right := 0, len(folders)-1; left < right; left, right = left+1, right-1 {
+			folders[left], folders[right] = folders[right], folders[left]
+		}
+	}
 	return folders, nil
+}
+
+func (r *Repository) CountChildFoldersBefore(ctx context.Context, db database.PgExecutor, userID string, parentID *string, createdAt time.Time, id string) (int, error) {
+	var count int
+	err := db.QueryRow(ctx, `SELECT COUNT(1)
+		FROM folders
+		WHERE user_id = $1 AND deleted_at IS NULL
+			AND (($2::uuid IS NULL AND parent_folder_id IS NULL) OR parent_folder_id = $2)
+			AND (created_at, id) > ($3, $4::uuid)`, userID, parentID, createdAt, id).Scan(&count)
+	return count, err
 }
 
 func (r *Repository) GetChildFolderCreatedAt(ctx context.Context, db database.PgExecutor, userID string, parentID *string, folderID string) (time.Time, error) {

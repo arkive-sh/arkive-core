@@ -273,6 +273,8 @@ type listEntriesCursor struct {
 	CreatedAt string `json:"createdAt,omitempty"`
 	ID        string `json:"id,omitempty"`
 	Inclusive bool   `json:"inclusive,omitempty"`
+	Before    bool   `json:"before,omitempty"`
+	Position  int    `json:"position,omitempty"`
 }
 
 type listEntriesCursorState struct {
@@ -280,6 +282,8 @@ type listEntriesCursorState struct {
 	afterCreatedAt *time.Time
 	afterID        *string
 	inclusive      bool
+	before         bool
+	position       int
 }
 
 func decodeListEntriesCursor(value, folderID string) (listEntriesCursorState, error) {
@@ -308,7 +312,12 @@ func decodeListEntriesCursor(value, folderID string) (listEntriesCursorState, er
 		return listEntriesCursorState{}, ErrInvalidInput
 	}
 
-	state := listEntriesCursorState{stage: cursor.Stage, inclusive: cursor.Inclusive}
+	if cursor.Position < 0 || (cursor.Before && cursor.CreatedAt == "") {
+		return listEntriesCursorState{}, ErrInvalidInput
+	}
+	state := listEntriesCursorState{
+		stage: cursor.Stage, inclusive: cursor.Inclusive, before: cursor.Before, position: cursor.Position,
+	}
 	if cursor.CreatedAt == "" {
 		if cursor.Stage == "folders" {
 			return listEntriesCursorState{}, ErrInvalidInput
@@ -329,8 +338,8 @@ func decodeListEntriesCursor(value, folderID string) (listEntriesCursorState, er
 	return state, nil
 }
 
-func encodeListEntriesCursor(folderID, stage string, createdAt *time.Time, id string, inclusive bool) string {
-	cursor := listEntriesCursor{FolderID: folderID, Stage: stage, Inclusive: inclusive}
+func encodeListEntriesCursor(folderID, stage string, createdAt *time.Time, id string, inclusive, before bool, position int) string {
+	cursor := listEntriesCursor{FolderID: folderID, Stage: stage, Inclusive: inclusive, Before: before, Position: position}
 	if createdAt != nil {
 		cursor.CreatedAt = createdAt.UTC().Format(time.RFC3339Nano)
 		cursor.ID = id
@@ -342,6 +351,7 @@ func encodeListEntriesCursor(folderID, stage string, createdAt *time.Time, id st
 func (s *Service) cursorForEntry(ctx context.Context, userID string, folderID *string, entryID string) (string, error) {
 	createdAt, err := s.fileRepo.GetListedFileCreatedAt(ctx, s.db, userID, folderID, entryID)
 	stage := "files"
+	position := 0
 	if errors.Is(err, pgx.ErrNoRows) {
 		createdAt, err = s.folderRepo.GetChildFolderCreatedAt(ctx, s.db, userID, folderID, entryID)
 		stage = "folders"
@@ -352,11 +362,27 @@ func (s *Service) cursorForEntry(ctx context.Context, userID string, folderID *s
 	if err != nil {
 		return "", err
 	}
+	if stage == "files" {
+		position, err = s.folderRepo.CountChildFolders(ctx, s.db, userID, folderID)
+		if err != nil {
+			return "", err
+		}
+		filePosition, err := s.fileRepo.CountListedFilesBefore(ctx, s.db, userID, folderID, createdAt, entryID)
+		if err != nil {
+			return "", err
+		}
+		position += filePosition
+	} else {
+		position, err = s.folderRepo.CountChildFoldersBefore(ctx, s.db, userID, folderID, createdAt, entryID)
+		if err != nil {
+			return "", err
+		}
+	}
 	folderScope := ""
 	if folderID != nil {
 		folderScope = *folderID
 	}
-	return encodeListEntriesCursor(folderScope, stage, &createdAt, entryID, true), nil
+	return encodeListEntriesCursor(folderScope, stage, &createdAt, entryID, true, false, position), nil
 }
 
 func (s *Service) listEntriesByCursor(ctx context.Context, userID string, folderID *string, pageSize int, value string) (ListEntriesCursorResult, error) {
@@ -370,10 +396,11 @@ func (s *Service) listEntriesByCursor(ctx context.Context, userID string, folder
 	}
 
 	result := ListEntriesCursorResult{
-		FolderID: folderID,
-		Path:     []models.Folder{},
-		Folders:  []models.Folder{},
-		Files:    []models.File{},
+		FolderID:   folderID,
+		Path:       []models.Folder{},
+		Folders:    []models.Folder{},
+		Files:      []models.File{},
+		StartIndex: cursor.position,
 	}
 	if folderID != nil {
 		path, err := s.folderPath(ctx, s.db, userID, *folderID)
@@ -385,6 +412,9 @@ func (s *Service) listEntriesByCursor(ctx context.Context, userID string, folder
 		}
 		result.Path = path
 	}
+	if cursor.before {
+		return s.listEntriesBefore(ctx, userID, folderID, pageSize, folderScope, cursor, result)
+	}
 
 	if cursor.stage == "folders" {
 		folders, err := s.folderRepo.ListChildFoldersAfter(ctx, s.db, userID, folderID, pageSize+1, cursor.afterCreatedAt, cursor.afterID, cursor.inclusive)
@@ -395,9 +425,10 @@ func (s *Service) listEntriesByCursor(ctx context.Context, userID string, folder
 			folders = folders[:pageSize]
 			result.Folders = folders
 			last := folders[len(folders)-1]
-			next := encodeListEntriesCursor(folderScope, "folders", &last.CreatedAt, last.ID, false)
+			next := encodeListEntriesCursor(folderScope, "folders", &last.CreatedAt, last.ID, false, false, result.StartIndex+len(folders))
 			result.NextCursor = &next
 			result.HasMore = true
+			s.setPreviousEntriesCursor(folderScope, &result)
 			return result, nil
 		}
 		result.Folders = folders
@@ -421,17 +452,76 @@ func (s *Service) listEntriesByCursor(ctx context.Context, userID string, folder
 	if len(files) > remaining {
 		result.HasMore = true
 		if remaining == 0 {
-			next := encodeListEntriesCursor(folderScope, "files", nil, "", false)
+			next := encodeListEntriesCursor(folderScope, "files", nil, "", false, false, result.StartIndex+len(result.Folders))
 			result.NextCursor = &next
+			s.setPreviousEntriesCursor(folderScope, &result)
 			return result, nil
 		}
 		files = files[:remaining]
 		last := files[len(files)-1]
-		next := encodeListEntriesCursor(folderScope, "files", &last.CreatedAt, last.ID, false)
+		next := encodeListEntriesCursor(folderScope, "files", &last.CreatedAt, last.ID, false, false, result.StartIndex+len(result.Folders)+len(files))
 		result.NextCursor = &next
 	}
 	result.Files = files
+	s.setPreviousEntriesCursor(folderScope, &result)
 	return result, nil
+}
+
+func (s *Service) listEntriesBefore(ctx context.Context, userID string, folderID *string, pageSize int, folderScope string, cursor listEntriesCursorState, result ListEntriesCursorResult) (ListEntriesCursorResult, error) {
+	if cursor.stage == "folders" {
+		folders, err := s.folderRepo.ListChildFoldersBefore(ctx, s.db, userID, folderID, pageSize+1, cursor.afterCreatedAt, cursor.afterID)
+		if err != nil {
+			return ListEntriesCursorResult{}, err
+		}
+		if len(folders) > pageSize {
+			folders = folders[1:]
+		}
+		result.Folders = folders
+	} else {
+		files, err := s.fileRepo.ListByFolderBefore(ctx, s.db, userID, folderID, pageSize+1, cursor.afterCreatedAt, cursor.afterID)
+		if err != nil {
+			return ListEntriesCursorResult{}, err
+		}
+		if len(files) > pageSize {
+			files = files[1:]
+			result.Files = files
+		} else {
+			remaining := pageSize - len(files)
+			folders, err := s.folderRepo.ListChildFoldersAfter(ctx, s.db, userID, folderID, remaining+1, nil, nil, false)
+			if err != nil {
+				return ListEntriesCursorResult{}, err
+			}
+			if len(folders) > remaining {
+				folders = folders[:remaining]
+			}
+			result.Folders = folders
+			result.Files = files
+		}
+	}
+	count := len(result.Folders) + len(result.Files)
+	result.StartIndex -= count
+	if result.StartIndex < 0 {
+		return ListEntriesCursorResult{}, ErrInvalidInput
+	}
+	s.setPreviousEntriesCursor(folderScope, &result)
+	return result, nil
+}
+
+func (s *Service) setPreviousEntriesCursor(folderScope string, result *ListEntriesCursorResult) {
+	if result.StartIndex == 0 {
+		return
+	}
+	if len(result.Folders) > 0 {
+		first := result.Folders[0]
+		cursor := encodeListEntriesCursor(folderScope, "folders", &first.CreatedAt, first.ID, false, true, result.StartIndex)
+		result.PreviousCursor = &cursor
+		return
+	}
+	if len(result.Files) > 0 {
+		first := result.Files[0]
+		cursor := encodeListEntriesCursor(folderScope, "files", &first.CreatedAt, first.ID, false, true, result.StartIndex)
+		result.PreviousCursor = &cursor
+	}
 }
 
 func (s *Service) ValidateFolderAccess(ctx context.Context, userID, folderID string) (models.Folder, error) {

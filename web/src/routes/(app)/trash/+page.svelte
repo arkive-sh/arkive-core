@@ -42,6 +42,8 @@
 		path: ApiFolder[];
 		entries: ApiTrashEntry[];
 		nextCursor: string | null;
+		previousCursor: string | null;
+		startIndex: number;
 		hasMore: boolean;
 	};
 	type LoadedTrashPage = TrashPage & { folderId: string | null };
@@ -74,6 +76,7 @@
 		},
 		getNextPageParam: (lastPage) =>
 			lastPage.hasMore ? lastPage.nextCursor || undefined : undefined,
+		getPreviousPageParam: (firstPage) => firstPage.previousCursor || undefined,
 	}));
 
 	let entries = $state<FileManagerEntry[]>([]);
@@ -102,6 +105,7 @@
 		),
 	);
 	const selectableCount = $derived(entries.filter((entry) => entry.selectable !== false).length);
+	const entryOffset = $derived(query.data?.pages[0]?.startIndex ?? 0);
 	const allSelected = $derived(selectableCount > 0 && selectedEntries.length === selectableCount);
 	const breadcrumbItems = $derived<BreadcrumbItem[]>([
 		{
@@ -225,6 +229,20 @@
 		}
 
 		if (!pages.length || pages[0].folderId !== activeFolderId) return;
+		if (pages.length === hydratedPageCount + 1 && pages[1] === firstPage && entriesReady) {
+			const page = pages[0];
+			const generation = hydrationGeneration;
+			firstPage = page;
+			hydratedPageCount = pages.length;
+			hydrationQueue = hydrationQueue.then(async () => {
+				const decrypted = await Promise.all(page.entries.map(decryptEntry));
+
+				if (generation !== hydrationGeneration || !$vaultUnlocked) return;
+				entries = [...decrypted, ...entries];
+			});
+
+			return;
+		}
 		if (pages.length < hydratedPageCount || pages[0] !== firstPage) {
 			hydrationGeneration += 1;
 			hydratedPageCount = 0;
@@ -232,7 +250,6 @@
 			hydrationQueue = Promise.resolve();
 			entries = [];
 			entriesReady = false;
-			selectedIds.clear();
 		}
 
 		const generation = hydrationGeneration;
@@ -537,6 +554,10 @@
 					<FilesGridView
 						rows={entries}
 						{focusFileId}
+						{entryOffset}
+						hasPreviousPage={query.hasPreviousPage}
+						loadingPrevious={query.isFetchingPreviousPage}
+						onLoadPreviousPage={() => void query.fetchPreviousPage()}
 						{selectedIds}
 						selectionEnabled={true}
 						onSelectEntry={selectEntry}
@@ -560,6 +581,10 @@
 					<FilesListView
 						rows={entries}
 						{focusFileId}
+						{entryOffset}
+						hasPreviousPage={query.hasPreviousPage}
+						loadingPrevious={query.isFetchingPreviousPage}
+						onLoadPreviousPage={() => void query.fetchPreviousPage()}
 						{selectedIds}
 						selectionEnabled={true}
 						onSelectEntry={selectEntry}

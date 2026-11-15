@@ -21,6 +21,8 @@ type trashCursor struct {
 	DeletedAt string `json:"deletedAt"`
 	Type      string `json:"type"`
 	ID        string `json:"id"`
+	Before    bool   `json:"before,omitempty"`
+	Position  int    `json:"position,omitempty"`
 }
 
 func (s *Service) ListTrash(ctx context.Context, input ListTrashInput) (ListTrashResult, error) {
@@ -74,21 +76,42 @@ func (s *Service) ListTrash(ctx context.Context, input ListTrashInput) (ListTras
 			return ListTrashResult{}, ErrEntryNotFound
 		}
 	}
+	startIndex := 0
+	if cursor != nil {
+		startIndex = cursor.Position
+	}
 	entries, err := s.trashRepo.ListEntriesPage(ctx, s.db, userID, cutoff, parentFolderID, cursor, input.Limit+1)
 	if err != nil {
 		return ListTrashResult{}, err
 	}
 	hasMore := len(entries) > input.Limit
 	if hasMore {
-		entries = entries[:input.Limit]
+		if cursor != nil && cursor.Before {
+			entries = entries[1:]
+		} else {
+			entries = entries[:input.Limit]
+		}
 	}
-	result := ListTrashResult{Path: path, Entries: entries, HasMore: hasMore}
-	if hasMore && len(entries) > 0 {
-		encoded, err := encodeTrashCursor(entries[len(entries)-1])
+	if cursor != nil && cursor.Before {
+		startIndex -= len(entries)
+	}
+	if startIndex < 0 {
+		return ListTrashResult{}, ErrInvalidInput
+	}
+	result := ListTrashResult{Path: path, Entries: entries, StartIndex: startIndex, HasMore: hasMore && (cursor == nil || !cursor.Before)}
+	if hasMore && len(entries) > 0 && (cursor == nil || !cursor.Before) {
+		encoded, err := encodeTrashCursor(entries[len(entries)-1], startIndex+len(entries), false)
 		if err != nil {
 			return ListTrashResult{}, err
 		}
 		result.NextCursor = &encoded
+	}
+	if startIndex > 0 && len(entries) > 0 {
+		encoded, err := encodeTrashCursor(entries[0], startIndex, true)
+		if err != nil {
+			return ListTrashResult{}, err
+		}
+		result.PreviousCursor = &encoded
 	}
 	return result, nil
 }
@@ -338,14 +361,19 @@ func decodeTrashCursor(encoded string) (*trashrepo.Cursor, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &trashrepo.Cursor{DeletedAt: deletedAt, Type: cursor.Type, ID: id}, nil
+	if cursor.Position < 0 || (cursor.Before && cursor.DeletedAt == "") {
+		return nil, ErrInvalidInput
+	}
+	return &trashrepo.Cursor{DeletedAt: deletedAt, Type: cursor.Type, ID: id, Before: cursor.Before, Position: cursor.Position}, nil
 }
 
-func encodeTrashCursor(entry models.TrashEntry) (string, error) {
+func encodeTrashCursor(entry models.TrashEntry, position int, before bool) (string, error) {
 	value, err := json.Marshal(trashCursor{
 		DeletedAt: entry.DeletedAt.UTC().Format(time.RFC3339Nano),
 		Type:      entry.Type,
 		ID:        entry.ID,
+		Before:    before,
+		Position:  position,
 	})
 	if err != nil {
 		return "", err

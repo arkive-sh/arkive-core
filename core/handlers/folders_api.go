@@ -98,12 +98,14 @@ type fileEntrySummary struct {
 
 // Cursor pages avoid a total count and return only fields used by the file browser.
 type cursorFolderEntriesResponse struct {
-	FolderID   *string
-	Path       []folderEntrySummary
-	Folders    []folderEntrySummary
-	Files      []fileEntrySummary
-	NextCursor *string
-	HasMore    bool
+	FolderID       *string
+	Path           []folderEntrySummary
+	Folders        []folderEntrySummary
+	Files          []fileEntrySummary
+	StartIndex     int
+	PreviousCursor *string
+	NextCursor     *string
+	HasMore        bool
 }
 
 func APICreateFolder(folderService *folderssvc.Service) gin.HandlerFunc {
@@ -256,12 +258,14 @@ func apiListFolderEntries(c *gin.Context, folderService *folderssvc.Service, fol
 	}
 
 	c.JSON(http.StatusOK, cursorFolderEntriesResponse{
-		FolderID:   result.FolderID,
-		Path:       folderEntrySummaries(result.Path),
-		Folders:    folderEntrySummaries(result.Folders),
-		Files:      fileEntrySummaries(result.Files),
-		NextCursor: result.NextCursor,
-		HasMore:    result.HasMore,
+		FolderID:       result.FolderID,
+		Path:           folderEntrySummaries(result.Path),
+		Folders:        folderEntrySummaries(result.Folders),
+		Files:          fileEntrySummaries(result.Files),
+		StartIndex:     result.StartIndex,
+		PreviousCursor: result.PreviousCursor,
+		NextCursor:     result.NextCursor,
+		HasMore:        result.HasMore,
 	})
 }
 

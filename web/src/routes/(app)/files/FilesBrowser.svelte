@@ -138,6 +138,7 @@
 	} = $props();
 
 	const selectedCount = $derived(selectedEntries.length);
+	const entryOffset = $derived(query.data?.pages[0]?.StartIndex ?? 0);
 	const showSelectionToolbar = $derived(
 		(rows.length > 0 && viewMode === 'grid') || selectedCount > 0 || clipboardCount > 0,
 	);
@@ -281,6 +282,10 @@
 						<FilesGridView
 							rows={displayedRows}
 							{focusFileId}
+							{entryOffset}
+							hasPreviousPage={query.hasPreviousPage}
+							loadingPrevious={query.isFetchingPreviousPage}
+							onLoadPreviousPage={() => void query.fetchPreviousPage()}
 							{selectedIds}
 							{tileSize}
 							{showType}
@@ -309,6 +314,10 @@
 						<FilesListView
 							rows={displayedRows}
 							{focusFileId}
+							{entryOffset}
+							hasPreviousPage={query.hasPreviousPage}
+							loadingPrevious={query.isFetchingPreviousPage}
+							onLoadPreviousPage={() => void query.fetchPreviousPage()}
 							{selectedIds}
 							{showDimensions}
 							bind:newFolderName

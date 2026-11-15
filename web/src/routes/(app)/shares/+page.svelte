@@ -304,7 +304,7 @@
 					{@const busy = actionInProgress?.id === share.record.id}
 					<li
 						data-share-id={share.record.id}
-						class={`grid gap-4 border-b border-(--border) p-4 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_7rem_9rem_10rem_9rem] lg:items-center lg:gap-4 lg:px-4 lg:py-3 ${share.record.isTrashed ? 'opacity-60' : ''} ${focusedShareId === share.record.id ? 'rounded ring-2 ring-(--accent)' : ''}`}
+						class={`grid gap-4 border-b border-(--border) p-4 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_7rem_9rem_10rem_9rem] lg:items-center lg:gap-4 lg:px-4 lg:py-3 ${share.record.isTrashed ? 'opacity-60' : ''}`}
 					>
 						<div class="flex min-w-0 items-center gap-3">
 							{#if share.entry.kind === 'folder'}

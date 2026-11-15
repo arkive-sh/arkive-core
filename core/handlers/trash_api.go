@@ -15,10 +15,12 @@ import (
 )
 
 type trashEntriesResponse struct {
-	Path       []folderEntrySummary `json:"path"`
-	Entries    []models.TrashEntry  `json:"entries"`
-	NextCursor *string              `json:"nextCursor"`
-	HasMore    bool                 `json:"hasMore"`
+	Path           []folderEntrySummary `json:"path"`
+	Entries        []models.TrashEntry  `json:"entries"`
+	StartIndex     int                  `json:"startIndex"`
+	PreviousCursor *string              `json:"previousCursor"`
+	NextCursor     *string              `json:"nextCursor"`
+	HasMore        bool                 `json:"hasMore"`
 }
 
 type trashSelectionRequest struct {
@@ -65,10 +67,12 @@ func APIListTrash(folderService *folderssvc.Service) gin.HandlerFunc {
 			return
 		}
 		c.JSON(http.StatusOK, trashEntriesResponse{
-			Path:       folderEntrySummaries(result.Path),
-			Entries:    result.Entries,
-			NextCursor: result.NextCursor,
-			HasMore:    result.HasMore,
+			Path:           folderEntrySummaries(result.Path),
+			Entries:        result.Entries,
+			StartIndex:     result.StartIndex,
+			PreviousCursor: result.PreviousCursor,
+			NextCursor:     result.NextCursor,
+			HasMore:        result.HasMore,
 		})
 	}
 }

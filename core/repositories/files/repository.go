@@ -366,6 +366,14 @@ func (r *Repository) ListByFolder(ctx context.Context, db database.PgExecutor, u
 }
 
 func (r *Repository) ListByFolderAfter(ctx context.Context, db database.PgExecutor, userID string, folderID *string, limit int, afterCreatedAt *time.Time, afterID *string, inclusive bool) ([]models.File, error) {
+	return r.listByFolder(ctx, db, userID, folderID, limit, afterCreatedAt, afterID, inclusive, false)
+}
+
+func (r *Repository) ListByFolderBefore(ctx context.Context, db database.PgExecutor, userID string, folderID *string, limit int, beforeCreatedAt *time.Time, beforeID *string) ([]models.File, error) {
+	return r.listByFolder(ctx, db, userID, folderID, limit, beforeCreatedAt, beforeID, false, true)
+}
+
+func (r *Repository) listByFolder(ctx context.Context, db database.PgExecutor, userID string, folderID *string, limit int, cursorCreatedAt *time.Time, cursorID *string, inclusive, before bool) ([]models.File, error) {
 	query := `SELECT
 		file.id, file.folder_id, file.encrypted_metadata, file.encrypted_file_key, file.created_at, file.updated_at,
 		EXISTS (
@@ -392,15 +400,22 @@ func (r *Repository) ListByFolderAfter(ctx context.Context, db database.PgExecut
 			OR file.folder_id = $2
 		)`
 	args := []any{userID, folderID, limit}
-	if afterCreatedAt != nil {
+	if cursorCreatedAt != nil {
 		operator := "<"
+		if before {
+			operator = ">"
+		}
 		if inclusive {
 			operator = "<="
 		}
 		query += ` AND (created_at, id) ` + operator + ` ($4, $5::uuid)`
-		args = append(args, afterCreatedAt, afterID)
+		args = append(args, cursorCreatedAt, cursorID)
 	}
-	query += ` ORDER BY created_at DESC, id DESC LIMIT $3`
+	order := "DESC"
+	if before {
+		order = "ASC"
+	}
+	query += ` ORDER BY created_at ` + order + `, id ` + order + ` LIMIT $3`
 	rows, err := db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -428,7 +443,22 @@ func (r *Repository) ListByFolderAfter(ctx context.Context, db database.PgExecut
 	if rows.Err() != nil {
 		return nil, rows.Err()
 	}
+	if before {
+		for left, right := 0, len(files)-1; left < right; left, right = left+1, right-1 {
+			files[left], files[right] = files[right], files[left]
+		}
+	}
 	return files, nil
+}
+
+func (r *Repository) CountListedFilesBefore(ctx context.Context, db database.PgExecutor, userID string, folderID *string, createdAt time.Time, id string) (int, error) {
+	var count int
+	err := db.QueryRow(ctx, `SELECT COUNT(1)
+		FROM files
+		WHERE user_id = $1 AND upload_status = 'complete' AND expires_at IS NULL AND deleted_at IS NULL
+			AND (($2::uuid IS NULL AND folder_id IS NULL) OR folder_id = $2)
+			AND (created_at, id) > ($3, $4::uuid)`, userID, folderID, createdAt, id).Scan(&count)
+	return count, err
 }
 
 func (r *Repository) GetListedFileCreatedAt(ctx context.Context, db database.PgExecutor, userID string, folderID *string, fileID string) (time.Time, error) {

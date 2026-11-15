@@ -24,6 +24,10 @@
 	let {
 		rows,
 		focusFileId,
+		entryOffset = 0,
+		hasPreviousPage = false,
+		loadingPrevious = false,
+		onLoadPreviousPage,
 		selectedIds,
 		selectionEnabled = true,
 		previewEnabled = true,
@@ -53,6 +57,10 @@
 	}: {
 		rows: FileManagerEntry[];
 		focusFileId: string | null;
+		entryOffset?: number;
+		hasPreviousPage?: boolean;
+		loadingPrevious?: boolean;
+		onLoadPreviousPage?: () => void;
 		selectedIds: ReadonlySet<string>;
 		selectionEnabled?: boolean;
 		previewEnabled?: boolean;
@@ -87,6 +95,8 @@
 	let selectAllCheckbox = $state<HTMLInputElement>();
 	let tableBody = $state<HTMLTableSectionElement>();
 	let pendingFocusIndex = $state<number | null>(null);
+	let focusPositioned = $state(false);
+	let positionedFocusId = $state<string | null>(null);
 	const allSelected = $derived(loadedCount > 0 && selectedCount === loadedCount);
 
 	$effect(() => {
@@ -115,11 +125,12 @@
 		getRowId: (row) => `${row.kind}:${row.id}`,
 	});
 	const tableRows = $derived(table.getRowModel().rows);
+	const virtualCount = $derived(entryOffset + tableRows.length);
 	const rowVirtualizer = createWindowVirtualizer({
 		count: 0,
 		estimateSize: () => 45,
 		overscan: 8,
-		getItemKey: (index) => tableRows[index]?.id ?? index,
+		getItemKey: (index) => tableRows[index - entryOffset]?.id ?? index,
 	});
 	const virtualRows = $derived($rowVirtualizer.getVirtualItems());
 	const rowScrollMargin = $derived($rowVirtualizer.options.scrollMargin);
@@ -127,7 +138,7 @@
 	$effect(() => {
 		const index = pendingFocusIndex;
 
-		if (index === null || !virtualRows.some((row) => row.index === index)) return;
+		if (index === null || !virtualRows.some((row) => row.index === entryOffset + index)) return;
 		const button = tableBody?.querySelector<HTMLButtonElement>(
 			`[data-entry-action][data-entry-index="${index}"]`,
 		);
@@ -139,7 +150,7 @@
 
 	$effect(() => {
 		const body = tableBody;
-		const count = tableRows.length;
+		const count = virtualCount;
 
 		if (!body || typeof window === 'undefined') return;
 
@@ -165,6 +176,17 @@
 
 	$effect(() => {
 		const targetId = focusFileId;
+
+		if (!targetId) {
+			positionedFocusId = null;
+			focusPositioned = true;
+
+			return;
+		}
+		focusPositioned = positionedFocusId === targetId;
+
+		if (positionedFocusId === targetId) return;
+
 		const index = tableRows.findIndex(
 			(row) => row.original.kind === 'file' && row.original.id === targetId,
 		);
@@ -173,12 +195,29 @@
 
 		let canceled = false;
 		void tick().then(() => {
-			if (!canceled) get(rowVirtualizer).scrollToIndex(index, { align: 'center' });
+			if (!canceled) {
+				get(rowVirtualizer).scrollToIndex(entryOffset + index, { align: 'center' });
+				positionedFocusId = targetId;
+				focusPositioned = true;
+			}
 		});
 
 		return () => {
 			canceled = true;
 		};
+	});
+
+	$effect(() => {
+		const firstVisibleIndex = virtualRows[0]?.index;
+
+		if (
+			hasPreviousPage &&
+			!loadingPrevious &&
+			focusPositioned &&
+			firstVisibleIndex !== undefined &&
+			firstVisibleIndex <= entryOffset + 8
+		)
+			onLoadPreviousPage?.();
 	});
 
 	function entryActionLabel(entry: FileManagerEntry): string | undefined {
@@ -201,7 +240,7 @@
 	function focusEntry(index: number): void {
 		if (index < 0 || index >= tableRows.length) return;
 		pendingFocusIndex = index;
-		get(rowVirtualizer).scrollToIndex(index, { align: 'auto' });
+		get(rowVirtualizer).scrollToIndex(entryOffset + index, { align: 'auto' });
 	}
 
 	const handleEntryKeydown = createFileManagerViewKeyboardHandler(() => ({
@@ -251,7 +290,7 @@
 		<tbody
 			bind:this={tableBody}
 			class="relative block divide-y divide-(--border-soft)"
-			style={tableRows.length ? `height: ${$rowVirtualizer.getTotalSize()}px` : 'height: auto'}
+			style={virtualCount ? `height: ${$rowVirtualizer.getTotalSize()}px` : 'height: auto'}
 		>
 			{#if !tableRows.length}
 				<tr class="grid w-full" style={`grid-template-columns: ${activeGridColumns}`}
@@ -262,134 +301,144 @@
 				>
 			{:else}
 				{#each virtualRows as virtualRow (virtualRow.key)}
-					{@const row = tableRows[virtualRow.index]}
-					{@const isDraftFolder = row.original.id === NEW_FOLDER_DRAFT_ID}
-					{@const actionLabel = isDraftFolder ? undefined : entryActionLabel(row.original)}
-					<tr
-						data-index={virtualRow.index}
-						data-entry-index={virtualRow.index}
-						data-file-entry
-						class={`absolute top-0 left-0 grid h-11.25 w-full cursor-pointer transition-colors hover:bg-(--surface-highest) ${selectedIds.has(fileManagerEntryKey(row.original)) ? 'bg-(--surface-highest)' : 'bg-transparent'} ${focusFileId === row.original.id ? 'ring-2 ring-inset ring-(--accent)' : ''}`}
-						style={`grid-template-columns: ${activeGridColumns}; transform: translateY(${virtualRow.start - rowScrollMargin}px)`}
-						oncontextmenu={isDraftFolder
-							? undefined
-							: (event) => {
-									event.preventDefault();
-									onShowContextMenu(row.original, event.clientX, event.clientY);
-								}}
-					>
-						<td class={canSelect ? 'flex items-center px-4 py-1.5 first:pl-5' : 'w-0 p-0'}>
-							{#if !isDraftFolder}<button
-									class="absolute inset-0 z-0 m-0 cursor-pointer appearance-none border-0 bg-transparent p-0 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--accent)"
-									type="button"
-									data-entry-action
-									data-entry-index={virtualRow.index}
-									aria-label={canSelect && row.original.selectable !== false
-										? `Select ${row.original.name}${actionLabel ? '; press Enter or double-click to open' : ''}`
-										: (actionLabel ?? row.original.name)}
-									title={actionLabel ? 'Click to select; double-click to open' : undefined}
-									onclick={(event) => onSelectEntry?.(row.original, event.ctrlKey || event.metaKey)}
-									ondblclick={(event) => openEntry(row.original, event.currentTarget)}
-								></button>{/if}
-							{#if canSelect && !isDraftFolder && row.original.selectable !== false}<input
-									class="relative z-10 size-4 cursor-pointer accent-(--accent)"
-									type="checkbox"
-									checked={selectedIds.has(fileManagerEntryKey(row.original))}
-									aria-label={`Select ${row.original.name}`}
-									onchange={() => onToggleSelection?.(row.original)}
-								/>{/if}
-						</td>
-						{#each row.getAllCells() as cell (cell.id)}
-							{#if cell.column.id !== 'dimensions' || showDimensions}
-								<td
-									class="flex min-w-0 items-center whitespace-nowrap px-4 py-1.5 first:pl-5 last:pr-5"
-								>
-									{#if isDraftFolder && cell.column.id === 'name' && onCreateFolder && onCancelNewFolder}
-										<InlineNameInput
-											variant="list"
-											bind:name={newFolderName}
-											busy={creatingFolder}
-											onSubmit={onCreateFolder}
-											onCancel={onCancelNewFolder}
-										/>
-									{:else if isDraftFolder}
-										<span></span>
-									{:else if cell.column.id === 'name' && renameEntry?.id === row.original.id && onRename && onCancelRename}
-										<div class="inline-flex min-w-0 flex-1 items-center gap-2">
-											{#if row.original.kind === 'folder'}
+					{@const localIndex = virtualRow.index - entryOffset}
+					{#if localIndex < 0}
+						<tr
+							aria-hidden="true"
+							class="absolute top-0 left-0 h-11.25 w-full"
+							style={`transform: translateY(${virtualRow.start - rowScrollMargin}px)`}
+						></tr>
+					{:else}
+						{@const row = tableRows[localIndex]}
+						{@const isDraftFolder = row.original.id === NEW_FOLDER_DRAFT_ID}
+						{@const actionLabel = isDraftFolder ? undefined : entryActionLabel(row.original)}
+						<tr
+							data-index={virtualRow.index}
+							data-entry-index={localIndex}
+							data-file-entry
+							class={`absolute top-0 left-0 grid h-11.25 w-full cursor-pointer transition-colors hover:bg-(--surface-highest) ${selectedIds.has(fileManagerEntryKey(row.original)) ? 'bg-(--surface-highest)' : 'bg-transparent'}`}
+							style={`grid-template-columns: ${activeGridColumns}; transform: translateY(${virtualRow.start - rowScrollMargin}px)`}
+							oncontextmenu={isDraftFolder
+								? undefined
+								: (event) => {
+										event.preventDefault();
+										onShowContextMenu(row.original, event.clientX, event.clientY);
+									}}
+						>
+							<td class={canSelect ? 'flex items-center px-4 py-1.5 first:pl-5' : 'w-0 p-0'}>
+								{#if !isDraftFolder}<button
+										class="absolute inset-0 z-0 m-0 cursor-pointer appearance-none border-0 bg-transparent p-0 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--accent)"
+										type="button"
+										data-entry-action
+										data-entry-index={localIndex}
+										aria-label={canSelect && row.original.selectable !== false
+											? `Select ${row.original.name}${actionLabel ? '; press Enter or double-click to open' : ''}`
+											: (actionLabel ?? row.original.name)}
+										title={actionLabel ? 'Click to select; double-click to open' : undefined}
+										onclick={(event) =>
+											onSelectEntry?.(row.original, event.ctrlKey || event.metaKey)}
+										ondblclick={(event) => openEntry(row.original, event.currentTarget)}
+									></button>{/if}
+								{#if canSelect && !isDraftFolder && row.original.selectable !== false}<input
+										class="relative z-10 size-4 cursor-pointer accent-(--accent)"
+										type="checkbox"
+										checked={selectedIds.has(fileManagerEntryKey(row.original))}
+										aria-label={`Select ${row.original.name}`}
+										onchange={() => onToggleSelection?.(row.original)}
+									/>{/if}
+							</td>
+							{#each row.getAllCells() as cell (cell.id)}
+								{#if cell.column.id !== 'dimensions' || showDimensions}
+									<td
+										class="flex min-w-0 items-center whitespace-nowrap px-4 py-1.5 first:pl-5 last:pr-5"
+									>
+										{#if isDraftFolder && cell.column.id === 'name' && onCreateFolder && onCancelNewFolder}
+											<InlineNameInput
+												variant="list"
+												bind:name={newFolderName}
+												busy={creatingFolder}
+												onSubmit={onCreateFolder}
+												onCancel={onCancelNewFolder}
+											/>
+										{:else if isDraftFolder}
+											<span></span>
+										{:else if cell.column.id === 'name' && renameEntry?.id === row.original.id && onRename && onCancelRename}
+											<div class="inline-flex min-w-0 flex-1 items-center gap-2">
+												{#if row.original.kind === 'folder'}
+													<Folder class="size-4 shrink-0 text-(--accent)" aria-hidden="true" />
+												{:else}
+													<FileTypeIcon
+														name={row.original.name}
+														mime={row.original.type}
+														className="size-4 shrink-0"
+													/>
+												{/if}
+												<InlineNameInput
+													variant="list"
+													showFolderIcon={false}
+													selectOnMount
+													selectBeforeExtension={row.original.kind === 'file'}
+													placeholder="Rename file or folder"
+													bind:name={renameName}
+													busy={renaming}
+													onSubmit={() => onRename(row.original, renameName)}
+													onCancel={onCancelRename}
+												/>
+											</div>
+										{:else if cell.column.id === 'name' && row.original.kind === 'folder'}
+											<span
+												class="inline-flex min-w-0 max-w-full items-center gap-2 text-left font-medium text-(--text)"
+											>
 												<Folder class="size-4 shrink-0 text-(--accent)" aria-hidden="true" />
-											{:else}
+												<span class="min-w-0 truncate" title={row.original.name}
+													><FlexRender {cell} /></span
+												>
+											</span>
+										{:else if cell.column.id === 'name'}
+											<span class="inline-flex min-w-0 max-w-full items-center gap-2 font-medium">
 												<FileTypeIcon
 													name={row.original.name}
 													mime={row.original.type}
 													className="size-4 shrink-0"
 												/>
-											{/if}
-											<InlineNameInput
-												variant="list"
-												showFolderIcon={false}
-												selectOnMount
-												selectBeforeExtension={row.original.kind === 'file'}
-												placeholder="Rename file or folder"
-												bind:name={renameName}
-												busy={renaming}
-												onSubmit={() => onRename(row.original, renameName)}
-												onCancel={onCancelRename}
-											/>
-										</div>
-									{:else if cell.column.id === 'name' && row.original.kind === 'folder'}
-										<span
-											class="inline-flex min-w-0 max-w-full items-center gap-2 text-left font-medium text-(--text)"
-										>
-											<Folder class="size-4 shrink-0 text-(--accent)" aria-hidden="true" />
-											<span class="min-w-0 truncate" title={row.original.name}
-												><FlexRender {cell} /></span
+												<span class="min-w-0 truncate" title={row.original.name}
+													><FlexRender {cell} /></span
+												>
+											</span>
+										{:else if cell.column.id === 'size'}
+											<span class="text-(--muted)"
+												>{formatBytes(cell.getValue() as number | null)}</span
 											>
-										</span>
-									{:else if cell.column.id === 'name'}
-										<span class="inline-flex min-w-0 max-w-full items-center gap-2 font-medium">
-											<FileTypeIcon
-												name={row.original.name}
-												mime={row.original.type}
-												className="size-4 shrink-0"
-											/>
-											<span class="min-w-0 truncate" title={row.original.name}
-												><FlexRender {cell} /></span
+										{:else if cell.column.id === 'updatedAt'}
+											<span class="text-(--muted)"
+												>{row.original.isTrashContainer
+													? 'Contains deleted items'
+													: formatDate(cell.getValue() as string)}</span
 											>
-										</span>
-									{:else if cell.column.id === 'size'}
-										<span class="text-(--muted)"
-											>{formatBytes(cell.getValue() as number | null)}</span
-										>
-									{:else if cell.column.id === 'updatedAt'}
-										<span class="text-(--muted)"
-											>{row.original.isTrashContainer
-												? 'Contains deleted items'
-												: formatDate(cell.getValue() as string)}</span
-										>
-									{:else if cell.column.id === 'dimensions'}
-										<span class="text-(--muted)">{cell.getValue() as string}</span>
-									{:else}
-										<span
-											class="block min-w-0 truncate font-mono text-xs text-(--muted)"
-											title={cell.getValue() as string}>{cell.getValue() as string}</span
-										>
-									{/if}
-									{#if cell.column.id === 'name' && row.original.isShared}
-										<button
-											class="relative z-10 ml-2 grid size-7 shrink-0 cursor-pointer place-items-center rounded text-(--muted) hover:bg-(--surface) hover:text-(--text)"
-											type="button"
-											title="Open this file’s share"
-											aria-label={`Open share for ${row.original.name}`}
-											onclick={() => onOpenShares?.(row.original.id)}
-										>
-											<Share2 class="size-4" aria-hidden="true" />
-										</button>
-									{/if}
-								</td>
-							{/if}
-						{/each}
-					</tr>
+										{:else if cell.column.id === 'dimensions'}
+											<span class="text-(--muted)">{cell.getValue() as string}</span>
+										{:else}
+											<span
+												class="block min-w-0 truncate font-mono text-xs text-(--muted)"
+												title={cell.getValue() as string}>{cell.getValue() as string}</span
+											>
+										{/if}
+										{#if cell.column.id === 'name' && row.original.isShared}
+											<button
+												class="relative z-10 ml-2 grid size-7 shrink-0 cursor-pointer place-items-center rounded text-(--muted) hover:bg-(--surface) hover:text-(--text)"
+												type="button"
+												title="Open this file’s share"
+												aria-label={`Open share for ${row.original.name}`}
+												onclick={() => onOpenShares?.(row.original.id)}
+											>
+												<Share2 class="size-4" aria-hidden="true" />
+											</button>
+										{/if}
+									</td>
+								{/if}
+							{/each}
+						</tr>
+					{/if}
 				{/each}
 			{/if}
 		</tbody>

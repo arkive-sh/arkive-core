@@ -21,12 +21,15 @@ type ListEntriesPageResult struct {
 }
 
 type ListEntriesCursorResult struct {
-	FolderID   *string
-	Path       []models.Folder
-	Folders    []models.Folder
-	Files      []models.File
-	NextCursor *string
-	HasMore    bool
+	FolderID *string
+	Path     []models.Folder
+	Folders  []models.Folder
+	Files    []models.File
+	// StartIndex preserves the real list position when the client seeks directly to an entry.
+	StartIndex     int
+	PreviousCursor *string
+	NextCursor     *string
+	HasMore        bool
 }
 
 type CreateFolderInput struct {
@@ -120,10 +123,13 @@ type ListTrashInput struct {
 }
 
 type ListTrashResult struct {
-	Path       []models.Folder
-	Entries    []models.TrashEntry
-	NextCursor *string
-	HasMore    bool
+	Path    []models.Folder
+	Entries []models.TrashEntry
+	// StartIndex preserves the real list position when the client seeks directly to an entry.
+	StartIndex     int
+	PreviousCursor *string
+	NextCursor     *string
+	HasMore        bool
 }
 
 type RestoreTrashInput struct {

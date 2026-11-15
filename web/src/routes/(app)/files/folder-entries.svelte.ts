@@ -32,6 +32,8 @@ export type FolderEntriesResponse = {
 	Folders: ApiFolder[];
 	Files: ApiFile[];
 	NextCursor: string | null;
+	PreviousCursor: string | null;
+	StartIndex: number;
 	HasMore: boolean;
 };
 
@@ -77,6 +79,7 @@ export function createFolderEntries(
 			},
 			getNextPageParam: (lastPage) =>
 				lastPage.HasMore ? lastPage.NextCursor || undefined : undefined,
+			getPreviousPageParam: (firstPage) => firstPage.PreviousCursor || undefined,
 		};
 	});
 
@@ -286,6 +289,21 @@ export function createFolderEntries(
 			rows = [];
 			breadcrumbs = [{ id: null, name: 'Root' }];
 			entriesReady = false;
+
+			return;
+		}
+		if (pages.length === hydratedPageCount + 1 && pages[1] === hydratedFirstPage && entriesReady) {
+			const page = pages[0];
+			const generation = ++decryptGeneration;
+			hydratedFirstPage = page;
+			hydratedPageCount = pages.length;
+			hydrationQueue = hydrationQueue.then(async () => {
+				const decrypted = await decryptEntries(page, generation, true);
+
+				if (!decrypted || generation !== decryptGeneration || !getVaultUnlocked()) return;
+				rows = [...decrypted.rows, ...rows];
+				if (decrypted.breadcrumbs) breadcrumbs = decrypted.breadcrumbs;
+			});
 
 			return;
 		}

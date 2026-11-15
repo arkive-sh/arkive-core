@@ -15,7 +15,62 @@ type Cursor struct {
 	Type      string
 	ID        string
 	Inclusive bool
+	Before    bool
+	Position  int
 }
+
+const trashEntriesCTE = `WITH RECURSIVE trash_entries AS (
+	SELECT 'folder' AS entry_type, f.id, f.parent_folder_id, f.deleted_at, f.user_id
+	FROM folders f
+	WHERE f.user_id = $1 AND f.deleted_at > $2 AND f.purged_at IS NULL AND f.purge_requested_at IS NULL
+
+	UNION ALL
+
+	SELECT 'file', file.id, file.folder_id, file.deleted_at, file.user_id
+	FROM files file
+	WHERE file.user_id = $1 AND file.deleted_at > $2 AND file.purged_at IS NULL AND file.purge_requested_at IS NULL
+), trash_ancestors(folder_id, user_id, deleted_at) AS (
+	SELECT parent_folder_id, user_id, deleted_at
+	FROM trash_entries
+	WHERE parent_folder_id IS NOT NULL
+	UNION
+	SELECT current.parent_folder_id, ancestor.user_id, ancestor.deleted_at
+	FROM trash_ancestors ancestor
+	JOIN folders current ON current.id = ancestor.folder_id AND current.user_id = ancestor.user_id
+	WHERE current.parent_folder_id IS NOT NULL
+), containers AS (
+	SELECT folder.id, folder.parent_folder_id, max(ancestor.deleted_at) AS deleted_at
+	FROM trash_ancestors ancestor
+	JOIN folders folder ON folder.id = ancestor.folder_id AND folder.user_id = ancestor.user_id
+	WHERE folder.deleted_at IS NULL
+	GROUP BY folder.id, folder.parent_folder_id
+), entries AS (
+	SELECT 0 AS entry_type_order, trash.entry_type, trash.id, trash.parent_folder_id,
+		folder.encrypted_name, folder.encrypted_metadata, NULL::bytea AS encrypted_file_key,
+		trash.deleted_at, false AS is_container
+	FROM trash_entries trash
+	JOIN folders folder ON folder.id = trash.id AND folder.user_id = trash.user_id
+	WHERE trash.entry_type = 'folder'
+		AND (($3::uuid IS NULL AND trash.parent_folder_id IS NULL) OR trash.parent_folder_id = $3::uuid)
+
+	UNION ALL
+
+	SELECT 1, trash.entry_type, trash.id, trash.parent_folder_id, NULL::bytea,
+		file.encrypted_metadata, file.encrypted_file_key, trash.deleted_at, false
+	FROM trash_entries trash
+	JOIN files file ON file.id = trash.id AND file.user_id = trash.user_id
+	WHERE trash.entry_type = 'file'
+		AND (($3::uuid IS NULL AND trash.parent_folder_id IS NULL) OR trash.parent_folder_id = $3::uuid)
+
+	UNION ALL
+
+	SELECT 0, 'folder', container.id, container.parent_folder_id, folder.encrypted_name,
+		folder.encrypted_metadata, NULL::bytea, container.deleted_at, true
+	FROM containers container
+	JOIN folders folder ON folder.id = container.id AND folder.user_id = $1
+	WHERE ($3::uuid IS NULL AND container.parent_folder_id IS NULL) OR container.parent_folder_id = $3::uuid
+)
+`
 
 func New() *Repository {
 	return &Repository{}
@@ -31,81 +86,42 @@ func (r *Repository) ListEntriesPage(ctx context.Context, db database.PgExecutor
 	var cursorTypeOrder any
 	var cursorID any
 	cursorInclusive := false
+	cursorBefore := false
 	if cursor != nil {
 		cursorTime = cursor.DeletedAt
 		cursorID = cursor.ID
 		cursorInclusive = cursor.Inclusive
+		cursorBefore = cursor.Before
 		if cursor.Type == "folder" {
 			cursorTypeOrder = 0
 		} else {
 			cursorTypeOrder = 1
 		}
 	}
+	deletedAtOrder, typeOrder, idOrder := "DESC", "ASC", "ASC"
+	if cursorBefore {
+		deletedAtOrder, typeOrder, idOrder = "ASC", "DESC", "DESC"
+	}
 
-	rows, err := db.Query(ctx, `WITH RECURSIVE trash_entries AS (
-		SELECT 'folder' AS entry_type, f.id, f.parent_folder_id, f.deleted_at, f.user_id
-		FROM folders f
-		WHERE f.user_id = $1 AND f.deleted_at > $2 AND f.purged_at IS NULL AND f.purge_requested_at IS NULL
-
-		UNION ALL
-
-		SELECT 'file', file.id, file.folder_id, file.deleted_at, file.user_id
-		FROM files file
-		WHERE file.user_id = $1 AND file.deleted_at > $2 AND file.purged_at IS NULL AND file.purge_requested_at IS NULL
-	), trash_ancestors(folder_id, user_id, deleted_at) AS (
-		SELECT parent_folder_id, user_id, deleted_at
-		FROM trash_entries
-		WHERE parent_folder_id IS NOT NULL
-		UNION
-		SELECT current.parent_folder_id, ancestor.user_id, ancestor.deleted_at
-		FROM trash_ancestors ancestor
-		JOIN folders current ON current.id = ancestor.folder_id AND current.user_id = ancestor.user_id
-		WHERE current.parent_folder_id IS NOT NULL
-	), containers AS (
-		SELECT folder.id, folder.parent_folder_id, max(ancestor.deleted_at) AS deleted_at
-		FROM trash_ancestors ancestor
-		JOIN folders folder ON folder.id = ancestor.folder_id AND folder.user_id = ancestor.user_id
-		WHERE folder.deleted_at IS NULL
-		GROUP BY folder.id, folder.parent_folder_id
-	), entries AS (
-		SELECT 0 AS entry_type_order, trash.entry_type, trash.id, trash.parent_folder_id,
-			folder.encrypted_name, folder.encrypted_metadata, NULL::bytea AS encrypted_file_key,
-			trash.deleted_at, false AS is_container
-		FROM trash_entries trash
-		JOIN folders folder ON folder.id = trash.id AND folder.user_id = trash.user_id
-		WHERE trash.entry_type = 'folder'
-			AND (($3::uuid IS NULL AND trash.parent_folder_id IS NULL) OR trash.parent_folder_id = $3::uuid)
-
-		UNION ALL
-
-		SELECT 1, trash.entry_type, trash.id, trash.parent_folder_id, NULL::bytea,
-			file.encrypted_metadata, file.encrypted_file_key, trash.deleted_at, false
-		FROM trash_entries trash
-		JOIN files file ON file.id = trash.id AND file.user_id = trash.user_id
-		WHERE trash.entry_type = 'file'
-			AND (($3::uuid IS NULL AND trash.parent_folder_id IS NULL) OR trash.parent_folder_id = $3::uuid)
-
-		UNION ALL
-
-		SELECT 0, 'folder', container.id, container.parent_folder_id, folder.encrypted_name,
-			folder.encrypted_metadata, NULL::bytea, container.deleted_at, true
-		FROM containers container
-		JOIN folders folder ON folder.id = container.id AND folder.user_id = $1
-		WHERE ($3::uuid IS NULL AND container.parent_folder_id IS NULL) OR container.parent_folder_id = $3::uuid
-	)
-	SELECT entry_type, id::text, parent_folder_id::text, encrypted_name, encrypted_metadata,
+	query := trashEntriesCTE + `SELECT entry_type, id::text, parent_folder_id::text, encrypted_name, encrypted_metadata,
 		encrypted_file_key, deleted_at, is_container
 	FROM entries
 	WHERE ($3::uuid IS NULL OR EXISTS (
 		SELECT 1 FROM trash_entries parent
 		WHERE parent.entry_type = 'folder' AND parent.id = $3::uuid
 	) OR EXISTS (SELECT 1 FROM containers WHERE id = $3::uuid))
-	AND ($4::timestamptz IS NULL
-		OR deleted_at < $4
-		OR (deleted_at = $4 AND entry_type_order > $5)
-		OR (deleted_at = $4 AND entry_type_order = $5 AND (id > $6::uuid OR ($8 AND id = $6::uuid))))
-	ORDER BY deleted_at DESC, entry_type_order ASC, id ASC
-	LIMIT $7`, userID, cutoff, parentID, cursorTime, cursorTypeOrder, cursorID, limit, cursorInclusive)
+	AND ($4::timestamptz IS NULL OR
+		(NOT $9 AND (deleted_at < $4
+			OR (deleted_at = $4 AND entry_type_order > $5)
+			OR (deleted_at = $4 AND entry_type_order = $5 AND (id > $6::uuid OR ($8 AND id = $6::uuid)))))
+		OR ($9 AND (deleted_at > $4
+			OR (deleted_at = $4 AND entry_type_order < $5)
+			OR (deleted_at = $4 AND entry_type_order = $5 AND id < $6::uuid))))
+	ORDER BY deleted_at ` + deletedAtOrder + `,
+		entry_type_order ` + typeOrder + `,
+		id ` + idOrder + `
+	LIMIT $7`
+	rows, err := db.Query(ctx, query, userID, cutoff, parentID, cursorTime, cursorTypeOrder, cursorID, limit, cursorInclusive, cursorBefore)
 	if err != nil {
 		return nil, err
 	}
@@ -131,6 +147,11 @@ func (r *Repository) ListEntriesPage(ctx context.Context, db database.PgExecutor
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	if cursorBefore {
+		for left, right := 0, len(entries)-1; left < right; left, right = left+1, right-1 {
+			entries[left], entries[right] = entries[right], entries[left]
+		}
+	}
 	return entries, nil
 }
 
@@ -140,12 +161,18 @@ func (r *Repository) GetTrashFileCursor(ctx context.Context, db database.PgExecu
 		parentID = parentFolderID
 	}
 	var cursor Cursor
-	err := db.QueryRow(ctx, `SELECT deleted_at
-		FROM files
-		WHERE id = $1 AND user_id = $2
-			AND deleted_at > $3 AND purged_at IS NULL AND purge_requested_at IS NULL
-			AND (($4::uuid IS NULL AND folder_id IS NULL) OR folder_id = $4::uuid)`,
-		fileID, userID, cutoff, parentID).Scan(&cursor.DeletedAt)
+	err := db.QueryRow(ctx, trashEntriesCTE+`SELECT target.deleted_at,
+		COUNT(*) FILTER (WHERE entry.deleted_at > target.deleted_at
+			OR (entry.deleted_at = target.deleted_at AND entry.entry_type_order < target.entry_type_order)
+			OR (entry.deleted_at = target.deleted_at AND entry.entry_type_order = target.entry_type_order AND entry.id < target.id))::int
+	FROM entries target
+	CROSS JOIN entries entry
+	WHERE target.entry_type = 'file' AND target.id = $4::uuid
+		AND ($3::uuid IS NULL OR EXISTS (
+			SELECT 1 FROM trash_entries parent
+			WHERE parent.entry_type = 'folder' AND parent.id = $3::uuid
+		) OR EXISTS (SELECT 1 FROM containers WHERE id = $3::uuid))
+	GROUP BY target.deleted_at, target.entry_type_order`, userID, cutoff, parentID, fileID).Scan(&cursor.DeletedAt, &cursor.Position)
 	if err != nil {
 		return nil, err
 	}
