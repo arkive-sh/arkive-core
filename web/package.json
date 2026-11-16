@@ -11,6 +11,7 @@
 		"build": "vite build",
 		"build:heic": "bash scripts/build-heic-wasm.sh",
 		"lint": "eslint --ext .js,.ts,.svelte src static/lib vite.config.ts eslint.config.js",
+		"test:unit": "node --test tests/*.test.mjs",
 		"format": "prettier --write .",
 		"format:check": "prettier --check .",
 		"preview": "node build/index.js",
