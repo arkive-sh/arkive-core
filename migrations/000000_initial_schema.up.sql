@@ -1,3 +1,5 @@
+-- Includes former migrations 000001-000004; continue future versions at 000005
+-- because existing development databases may already record versions 1-4.
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS citext;
 
@@ -223,3 +225,102 @@ CREATE TABLE share_snapshot_files (
 
 CREATE INDEX share_snapshot_files_share_item_id_idx ON share_snapshot_files (share_item_id);
 CREATE INDEX share_snapshot_files_file_id_idx ON share_snapshot_files (file_id);
+
+ALTER TABLE files
+ADD COLUMN IF NOT EXISTS deleted_at timestamptz NULL,
+ADD COLUMN IF NOT EXISTS purged_at timestamptz NULL,
+ADD COLUMN IF NOT EXISTS purge_requested_at timestamptz NULL,
+ADD COLUMN IF NOT EXISTS tombstone_purged_at timestamptz NULL;
+
+ALTER TABLE folders
+ADD COLUMN IF NOT EXISTS purged_at timestamptz NULL,
+ADD COLUMN IF NOT EXISTS purge_requested_at timestamptz NULL;
+
+CREATE INDEX IF NOT EXISTS idx_files_deleted_cleanup
+ON files(deleted_at)
+WHERE deleted_at IS NOT NULL
+  AND purged_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_files_tombstone_cleanup
+ON files(deleted_at)
+WHERE deleted_at IS NOT NULL
+  AND purged_at IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_folders_deleted_cleanup
+ON folders(deleted_at)
+WHERE deleted_at IS NOT NULL
+  AND purged_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_files_purge_requested
+ON files(purge_requested_at)
+WHERE purge_requested_at IS NOT NULL
+  AND purged_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_folders_purge_requested
+ON folders(purge_requested_at)
+WHERE purge_requested_at IS NOT NULL
+  AND purged_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_files_sync_listing
+ON files(user_id, folder_id, updated_at DESC, id)
+WHERE upload_status = 'complete';
+
+CREATE INDEX IF NOT EXISTS idx_folders_sync_listing
+ON folders(user_id, parent_folder_id, updated_at DESC, id);
+
+ALTER TABLE upload_sessions
+  ADD COLUMN upload_part_size BIGINT NOT NULL DEFAULT 0;
+
+DROP INDEX IF EXISTS idx_folders_user_parent_created;
+CREATE INDEX idx_folders_user_parent_created
+  ON folders (user_id, parent_folder_id, created_at DESC, id DESC)
+  WHERE deleted_at IS NULL;
+
+DROP INDEX IF EXISTS idx_files_user_folder_complete_created;
+CREATE INDEX idx_files_user_folder_complete_created
+  ON files (user_id, folder_id, created_at DESC, id DESC)
+  WHERE upload_status = 'complete'
+    AND expires_at IS NULL
+    AND deleted_at IS NULL;
+
+ALTER TABLE share_links
+  DROP CONSTRAINT share_links_status_chk,
+  ADD CONSTRAINT share_links_status_chk
+    CHECK (status IN ('active', 'expired', 'revoked', 'burned', 'disabled', 'provisioning'));
+
+ALTER TABLE share_items
+  ALTER COLUMN file_id DROP NOT NULL,
+  ADD COLUMN folder_id UUID REFERENCES folders(id) ON DELETE CASCADE,
+  DROP CONSTRAINT share_items_item_type_chk,
+  ADD CONSTRAINT share_items_item_type_chk
+    CHECK (
+      (item_type = 'file' AND file_id IS NOT NULL AND folder_id IS NULL)
+      OR (item_type = 'folder' AND file_id IS NULL AND folder_id IS NOT NULL)
+    );
+
+CREATE INDEX share_items_folder_id_idx ON share_items (folder_id);
+
+CREATE TABLE share_folder_entries (
+  share_link_id UUID NOT NULL REFERENCES share_links(id) ON DELETE CASCADE,
+  file_id UUID REFERENCES files(id) ON DELETE CASCADE,
+  folder_id UUID REFERENCES folders(id) ON DELETE CASCADE,
+  encrypted_file_key_for_share BYTEA,
+  encrypted_name BYTEA,
+  encrypted_metadata BYTEA,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT share_folder_entries_target_chk CHECK (
+    (file_id IS NOT NULL AND folder_id IS NULL AND encrypted_file_key_for_share IS NOT NULL
+      AND encrypted_name IS NULL AND encrypted_metadata IS NULL)
+    OR (file_id IS NULL AND folder_id IS NOT NULL AND encrypted_file_key_for_share IS NULL
+      AND encrypted_name IS NOT NULL AND encrypted_metadata IS NOT NULL)
+  )
+);
+
+CREATE UNIQUE INDEX share_folder_entries_file_idx
+  ON share_folder_entries (share_link_id, file_id) WHERE file_id IS NOT NULL;
+CREATE UNIQUE INDEX share_folder_entries_folder_idx
+  ON share_folder_entries (share_link_id, folder_id) WHERE folder_id IS NOT NULL;
+CREATE INDEX share_folder_entries_folder_lookup_idx
+  ON share_folder_entries (folder_id, share_link_id) WHERE folder_id IS NOT NULL;
+CREATE INDEX share_folder_entries_file_lookup_idx
+  ON share_folder_entries (file_id, share_link_id) WHERE file_id IS NOT NULL;

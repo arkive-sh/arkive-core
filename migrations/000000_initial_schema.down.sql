@@ -1,3 +1,4 @@
+DROP TABLE IF EXISTS share_folder_entries;
 DROP TABLE IF EXISTS share_snapshot_files;
 DROP TABLE IF EXISTS share_items;
 DROP TABLE IF EXISTS share_links;
@@ -7,6 +8,7 @@ DROP TABLE IF EXISTS folder_search_tokens;
 DROP TABLE IF EXISTS file_search_tokens;
 DROP TABLE IF EXISTS files;
 DROP TABLE IF EXISTS folders;
+DROP TABLE IF EXISTS opaque_login_attempts;
 DROP TABLE IF EXISTS instance_settings;
 DROP TABLE IF EXISTS sessions;
 DROP TABLE IF EXISTS users;
