@@ -925,6 +925,8 @@ func (r *Repository) GetPublicShareRecord(ctx context.Context, db database.PgExe
 		files f ON f.id = ssf.file_id
 	WHERE
 		sl.token = $1
+		AND sl.status = 'active'
+		AND (sl.expires_at IS NULL OR sl.expires_at > now())
 		AND f.deleted_at IS NULL
 	ORDER BY
 		ssf.display_order ASC

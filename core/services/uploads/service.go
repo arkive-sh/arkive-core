@@ -2,6 +2,7 @@ package uploads
 
 import (
 	"context"
+	"errors"
 	"log"
 	"time"
 
@@ -94,38 +95,60 @@ func (s *Service) CleanupExpiredUploads(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	cleaned := 0
-	for _, upload := range stale {
+	for _, candidate := range stale {
+		tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
+		if err != nil {
+			return cleaned, err
+		}
+		upload, err := s.uploadRepo.GetExpiredUploadForUpdate(ctx, tx, candidate.ID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			_ = tx.Rollback(ctx)
+			continue
+		}
+		if err != nil {
+			_ = tx.Rollback(ctx)
+			return cleaned, err
+		}
 		objectKey, keyErr := storage.BuildObjectKey(upload.UserID, upload.FileID)
 		if keyErr != nil {
+			_ = tx.Rollback(ctx)
 			return cleaned, keyErr
+		}
+		thumbnailKey, err := storage.BuildThumbnailObjectKey(upload.UserID, upload.FileID)
+		if err != nil {
+			_ = tx.Rollback(ctx)
+			return cleaned, err
+		}
+		if err := s.storage.DeleteObject(ctx, thumbnailKey); err != nil {
+			log.Printf("stale thumbnail cleanup failed file=%s: %v", upload.FileID, err)
+			_ = tx.Rollback(ctx)
+			continue
 		}
 		if upload.ProviderUploadID == "" {
 			if err := s.storage.DeleteObject(ctx, objectKey); err != nil {
 				log.Printf("stale upload object cleanup failed file=%s: %v", upload.FileID, err)
+				_ = tx.Rollback(ctx)
 				continue
 			}
 		} else if err := s.storage.AbortMultipartUpload(ctx, objectKey, upload.ProviderUploadID); err != nil {
 			log.Printf("stale multipart cleanup failed session=%s: %v", upload.ID, err)
+			_ = tx.Rollback(ctx)
 			continue
-		}
-		if thumbnailKey, err := storage.BuildThumbnailObjectKey(upload.UserID, upload.FileID); err == nil {
-			if err := s.storage.DeleteObject(ctx, thumbnailKey); err != nil {
-				log.Printf("stale thumbnail cleanup failed file=%s: %v", upload.FileID, err)
-				continue
-			}
-		}
-
-		tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
-		if err != nil {
-			return cleaned, err
 		}
 		claimed, err := s.uploadRepo.ExpireUploadSession(ctx, tx, upload.ID)
 		updated := false
 		if err == nil && claimed {
 			updated, err = s.fileRepo.UpdateEncryptedFileStatusIf(ctx, tx, upload.FileID, FileUploadFailed, []string{FileUploadUploading, FileUploadPending})
+			if err == nil && !updated {
+				err = ErrUploadFailed
+			}
 		}
 		if err == nil && updated {
-			_, err = s.storageRepo.ReleaseReservedStorage(ctx, tx, upload.UserID, reservedUploadSize(upload.EncryptedSize))
+			var released bool
+			released, err = s.storageRepo.ReleaseReservedStorage(ctx, tx, upload.UserID, reservedUploadSize(upload.EncryptedSize))
+			if err == nil && !released {
+				err = ErrUploadFailed
+			}
 		}
 		if err != nil {
 			_ = tx.Rollback(ctx)

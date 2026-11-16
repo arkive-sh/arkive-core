@@ -71,10 +71,9 @@ func DecodeSearchTokenString(value string) ([]byte, error) {
 		return nil, ErrInvalidInput
 	}
 	if decoded, err := base64.RawURLEncoding.DecodeString(trimmed); err == nil {
-		if len(decoded) != searchTokenHashBytes {
-			return nil, ErrInvalidInput
+		if len(decoded) == searchTokenHashBytes {
+			return decoded, nil
 		}
-		return decoded, nil
 	}
 	decoded, err := hex.DecodeString(trimmed)
 	if err != nil || len(decoded) != searchTokenHashBytes {

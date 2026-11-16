@@ -54,6 +54,14 @@ func (r *Repository) CreateUploadSession(ctx context.Context, db database.PgExec
 }
 
 func (r *Repository) GetUploadSessionForUser(ctx context.Context, db database.PgExecutor, uploadSessionID, ownerID string) (models.UploadSession, error) {
+	return r.getUploadSessionForUser(ctx, db, uploadSessionID, ownerID, false)
+}
+
+func (r *Repository) GetUploadSessionForUserForUpdate(ctx context.Context, db database.PgExecutor, uploadSessionID, ownerID string) (models.UploadSession, error) {
+	return r.getUploadSessionForUser(ctx, db, uploadSessionID, ownerID, true)
+}
+
+func (r *Repository) getUploadSessionForUser(ctx context.Context, db database.PgExecutor, uploadSessionID, ownerID string, lock bool) (models.UploadSession, error) {
 	var upload models.UploadSession
 	query := `SELECT
 		upload_sessions.id, upload_sessions.file_id, upload_sessions.provider_upload_id,
@@ -66,6 +74,9 @@ func (r *Repository) GetUploadSessionForUser(ctx context.Context, db database.Pg
 		files ON files.id = upload_sessions.file_id
 	WHERE
 		upload_sessions.id = $1 AND files.user_id = $2`
+	if lock {
+		query += ` FOR UPDATE OF upload_sessions`
+	}
 	if err := db.QueryRow(ctx, query, uploadSessionID, ownerID).Scan(
 		&upload.ID,
 		&upload.FileID,
@@ -118,6 +129,18 @@ func (r *Repository) ListExpiredActiveUploads(ctx context.Context, db database.P
 	return uploads, rows.Err()
 }
 
+func (r *Repository) GetExpiredUploadForUpdate(ctx context.Context, db database.PgExecutor, uploadSessionID string) (StaleUpload, error) {
+	var upload StaleUpload
+	err := db.QueryRow(ctx, `SELECT upload_sessions.id, upload_sessions.file_id, files.user_id,
+		COALESCE(upload_sessions.provider_upload_id, ''), upload_sessions.encrypted_size
+	FROM upload_sessions
+	JOIN files ON files.id = upload_sessions.file_id
+	WHERE upload_sessions.id = $1 AND upload_sessions.status = 'active' AND upload_sessions.expires_at <= now()
+	FOR UPDATE OF upload_sessions`, uploadSessionID).Scan(
+		&upload.ID, &upload.FileID, &upload.UserID, &upload.ProviderUploadID, &upload.EncryptedSize)
+	return upload, err
+}
+
 func (r *Repository) ExpireUploadSession(ctx context.Context, db database.PgExecutor, uploadSessionID string) (bool, error) {
 	tag, err := db.Exec(ctx, `UPDATE upload_sessions
 	SET status = 'expired', encrypted_size = 0
@@ -125,16 +148,16 @@ func (r *Repository) ExpireUploadSession(ctx context.Context, db database.PgExec
 	return tag.RowsAffected() > 0, err
 }
 
-func (r *Repository) TouchUploadSession(ctx context.Context, db database.PgExecutor, uploadSessionID, status string, expiresAt time.Time) error {
+func (r *Repository) TouchUploadSession(ctx context.Context, db database.PgExecutor, uploadSessionID, status string, expiresAt time.Time) (bool, error) {
 	query := `UPDATE
 		upload_sessions
 	SET
 		status = $2,
 		expires_at = $3
 	WHERE
-		id = $1`
-	_, err := db.Exec(ctx, query, uploadSessionID, status, expiresAt)
-	return err
+		id = $1 AND status = $2 AND expires_at > now()`
+	tag, err := db.Exec(ctx, query, uploadSessionID, status, expiresAt)
+	return tag.RowsAffected() > 0, err
 }
 
 func (r *Repository) UpsertUploadPart(ctx context.Context, db database.PgExecutor, part models.UploadPart) error {

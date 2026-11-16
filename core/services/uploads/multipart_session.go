@@ -304,8 +304,12 @@ func (s *Service) PresignSingleUpload(ctx context.Context, userID, uploadSession
 	if uploadSession.Status != UploadStatusActive || uploadSession.ProviderUploadID != "" || uploadSession.UploadPartCount != 1 || isExpired(&uploadSession.ExpiresAt) {
 		return "", ErrUploadCancelled
 	}
-	if err := s.uploadRepo.TouchUploadSession(ctx, s.db, uploadSessionID, UploadStatusActive, time.Now().Add(s.uploadExpiry(ctx))); err != nil {
+	touched, err := s.uploadRepo.TouchUploadSession(ctx, s.db, uploadSessionID, UploadStatusActive, time.Now().Add(s.uploadExpiry(ctx)))
+	if err != nil {
 		return "", err
+	}
+	if !touched {
+		return "", ErrUploadCancelled
 	}
 	objectKey, err := storage.BuildObjectKey(userID, uploadSession.FileID)
 	if err != nil {
@@ -346,8 +350,12 @@ func (s *Service) PresignMultipartUploadPart(ctx context.Context, userID, upload
 		return "", ErrInvalidInput
 	}
 
-	if err := s.uploadRepo.TouchUploadSession(ctx, s.db, uploadSessionID, UploadStatusActive, time.Now().Add(s.uploadExpiry(ctx))); err != nil {
+	touched, err := s.uploadRepo.TouchUploadSession(ctx, s.db, uploadSessionID, UploadStatusActive, time.Now().Add(s.uploadExpiry(ctx)))
+	if err != nil {
 		return "", err
+	}
+	if !touched {
+		return "", ErrUploadCancelled
 	}
 	objectKey, err := storage.BuildObjectKey(userID, uploadSession.FileID)
 	if err != nil {
@@ -392,8 +400,12 @@ func (s *Service) PresignMultipartUploadParts(ctx context.Context, userID, uploa
 		return nil, ErrUploadCancelled
 	}
 
-	if err := s.uploadRepo.TouchUploadSession(ctx, s.db, uploadSessionID, UploadStatusActive, time.Now().Add(s.uploadExpiry(ctx))); err != nil {
+	touched, err := s.uploadRepo.TouchUploadSession(ctx, s.db, uploadSessionID, UploadStatusActive, time.Now().Add(s.uploadExpiry(ctx)))
+	if err != nil {
 		return nil, err
+	}
+	if !touched {
+		return nil, ErrUploadCancelled
 	}
 	objectKey, err := storage.BuildObjectKey(userID, uploadSession.FileID)
 	if err != nil {
@@ -456,8 +468,12 @@ func (s *Service) RecordMultipartUploadPart(ctx context.Context, userID, uploadS
 	if uploadSession.Status != UploadStatusActive || isExpired(&uploadSession.ExpiresAt) {
 		return ErrUploadCancelled
 	}
-	if err := s.uploadRepo.TouchUploadSession(ctx, s.db, uploadSessionID, UploadStatusActive, time.Now().Add(s.uploadExpiry(ctx))); err != nil {
+	touched, err := s.uploadRepo.TouchUploadSession(ctx, s.db, uploadSessionID, UploadStatusActive, time.Now().Add(s.uploadExpiry(ctx)))
+	if err != nil {
 		return err
+	}
+	if !touched {
+		return ErrUploadCancelled
 	}
 
 	encryptedHash, err := base64.StdEncoding.DecodeString(strings.TrimSpace(input.EncryptedHash))
@@ -484,14 +500,20 @@ func (s *Service) CompleteMultipartUploadSession(ctx context.Context, userID, up
 		return err
 	}
 
-	uploadSession, err := s.uploadRepo.GetUploadSessionForUser(ctx, s.db, uploadSessionID, userID)
+	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	uploadSession, err := s.uploadRepo.GetUploadSessionForUserForUpdate(ctx, tx, uploadSessionID, userID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
 		}
 		return err
 	}
-	if uploadSession.Status != UploadStatusActive {
+	if uploadSession.Status != UploadStatusActive || isExpired(&uploadSession.ExpiresAt) {
 		return ErrUploadCancelled
 	}
 	if strings.TrimSpace(input.EncryptedMetadata) == "" || strings.TrimSpace(input.EncryptedFileKey) == "" || strings.TrimSpace(input.EncryptedManifest) == "" {
@@ -503,14 +525,14 @@ func (s *Service) CompleteMultipartUploadSession(ctx context.Context, userID, up
 		}
 	}
 
-	file, err := s.fileRepo.GetUploadDetailsForSession(ctx, s.db, uploadSessionID, userID)
+	file, err := s.fileRepo.GetUploadDetailsForSession(ctx, tx, uploadSessionID, userID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
 		}
 		return err
 	}
-	storageSettings, err := s.settingsRepo.GetStorageSettings(ctx, s.db)
+	storageSettings, err := s.settingsRepo.GetStorageSettings(ctx, tx)
 	if err != nil {
 		return err
 	}
@@ -518,7 +540,7 @@ func (s *Service) CompleteMultipartUploadSession(ctx context.Context, userID, up
 	isSinglePart := uploadSession.ProviderUploadID == ""
 	var parts []models.UploadPart
 	if !isSinglePart {
-		parts, err = s.uploadRepo.ListUploadParts(ctx, s.db, uploadSessionID)
+		parts, err = s.uploadRepo.ListUploadParts(ctx, tx, uploadSessionID)
 		if err != nil {
 			return err
 		}
@@ -572,13 +594,38 @@ func (s *Service) CompleteMultipartUploadSession(ctx context.Context, userID, up
 				ETag:       part.ETag,
 			})
 		}
-		if err := s.storage.CompleteMultipartUpload(ctx, objectKey, uploadSession.ProviderUploadID, completedParts); err != nil {
+		if completionErr := s.storage.CompleteMultipartUpload(ctx, objectKey, uploadSession.ProviderUploadID, completedParts); completionErr != nil {
 			if thumbnailObjectKey != "" {
-				_ = s.storage.DeleteObject(ctx, thumbnailObjectKey)
+				if deleteErr := s.storage.DeleteObject(ctx, thumbnailObjectKey); deleteErr != nil {
+					log.Printf("uploads: failed to delete thumbnail after multipart completion error session=%s: %v", uploadSessionID, deleteErr)
+					return completionErr
+				}
 			}
-			_ = s.uploadRepo.UpdateUploadSessionStatus(ctx, s.db, uploadSessionID, UploadStatusFailed)
-			_, _ = s.fileRepo.UpdateEncryptedFileStatusIf(ctx, s.db, file.ID, FileUploadFailed, []string{FileUploadUploading, FileUploadPending})
-			return err
+			if abortErr := s.storage.AbortMultipartUpload(ctx, objectKey, uploadSession.ProviderUploadID); abortErr != nil {
+				log.Printf("uploads: failed to abort multipart upload after completion error session=%s: %v", uploadSessionID, abortErr)
+				return completionErr
+			}
+			if err := s.uploadRepo.UpdateUploadSessionStatus(ctx, tx, uploadSessionID, UploadStatusFailed); err != nil {
+				return err
+			}
+			updated, err := s.fileRepo.UpdateEncryptedFileStatusIf(ctx, tx, file.ID, FileUploadFailed, []string{FileUploadUploading, FileUploadPending})
+			if err != nil {
+				return err
+			}
+			if !updated {
+				return ErrUploadFailed
+			}
+			released, err := s.storageRepo.ReleaseReservedStorage(ctx, tx, userID, reservedUploadSize(file.EncryptedSize))
+			if err != nil {
+				return err
+			}
+			if !released {
+				return ErrUploadFailed
+			}
+			if err := tx.Commit(ctx); err != nil {
+				return err
+			}
+			return completionErr
 		}
 	}
 	actualEncryptedSize := file.EncryptedSize
@@ -589,53 +636,54 @@ func (s *Service) CompleteMultipartUploadSession(ctx context.Context, userID, up
 	reservedSize := reservedUploadSize(file.EncryptedSize)
 	actualStoredSize := actualEncryptedSize + thumbnailSizeBytes
 
-	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
-	if err != nil {
-		return err
-	}
 	finalized, err := s.storageRepo.FinalizeReservedStorage(ctx, tx, userID, reservedSize, actualStoredSize, storageSettings.MaxStorageBytes)
 	if err != nil {
 		_ = tx.Rollback(ctx)
 		return err
 	}
 	if !finalized {
-		_ = tx.Rollback(ctx)
+		quotaError := func() error {
+			usedBytes, reservedBytes, usageErr := s.userRepo.GetStorageUsage(ctx, s.db, userID)
+			if usageErr != nil {
+				return ErrStorageLimitExceeded
+			}
+			return &StorageLimitExceededError{
+				MaxBytes:       storageSettings.MaxStorageBytes,
+				UsedBytes:      usedBytes + reservedBytes,
+				RequestedBytes: actualStoredSize,
+			}
+		}
 		if deleteErr := s.storage.DeleteObject(ctx, objectKey); deleteErr != nil {
 			log.Printf("uploads: failed to delete object after quota finalize failure file=%s key=%s: %v", file.ID, objectKey, deleteErr)
+			return quotaError()
 		}
 		if thumbnailObjectKey != "" {
 			if deleteErr := s.storage.DeleteObject(ctx, thumbnailObjectKey); deleteErr != nil {
 				log.Printf("uploads: failed to delete thumbnail after quota finalize failure file=%s key=%s: %v", file.ID, thumbnailObjectKey, deleteErr)
+				return quotaError()
 			}
 		}
-		failTx, failErr := s.db.BeginTx(ctx, pgx.TxOptions{})
-		if failErr != nil {
-			return ErrStorageLimitExceeded
-		}
-		if err := s.uploadRepo.UpdateUploadSessionStatus(ctx, failTx, uploadSessionID, UploadStatusFailed); err != nil {
-			_ = failTx.Rollback(ctx)
+		if err := s.uploadRepo.UpdateUploadSessionStatus(ctx, tx, uploadSessionID, UploadStatusFailed); err != nil {
 			return err
 		}
-		if _, err := s.fileRepo.UpdateEncryptedFileStatusIf(ctx, failTx, file.ID, FileUploadFailed, []string{FileUploadUploading, FileUploadPending}); err != nil {
-			_ = failTx.Rollback(ctx)
+		updated, err := s.fileRepo.UpdateEncryptedFileStatusIf(ctx, tx, file.ID, FileUploadFailed, []string{FileUploadUploading, FileUploadPending})
+		if err != nil {
 			return err
 		}
-		if _, err := s.storageRepo.ReleaseReservedStorage(ctx, failTx, userID, reservedSize); err != nil {
-			_ = failTx.Rollback(ctx)
+		if !updated {
+			return ErrUploadFailed
+		}
+		released, err := s.storageRepo.ReleaseReservedStorage(ctx, tx, userID, reservedSize)
+		if err != nil {
 			return err
 		}
-		if err := failTx.Commit(ctx); err != nil {
+		if !released {
+			return ErrUploadFailed
+		}
+		if err := tx.Commit(ctx); err != nil {
 			return err
 		}
-		usedBytes, reservedBytes, usageErr := s.userRepo.GetStorageUsage(ctx, s.db, userID)
-		if usageErr != nil {
-			return ErrStorageLimitExceeded
-		}
-		return &StorageLimitExceededError{
-			MaxBytes:       storageSettings.MaxStorageBytes,
-			UsedBytes:      usedBytes + reservedBytes,
-			RequestedBytes: actualStoredSize,
-		}
+		return quotaError()
 	}
 	if err := s.uploadRepo.UpdateUploadSessionStatus(ctx, tx, uploadSessionID, UploadStatusCompleted); err != nil {
 		_ = tx.Rollback(ctx)
@@ -691,57 +739,67 @@ func (s *Service) AbortMultipartUploadSession(ctx context.Context, userID, uploa
 		return err
 	}
 
-	uploadSession, err := s.uploadRepo.GetUploadSessionForUser(ctx, s.db, uploadSessionID, userID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrNotFound
-		}
-		return err
-	}
-
-	file, err := s.fileRepo.GetUploadDetailsForSession(ctx, s.db, uploadSessionID, userID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrNotFound
-		}
-		return err
-	}
-
-	objectKey, keyErr := storage.BuildObjectKey(userID, uploadSession.FileID)
-	if keyErr == nil {
-		if uploadSession.ProviderUploadID == "" {
-			_ = s.storage.DeleteObject(ctx, objectKey)
-		} else {
-			_ = s.storage.AbortMultipartUpload(ctx, objectKey, uploadSession.ProviderUploadID)
-		}
-	}
-	if thumbnailKey, thumbErr := storage.BuildThumbnailObjectKey(userID, uploadSession.FileID); thumbErr == nil {
-		_ = s.storage.DeleteObject(ctx, thumbnailKey)
-	}
-
 	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
 	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	uploadSession, err := s.uploadRepo.GetUploadSessionForUserForUpdate(ctx, tx, uploadSessionID, userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if uploadSession.Status != UploadStatusActive {
+		return ErrUploadCancelled
+	}
+
+	file, err := s.fileRepo.GetUploadDetailsForSession(ctx, tx, uploadSessionID, userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+
+	thumbnailKey, err := storage.BuildThumbnailObjectKey(userID, uploadSession.FileID)
+	if err != nil {
+		return err
+	}
+	if err := s.storage.DeleteObject(ctx, thumbnailKey); err != nil {
+		return err
+	}
+	objectKey, err := storage.BuildObjectKey(userID, uploadSession.FileID)
+	if err != nil {
+		return err
+	}
+	if uploadSession.ProviderUploadID == "" {
+		err = s.storage.DeleteObject(ctx, objectKey)
+	} else {
+		err = s.storage.AbortMultipartUpload(ctx, objectKey, uploadSession.ProviderUploadID)
+	}
+	if err != nil {
+		return err
+	}
+
 	if err := s.uploadRepo.UpdateUploadSessionStatus(ctx, tx, uploadSessionID, UploadStatusAborted); err != nil {
-		_ = tx.Rollback(ctx)
 		return err
 	}
 	updated, err := s.fileRepo.UpdateEncryptedFileStatusIf(ctx, tx, file.ID, FileUploadAborted, []string{FileUploadPending, FileUploadUploading})
 	if err != nil {
-		_ = tx.Rollback(ctx)
 		return err
 	}
-	if updated {
-		released, err := s.storageRepo.ReleaseReservedStorage(ctx, tx, userID, reservedUploadSize(file.EncryptedSize))
-		if err != nil {
-			_ = tx.Rollback(ctx)
-			return err
-		}
-		if !released {
-			_ = tx.Rollback(ctx)
-			return ErrUploadFailed
-		}
+	if !updated {
+		return ErrUploadCancelled
+	}
+	released, err := s.storageRepo.ReleaseReservedStorage(ctx, tx, userID, reservedUploadSize(file.EncryptedSize))
+	if err != nil {
+		return err
+	}
+	if !released {
+		return ErrUploadFailed
 	}
 	return tx.Commit(ctx)
 }
@@ -769,8 +827,12 @@ func (s *Service) PresignThumbnailUpload(ctx context.Context, userID, uploadSess
 	if uploadSession.Status != UploadStatusActive || isExpired(&uploadSession.ExpiresAt) {
 		return "", ErrUploadCancelled
 	}
-	if err := s.uploadRepo.TouchUploadSession(ctx, s.db, uploadSessionID, UploadStatusActive, time.Now().Add(s.uploadExpiry(ctx))); err != nil {
+	touched, err := s.uploadRepo.TouchUploadSession(ctx, s.db, uploadSessionID, UploadStatusActive, time.Now().Add(s.uploadExpiry(ctx)))
+	if err != nil {
 		return "", err
+	}
+	if !touched {
+		return "", ErrUploadCancelled
 	}
 
 	file, err := s.fileRepo.GetUploadDetailsForSession(ctx, s.db, uploadSessionID, userID)

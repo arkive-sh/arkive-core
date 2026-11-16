@@ -2,6 +2,7 @@ package settings
 
 import (
 	"context"
+	"math"
 	"strconv"
 	"strings"
 
@@ -155,14 +156,17 @@ func SaveStorageSettingsTx(ctx context.Context, tx pgx.Tx, settingsRepo *setting
 
 func BuildStorageSettings(input StorageInput) (models.StorageSettings, validation.Errors) {
 	validationErrors := validation.New()
+	const bytesPerGB int64 = 1024 * 1024 * 1024
 	storageGB := strings.TrimSpace(input.StorageGB)
 	maxBytes := int64(0)
 	if storageGB != "" {
 		gb, err := strconv.ParseInt(storageGB, 10, 64)
 		if err != nil || gb < 0 {
 			validationErrors.Add("storage_gb", "storage limit must be 0 or a positive number")
+		} else if gb > math.MaxInt64/bytesPerGB {
+			validationErrors.Add("storage_gb", "storage limit is too large")
 		} else if gb > 0 {
-			maxBytes = gb * 1024 * 1024 * 1024
+			maxBytes = gb * bytesPerGB
 		}
 	}
 	return NormalizeStorageSettings(models.StorageSettings{
