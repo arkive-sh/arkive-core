@@ -220,14 +220,6 @@ func (s *Service) StartMultipartUploadSession(ctx context.Context, userID string
 		return models.UploadStartResponse{}, nil, err
 	}
 	providerUploadID := ""
-	if !input.SinglePart {
-		providerUploadID, err = s.storage.CreateMultipartUpload(ctx, objectKey, "application/octet-stream")
-		if err != nil {
-			_ = tx.Rollback(ctx)
-			return models.UploadStartResponse{}, nil, err
-		}
-	}
-
 	reserved, err := s.storageRepo.ReserveStorage(ctx, tx, userID, reservedSize, storageSettings.MaxStorageBytes)
 	if err != nil {
 		_ = tx.Rollback(ctx)
@@ -245,6 +237,13 @@ func (s *Service) StartMultipartUploadSession(ctx context.Context, userID string
 			RequestedBytes: reservedSize,
 		}
 	}
+	if !input.SinglePart {
+		providerUploadID, err = s.storage.CreateMultipartUpload(ctx, objectKey, "application/octet-stream")
+		if err != nil {
+			_ = tx.Rollback(ctx)
+			return models.UploadStartResponse{}, nil, err
+		}
+	}
 
 	session, err := s.uploadRepo.CreateUploadSession(ctx, tx, models.UploadSession{
 		FileID:           file.ID,
@@ -257,11 +256,20 @@ func (s *Service) StartMultipartUploadSession(ctx context.Context, userID string
 	})
 	if err != nil {
 		_ = tx.Rollback(ctx)
+		if providerUploadID != "" {
+			if abortErr := s.storage.AbortMultipartUpload(ctx, objectKey, providerUploadID); abortErr != nil {
+				log.Printf("uploads: failed to abort multipart upload after session creation error file=%s: %v", file.ID, abortErr)
+			}
+		}
 		return models.UploadStartResponse{}, nil, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		_ = s.storage.AbortMultipartUpload(ctx, objectKey, providerUploadID)
+		if providerUploadID != "" {
+			if abortErr := s.storage.AbortMultipartUpload(ctx, objectKey, providerUploadID); abortErr != nil {
+				log.Printf("uploads: failed to abort multipart upload after session commit error file=%s: %v", file.ID, abortErr)
+			}
+		}
 		return models.UploadStartResponse{}, nil, err
 	}
 
@@ -467,6 +475,9 @@ func (s *Service) RecordMultipartUploadPart(ctx context.Context, userID, uploadS
 	}
 	if uploadSession.Status != UploadStatusActive || isExpired(&uploadSession.ExpiresAt) {
 		return ErrUploadCancelled
+	}
+	if input.PartNumber > uploadSession.UploadPartCount {
+		return ErrInvalidInput
 	}
 	touched, err := s.uploadRepo.TouchUploadSession(ctx, s.db, uploadSessionID, UploadStatusActive, time.Now().Add(s.uploadExpiry(ctx)))
 	if err != nil {
