@@ -50,7 +50,15 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 		api.Use(corsMiddleware)
 		r.OPTIONS("/api/*path", corsMiddleware)
 	}
-	api.POST("/public/shares/:token/unlock", middleware.LimitRequestsPerIP(cfg.RateLimitRPM), middleware.LimitBody(16<<10), handlers.APIPublicShareUnlock(shareService, cfg.CookieSecret))
+	publicShares := api.Group("/public/shares/:token")
+	publicShares.Use(middleware.LimitRequestsPerIP(cfg.RateLimitRPM))
+	{
+		publicShares.POST("/unlock", middleware.LimitBody(16<<10), handlers.APIPublicShareUnlock(shareService, cfg.CookieSecret))
+		publicShares.GET("", handlers.APIPublicShareRecord(shareService, filesService, cfg.CookieSecret))
+		publicShares.POST("/consume", handlers.APIPublicShareConsume(shareService, filesService, cfg.CookieSecret))
+		publicShares.GET("/folders/:folderID/entries", handlers.APIPublicShareFolderEntries(shareService, cfg.CookieSecret))
+		publicShares.GET("/files/:fileID", handlers.APIPublicShareFolderFile(shareService, filesService, cfg.CookieSecret))
+	}
 	publicAuth := api.Group("")
 	// Bound auth and setup JSON before ShouldBindJSON reads it; uploads have their own larger limit.
 	publicAuth.Use(middleware.LimitRequestsPerIP(cfg.RateLimitRPM))
@@ -73,10 +81,6 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 		api.GET("/settings/storage-usage", middleware.RequireSessionJSON(authService), handlers.APIStorageUsage(settingsService))
 		api.PUT("/settings/recovery-key", middleware.RequireSessionJSON(authService), middleware.LimitBody(16<<10), handlers.APIUpdateRecoveryKey(authService))
 		api.GET("/health", handlers.Health(db))
-		api.GET("/public/shares/:token", handlers.APIPublicShareRecord(shareService, filesService, cfg.CookieSecret))
-		api.POST("/public/shares/:token/consume", handlers.APIPublicShareConsume(shareService, filesService, cfg.CookieSecret))
-		api.GET("/public/shares/:token/folders/:folderID/entries", handlers.APIPublicShareFolderEntries(shareService, cfg.CookieSecret))
-		api.GET("/public/shares/:token/files/:fileID", handlers.APIPublicShareFolderFile(shareService, filesService, cfg.CookieSecret))
 		api.POST("/search", middleware.RequireSessionJSON(authService), handlers.APISearch(filesService, folderService))
 	}
 

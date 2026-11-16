@@ -1,6 +1,7 @@
-package middleware
+package middleware_test
 
 import (
+	. "arkive/core/middleware"
 	"net/http"
 	"net/http/httptest"
 	"strings"
