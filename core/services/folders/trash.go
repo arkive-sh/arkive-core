@@ -210,7 +210,7 @@ func (s *Service) PermanentlyDeleteTrash(ctx context.Context, input PermanentlyD
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	cutoff := time.Now().Add(-filessvc.TrashRetention)
-	result := PermanentlyDeleteTrashResult{}
+	var result PermanentlyDeleteTrashResult
 	if len(selection.containerFolderIDs) > 0 {
 		if err := s.lockTrashContainers(ctx, tx, userID, selection.containerFolderIDs); err != nil {
 			return PermanentlyDeleteTrashResult{}, err

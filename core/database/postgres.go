@@ -1,3 +1,4 @@
+// Package database provides Arkive's PostgreSQL pool and transaction interfaces.
 package database
 
 import (

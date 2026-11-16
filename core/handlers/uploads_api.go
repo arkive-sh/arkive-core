@@ -537,13 +537,13 @@ func APIUploadBatchComplete(svc *uploads.Service) gin.HandlerFunc {
 				continue
 			}
 
-			searchTokens, err := decodeSearchTokens(item.uploadCompleteRequest.SearchTokens)
+			searchTokens, err := decodeSearchTokens(item.SearchTokens)
 			if err != nil {
 				result.Error = err.Error()
 				results = append(results, result)
 				continue
 			}
-			shareEntries, err := decodeUploadShareEntries(item.uploadCompleteRequest.ShareEntries)
+			shareEntries, err := decodeUploadShareEntries(item.ShareEntries)
 			if err != nil {
 				result.Error = err.Error()
 				results = append(results, result)

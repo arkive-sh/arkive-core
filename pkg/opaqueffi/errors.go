@@ -61,6 +61,7 @@ func (b *Buffer) Bytes() []byte {
 	if b == nil || b.pointer == nil || b.length == 0 {
 		return nil
 	}
+	// #nosec G103 -- ReadOutput bounds this Rust-owned buffer and Close frees it with Rust's allocator.
 	return unsafe.Slice((*byte)(b.pointer), int(b.length))
 }
 

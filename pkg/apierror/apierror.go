@@ -37,13 +37,6 @@ func Unauthorized(c *gin.Context) {
 	Write(c, http.StatusUnauthorized, "unauthorized", "Unauthorized", nil)
 }
 
-func Forbidden(c *gin.Context, message string) {
-	if message == "" {
-		message = "Forbidden"
-	}
-	Write(c, http.StatusForbidden, "forbidden", message, nil)
-}
-
 func Internal(c *gin.Context, message string) {
 	if message == "" {
 		message = "Internal error"

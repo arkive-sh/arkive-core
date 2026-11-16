@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -78,40 +79,30 @@ func APIListTrash(folderService *folderssvc.Service) gin.HandlerFunc {
 }
 
 func APIRestoreTrash(folderService *folderssvc.Service) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		userID, ok := c.Get("user_id")
-		if !ok {
-			apierror.Unauthorized(c)
-			return
-		}
-		var req trashSelectionRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			apierror.InvalidPayload(c)
-			return
-		}
-		result, err := folderService.RestoreTrash(c.Request.Context(), folderssvc.RestoreTrashInput{
-			UserID:             userID.(string),
+	return trashSelectionHandler("Restore failed", func(ctx context.Context, userID string, req trashSelectionRequest) (any, error) {
+		result, err := folderService.RestoreTrash(ctx, folderssvc.RestoreTrashInput{
+			UserID:             userID,
 			FileIDs:            req.FileIDs,
 			FolderIDs:          req.FolderIDs,
 			ContainerFolderIDs: req.ContainerFolderIDs,
 		})
-		if err != nil {
-			switch {
-			case errors.Is(err, folderssvc.ErrInvalidInput):
-				apierror.InvalidPayload(c)
-			case errors.Is(err, folderssvc.ErrNotFound):
-				apierror.Write(c, http.StatusNotFound, "trash_entry_not_found", "Trash entry not found", nil)
-			default:
-				_ = c.Error(errs.WithStack(err))
-				apierror.Internal(c, "Restore failed")
-			}
-			return
-		}
-		c.JSON(http.StatusOK, result)
-	}
+		return result, err
+	})
 }
 
 func APIPermanentlyDeleteTrash(folderService *folderssvc.Service) gin.HandlerFunc {
+	return trashSelectionHandler("Permanent delete failed", func(ctx context.Context, userID string, req trashSelectionRequest) (any, error) {
+		result, err := folderService.PermanentlyDeleteTrash(ctx, folderssvc.PermanentlyDeleteTrashInput{
+			UserID:             userID,
+			FileIDs:            req.FileIDs,
+			FolderIDs:          req.FolderIDs,
+			ContainerFolderIDs: req.ContainerFolderIDs,
+		})
+		return result, err
+	})
+}
+
+func trashSelectionHandler(failureMessage string, action func(context.Context, string, trashSelectionRequest) (any, error)) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, ok := c.Get("user_id")
 		if !ok {
@@ -123,12 +114,7 @@ func APIPermanentlyDeleteTrash(folderService *folderssvc.Service) gin.HandlerFun
 			apierror.InvalidPayload(c)
 			return
 		}
-		result, err := folderService.PermanentlyDeleteTrash(c.Request.Context(), folderssvc.PermanentlyDeleteTrashInput{
-			UserID:             userID.(string),
-			FileIDs:            req.FileIDs,
-			FolderIDs:          req.FolderIDs,
-			ContainerFolderIDs: req.ContainerFolderIDs,
-		})
+		result, err := action(c.Request.Context(), userID.(string), req)
 		if err != nil {
 			switch {
 			case errors.Is(err, folderssvc.ErrInvalidInput):
@@ -137,7 +123,7 @@ func APIPermanentlyDeleteTrash(folderService *folderssvc.Service) gin.HandlerFun
 				apierror.Write(c, http.StatusNotFound, "trash_entry_not_found", "Trash entry not found", nil)
 			default:
 				_ = c.Error(errs.WithStack(err))
-				apierror.Internal(c, "Permanent delete failed")
+				apierror.Internal(c, failureMessage)
 			}
 			return
 		}

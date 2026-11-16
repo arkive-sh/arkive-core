@@ -10,6 +10,14 @@ import (
 
 const encryptedChunkEnvelopeOverheadBytes int64 = 29
 const thumbnailMaxEncryptedBytes int64 = 150 * 1024
+const maxS3MultipartParts = 10_000
+
+func s3PartNumber(partNumber int) (int32, error) {
+	if partNumber <= 0 || partNumber > maxS3MultipartParts {
+		return 0, ErrInvalidInput
+	}
+	return int32(partNumber), nil
+}
 
 func validateUserID(userID string) (string, error) {
 	userID = strings.TrimSpace(userID)

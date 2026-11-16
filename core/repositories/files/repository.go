@@ -198,23 +198,6 @@ func (r *Repository) CountInFlightForUser(ctx context.Context, db database.PgExe
 	return total, nil
 }
 
-func (r *Repository) CountArchivedFilesForUser(ctx context.Context, db database.PgExecutor, userID string) (int64, error) {
-	var total int64
-	query := `SELECT
-		COUNT(*)
-	FROM
-		files
-	WHERE
-		user_id = $1
-		AND upload_status = 'complete'
-		AND expires_at IS NOT NULL
-		AND deleted_at IS NULL`
-	if err := db.QueryRow(ctx, query, userID).Scan(&total); err != nil {
-		return 0, err
-	}
-	return total, nil
-}
-
 func (r *Repository) GetFileByID(ctx context.Context, db database.PgExecutor, fileID string) (models.File, error) {
 	var file models.File
 	var folderID *string

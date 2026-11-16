@@ -227,11 +227,12 @@ func validateAdminInput(name, username, email string) validation.Errors {
 		validationErrors.Add("name", "name must be at least 3 characters")
 	}
 
-	if username == "" {
+	switch {
+	case username == "":
 		validationErrors.Add("username", "username is required")
-	} else if utf8.RuneCountInString(username) < 3 {
+	case utf8.RuneCountInString(username) < 3:
 		validationErrors.Add("username", "username must be at least 3 characters")
-	} else if utf8.RuneCountInString(username) > 20 {
+	case utf8.RuneCountInString(username) > 20:
 		validationErrors.Add("username", "username must be at most 20 characters")
 	}
 	if username != "" && !usernamePattern.MatchString(username) {

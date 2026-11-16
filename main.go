@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -31,27 +32,33 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run() error {
 	if err := godotenv.Load(); err != nil {
 		log.Printf("warning: no .env file loaded: %v", err)
 	}
 
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	db, err := database.NewPool(context.Background(), cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("db connection failed: %v", err)
+		return fmt.Errorf("db connection failed: %w", err)
 	}
 	defer db.Close()
 
 	if err := db.Ping(context.Background()); err != nil {
-		log.Fatalf("db ping failed: %v", err)
+		return fmt.Errorf("db ping failed: %w", err)
 	}
 
 	if err := migrations.Run(context.Background(), db); err != nil {
-		log.Fatalf("migrations failed: %v", err)
+		return fmt.Errorf("migrations failed: %w", err)
 	}
 
 	settingsRepo := settingsrepo.New()
@@ -73,7 +80,7 @@ func main() {
 	folderService := folderssvc.NewService(db, folderRepo, fileRepo, sharerepo.New(), filesService)
 	deletedFileCleanupCron, err := jobs.StartDeletedFileCleanup(filesService, folderService)
 	if err != nil {
-		log.Fatalf("deleted file cleanup cron failed: %v", err)
+		return fmt.Errorf("deleted file cleanup cron failed: %w", err)
 	}
 	defer deletedFileCleanupCron.Stop()
 
@@ -94,7 +101,7 @@ func main() {
 		})
 	staleUploadCleanupCron, err := jobs.StartStaleUploadCleanup(uploadService)
 	if err != nil {
-		log.Fatalf("stale upload cleanup cron failed: %v", err)
+		return fmt.Errorf("stale upload cleanup cron failed: %w", err)
 	}
 	defer staleUploadCleanupCron.Stop()
 	if strings.EqualFold(cfg.Env, "dev") {
@@ -116,7 +123,7 @@ func main() {
 
 	r := router.New(db, cfg, uploadService, filesService, folderService, corsMiddleware)
 	if err := r.SetTrustedProxies(cfg.TrustedProxies); err != nil {
-		log.Fatalf("invalid TRUSTED_PROXIES: %v", err)
+		return fmt.Errorf("invalid TRUSTED_PROXIES: %w", err)
 	}
 
 	server := &http.Server{
@@ -127,6 +134,7 @@ func main() {
 		MaxHeaderBytes:    1 << 20,
 	}
 	if err := server.ListenAndServe(); err != nil {
-		log.Fatalf("server failed: %v", err)
+		return fmt.Errorf("server failed: %w", err)
 	}
+	return nil
 }

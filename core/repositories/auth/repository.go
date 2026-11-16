@@ -4,9 +4,10 @@ import (
 	"context"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"arkive/core/database"
 	"arkive/core/models"
-	"github.com/jackc/pgx/v5"
 )
 
 type Repository struct {

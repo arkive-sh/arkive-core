@@ -8,16 +8,23 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run() error {
 	setup, err := opaque.GenerateSetup()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer setup.Close()
 
 	if _, err := os.Stdout.Write(setup.Bytes()); err != nil {
-		log.Fatal(err)
+		return err
 	}
 	if _, err := os.Stdout.Write([]byte{'\n'}); err != nil {
-		log.Fatal(err)
+		return err
 	}
+	return nil
 }

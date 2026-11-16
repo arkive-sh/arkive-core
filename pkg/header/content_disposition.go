@@ -1,3 +1,4 @@
+// Package header builds safe HTTP headers for file responses.
 package header
 
 import "strings"

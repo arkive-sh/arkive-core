@@ -1,3 +1,4 @@
+// Package validation collects and checks input errors at API boundaries.
 package validation
 
 import "unicode"
@@ -22,13 +23,6 @@ func (errs Errors) Add(key, message string) {
 
 func (errs Errors) HasAny() bool {
 	return len(errs) > 0
-}
-
-func FieldError(errors Errors, key string) string {
-	if errors == nil {
-		return ""
-	}
-	return errors[key]
 }
 
 type PasswordIssue string

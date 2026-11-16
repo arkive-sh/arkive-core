@@ -351,7 +351,7 @@ func encodeListEntriesCursor(folderID, stage string, createdAt *time.Time, id st
 func (s *Service) cursorForEntry(ctx context.Context, userID string, folderID *string, entryID string) (string, error) {
 	createdAt, err := s.fileRepo.GetListedFileCreatedAt(ctx, s.db, userID, folderID, entryID)
 	stage := "files"
-	position := 0
+	var position int
 	if errors.Is(err, pgx.ErrNoRows) {
 		createdAt, err = s.folderRepo.GetChildFolderCreatedAt(ctx, s.db, userID, folderID, entryID)
 		stage = "folders"
@@ -522,27 +522,6 @@ func (s *Service) setPreviousEntriesCursor(folderScope string, result *ListEntri
 		cursor := encodeListEntriesCursor(folderScope, "files", &first.CreatedAt, first.ID, false, true, result.StartIndex)
 		result.PreviousCursor = &cursor
 	}
-}
-
-func (s *Service) ValidateFolderAccess(ctx context.Context, userID, folderID string) (models.Folder, error) {
-	userID = strings.TrimSpace(userID)
-	if userID == "" {
-		return models.Folder{}, ErrInvalidInput
-	}
-	var err error
-	folderID, err = validateUUIDValue(folderID)
-	if err != nil {
-		return models.Folder{}, err
-	}
-
-	folder, err := s.folderRepo.GetForUser(ctx, s.db, userID, folderID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return models.Folder{}, ErrNotFound
-		}
-		return models.Folder{}, err
-	}
-	return folder, nil
 }
 
 func (s *Service) RenameFolder(ctx context.Context, input RenameFolderInput) error {

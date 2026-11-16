@@ -21,6 +21,11 @@ linters:
     - nilerr
     - wastedassign
     - whitespace
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: true
 
 formatters:
   enable:

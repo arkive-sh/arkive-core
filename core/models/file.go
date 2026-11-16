@@ -1,3 +1,4 @@
+// Package models defines the data passed between Arkive's repositories, services, and handlers.
 package models
 
 import "time"

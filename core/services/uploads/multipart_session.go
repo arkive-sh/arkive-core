@@ -117,6 +117,9 @@ func (s *Service) StartMultipartUploadSession(ctx context.Context, userID string
 	if input.UploadPartCount <= 0 {
 		validationErrors.Add("uploadPartCount", "upload part count is required")
 	}
+	if input.UploadPartCount > maxS3MultipartParts {
+		validationErrors.Add("uploadPartCount", "S3 multipart uploads cannot exceed 10,000 parts")
+	}
 	if input.SinglePart && input.UploadPartCount != 1 {
 		validationErrors.Add("singlePart", "direct uploads require exactly one storage part")
 	}
@@ -377,7 +380,11 @@ func (s *Service) PresignMultipartUploadPart(ctx context.Context, userID, upload
 	if err != nil {
 		return "", err
 	}
-	return s.storage.PresignUploadPart(ctx, objectKey, uploadSession.ProviderUploadID, int32(partNumber), partSize, s.uploadExpiry(ctx))
+	providerPartNumber, err := s3PartNumber(partNumber)
+	if err != nil {
+		return "", err
+	}
+	return s.storage.PresignUploadPart(ctx, objectKey, uploadSession.ProviderUploadID, providerPartNumber, partSize, s.uploadExpiry(ctx))
 }
 
 func (s *Service) PresignMultipartUploadParts(ctx context.Context, userID, uploadSessionID string, partNumbers []int) (map[string]string, error) {
@@ -442,7 +449,11 @@ func (s *Service) PresignMultipartUploadParts(ctx context.Context, userID, uploa
 		if sizeErr != nil {
 			return nil, sizeErr
 		}
-		url, presignErr := s.storage.PresignUploadPart(ctx, objectKey, uploadSession.ProviderUploadID, int32(partNumber), partSize, s.uploadExpiry(ctx))
+		providerPartNumber, numberErr := s3PartNumber(partNumber)
+		if numberErr != nil {
+			return nil, numberErr
+		}
+		url, presignErr := s.storage.PresignUploadPart(ctx, objectKey, uploadSession.ProviderUploadID, providerPartNumber, partSize, s.uploadExpiry(ctx))
 		if presignErr != nil {
 			return nil, presignErr
 		}
@@ -600,8 +611,12 @@ func (s *Service) CompleteMultipartUploadSession(ctx context.Context, userID, up
 			if part.PartNumber != idx+1 {
 				return ErrPartsRequired
 			}
+			providerPartNumber, numberErr := s3PartNumber(part.PartNumber)
+			if numberErr != nil {
+				return numberErr
+			}
 			completedParts = append(completedParts, storage.CompletedPart{
-				PartNumber: int32(part.PartNumber),
+				PartNumber: providerPartNumber,
 				ETag:       part.ETag,
 			})
 		}

@@ -1,3 +1,4 @@
+// Package tokens creates cryptographically random tokens and their hashes.
 package tokens
 
 import (

@@ -20,6 +20,7 @@ func ClearSession(c *gin.Context) {
 }
 
 func SetCustom(c *gin.Context, name, value string, expiresAt time.Time) {
+	// #nosec G124 -- Secure is disabled only for local dev; HttpOnly and SameSite are always set.
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     name,
 		Value:    value,
@@ -32,6 +33,7 @@ func SetCustom(c *gin.Context, name, value string, expiresAt time.Time) {
 }
 
 func ClearCustom(c *gin.Context, name string) {
+	// #nosec G124 -- Match SetCustom so the browser clears the same secure cookie.
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     name,
 		Value:    "",

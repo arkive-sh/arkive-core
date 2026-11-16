@@ -652,65 +652,28 @@ func (r *Repository) DeleteShareForUser(ctx context.Context, db database.PgExecu
 }
 
 func (r *Repository) RevokeShareForUser(ctx context.Context, db database.PgExecutor, shareID, ownerUserID string) (models.Share, error) {
-	var share models.Share
-	query := `UPDATE
-		share_links
-	SET
-		status = 'revoked',
-		revoked_at = now(),
-		updated_at = now()
-	WHERE
-		id = $1 AND owner_user_id = $2 AND status = 'active'
-	RETURNING
-		id, owner_user_id, token, encrypted_share_key, allow_preview, allow_download, burn_after_read,
-		access_count, max_access_count, password_hash, expires_at, status, revoked_at, consumed_at, created_at, updated_at`
-	var shareIDValue string
-	if err := db.QueryRow(ctx, query, shareID, ownerUserID).Scan(
-		&shareIDValue,
-		&share.OwnerUserID,
-		&share.Token,
-		&share.EncryptedShareKey,
-		&share.AllowPreview,
-		&share.AllowDownload,
-		&share.BurnAfterRead,
-		&share.AccessCount,
-		&share.MaxAccessCount,
-		&share.PasswordHash,
-		&share.ExpiresAt,
-		&share.Status,
-		&share.RevokedAt,
-		&share.ConsumedAt,
-		&share.CreatedAt,
-		&share.UpdatedAt,
-	); err != nil {
-		return models.Share{}, err
-	}
-	share.ID = shareIDValue
-	linked, err := r.GetShareForUser(ctx, db, shareIDValue, ownerUserID)
-	if err != nil {
-		return models.Share{}, err
-	}
-	share.FileID = linked.FileID
-	share.ItemType = linked.ItemType
-	share.FolderID = linked.FolderID
-	return share, nil
+	return r.setShareStatus(ctx, db, shareID, ownerUserID, "active", "revoked")
 }
 
 func (r *Repository) ActivateShareForUser(ctx context.Context, db database.PgExecutor, shareID, ownerUserID string) (models.Share, error) {
+	return r.setShareStatus(ctx, db, shareID, ownerUserID, "revoked", "active")
+}
+
+func (r *Repository) setShareStatus(ctx context.Context, db database.PgExecutor, shareID, ownerUserID, fromStatus, toStatus string) (models.Share, error) {
 	var share models.Share
 	query := `UPDATE
 		share_links
 	SET
-		status = 'active',
-		revoked_at = NULL,
+		status = $4,
+		revoked_at = CASE WHEN $4 = 'revoked' THEN now() ELSE NULL END,
 		updated_at = now()
 	WHERE
-		id = $1 AND owner_user_id = $2 AND status = 'revoked'
+		id = $1 AND owner_user_id = $2 AND status = $3
 	RETURNING
 		id, owner_user_id, token, encrypted_share_key, allow_preview, allow_download, burn_after_read,
 		access_count, max_access_count, password_hash, expires_at, status, revoked_at, consumed_at, created_at, updated_at`
 	var shareIDValue string
-	if err := db.QueryRow(ctx, query, shareID, ownerUserID).Scan(
+	if err := db.QueryRow(ctx, query, shareID, ownerUserID, fromStatus, toStatus).Scan(
 		&shareIDValue,
 		&share.OwnerUserID,
 		&share.Token,

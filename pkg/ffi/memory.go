@@ -10,6 +10,7 @@ func BytePointer(value []byte) unsafe.Pointer {
 	if len(value) == 0 {
 		return nil
 	}
+	// #nosec G103 -- The pointer is passed only to synchronous FFI calls while value remains live.
 	return unsafe.Pointer(unsafe.SliceData(value))
 }
 
@@ -18,6 +19,7 @@ func StringPointer(value string) unsafe.Pointer {
 	if len(value) == 0 {
 		return nil
 	}
+	// #nosec G103 -- The pointer is passed only to synchronous FFI calls while value remains live.
 	return unsafe.Pointer(unsafe.StringData(value))
 }
 

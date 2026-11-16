@@ -1,3 +1,4 @@
+// Package settings loads and validates storage settings used by setup and uploads.
 package settings
 
 import (
@@ -32,35 +33,12 @@ type StorageInput struct {
 	S3UsePathStyle    string
 }
 
-type UploadInput struct {
-	MaxQueueItems    string
-	StaleUploadHours string
-}
-
-type PreviewInput struct {
-	ImageMaxMB string
-	VideoMaxMB string
-	TextMaxMB  string
-}
-
 func NewService(db database.PgPool, settingsRepo *settingsrepo.Repository, usersRepo *usersrepo.Repository) *Service {
 	return &Service{
 		db:           db,
 		settingsRepo: settingsRepo,
 		usersRepo:    usersRepo,
 	}
-}
-
-func (s *Service) StorageSettings(ctx context.Context) (models.StorageSettings, error) {
-	return s.settingsRepo.GetStorageSettings(ctx, s.db)
-}
-
-func (s *Service) UploadSettings(ctx context.Context) (models.UploadSettings, error) {
-	return s.settingsRepo.GetUploadSettings(ctx, s.db)
-}
-
-func (s *Service) PreviewSettings(ctx context.Context) (models.PreviewSettings, error) {
-	return s.settingsRepo.GetPreviewSettings(ctx, s.db)
 }
 
 func (s *Service) StorageUsage(ctx context.Context, userID string) (models.StorageUsage, error) {
@@ -79,76 +57,6 @@ func (s *Service) StorageUsage(ctx context.Context, userID string) (models.Stora
 	}, nil
 }
 
-func (s *Service) UpdateStorageSettings(ctx context.Context, userID string, input StorageInput) (models.StorageSettings, validation.Errors, error) {
-	current, _ := s.settingsRepo.GetStorageSettings(ctx, s.db)
-	settings, validationErrors := BuildStorageSettings(input)
-	if settings.Provider == "s3" && strings.TrimSpace(settings.S3SecretAccessKey) == "" {
-		settings.S3SecretAccessKey = current.S3SecretAccessKey
-	}
-	ValidateStorageSettings(settings, validationErrors)
-	if validationErrors.HasAny() {
-		return settings, validationErrors, nil
-	}
-
-	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
-	if err != nil {
-		return models.StorageSettings{}, nil, err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	if err := SaveStorageSettingsTx(ctx, tx, s.settingsRepo, settings); err != nil {
-		return models.StorageSettings{}, nil, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return models.StorageSettings{}, nil, err
-	}
-	return settings, nil, nil
-}
-
-func (s *Service) UpdateUploadSettings(ctx context.Context, userID string, input UploadInput) (models.UploadSettings, validation.Errors, error) {
-	settings, validationErrors := BuildUploadSettings(input)
-	ValidateUploadSettings(settings, validationErrors)
-	if validationErrors.HasAny() {
-		return settings, validationErrors, nil
-	}
-
-	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
-	if err != nil {
-		return models.UploadSettings{}, nil, err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	if err := s.settingsRepo.SaveUploadSettings(ctx, tx, settings); err != nil {
-		return models.UploadSettings{}, nil, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return models.UploadSettings{}, nil, err
-	}
-	return settings, nil, nil
-}
-
-func (s *Service) UpdatePreviewSettings(ctx context.Context, userID string, input PreviewInput) (models.PreviewSettings, validation.Errors, error) {
-	settings, validationErrors := BuildPreviewSettings(input)
-	ValidatePreviewSettings(settings, validationErrors)
-	if validationErrors.HasAny() {
-		return settings, validationErrors, nil
-	}
-
-	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
-	if err != nil {
-		return models.PreviewSettings{}, nil, err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	if err := s.settingsRepo.SavePreviewSettings(ctx, tx, settings); err != nil {
-		return models.PreviewSettings{}, nil, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return models.PreviewSettings{}, nil, err
-	}
-	return settings, nil, nil
-}
-
 func SaveStorageSettingsTx(ctx context.Context, tx pgx.Tx, settingsRepo *settingsrepo.Repository, settings models.StorageSettings) error {
 	settings = NormalizeStorageSettings(settings)
 	return settingsRepo.SaveStorageSettings(ctx, tx, settings)
@@ -161,11 +69,12 @@ func BuildStorageSettings(input StorageInput) (models.StorageSettings, validatio
 	maxBytes := int64(0)
 	if storageGB != "" {
 		gb, err := strconv.ParseInt(storageGB, 10, 64)
-		if err != nil || gb < 0 {
+		switch {
+		case err != nil || gb < 0:
 			validationErrors.Add("storage_gb", "storage limit must be 0 or a positive number")
-		} else if gb > math.MaxInt64/bytesPerGB {
+		case gb > math.MaxInt64/bytesPerGB:
 			validationErrors.Add("storage_gb", "storage limit is too large")
-		} else if gb > 0 {
+		case gb > 0:
 			maxBytes = gb * bytesPerGB
 		}
 	}
@@ -216,92 +125,5 @@ func DefaultUploadSettings() models.UploadSettings {
 	return models.UploadSettings{
 		MaxQueueItems:    300,
 		StaleUploadHours: 1,
-	}
-}
-
-func DefaultPreviewSettings() models.PreviewSettings {
-	return models.PreviewSettings{
-		ImageMaxBytes: 50 * 1024 * 1024,
-		VideoMaxBytes: 128 * 1024 * 1024,
-		TextMaxBytes:  2 * 1024 * 1024,
-	}
-}
-
-func BuildUploadSettings(input UploadInput) (models.UploadSettings, validation.Errors) {
-	validationErrors := validation.New()
-	defaults := DefaultUploadSettings()
-	maxQueueItems := defaults.MaxQueueItems
-	if strings.TrimSpace(input.MaxQueueItems) != "" {
-		n, err := strconv.Atoi(strings.TrimSpace(input.MaxQueueItems))
-		if err != nil || n <= 0 {
-			validationErrors.Add("max_queue_items", "must be a positive number")
-		} else {
-			maxQueueItems = n
-		}
-	}
-	staleUploadHours := defaults.StaleUploadHours
-	if strings.TrimSpace(input.StaleUploadHours) != "" {
-		n, err := strconv.Atoi(strings.TrimSpace(input.StaleUploadHours))
-		if err != nil || n <= 0 {
-			validationErrors.Add("stale_upload_hours", "must be a positive number")
-		} else {
-			staleUploadHours = n
-		}
-	}
-	return models.UploadSettings{
-		MaxQueueItems:    maxQueueItems,
-		StaleUploadHours: staleUploadHours,
-	}, validationErrors
-}
-
-func ValidateUploadSettings(settings models.UploadSettings, validationErrors validation.Errors) {
-	if settings.MaxQueueItems <= 0 {
-		validationErrors.Add("max_queue_items", "must be a positive number")
-	}
-	if settings.StaleUploadHours <= 0 || settings.StaleUploadHours > 168 {
-		validationErrors.Add("stale_upload_hours", "must be between 1 and 168")
-	}
-}
-
-func BuildPreviewSettings(input PreviewInput) (models.PreviewSettings, validation.Errors) {
-	validationErrors := validation.New()
-	defaults := DefaultPreviewSettings()
-	imageMaxBytes := defaults.ImageMaxBytes
-	videoMaxBytes := defaults.VideoMaxBytes
-	textMaxBytes := defaults.TextMaxBytes
-
-	parseMB := func(value string, field string, fallback int64) int64 {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			return fallback
-		}
-		n, err := strconv.ParseInt(value, 10, 64)
-		if err != nil || n <= 0 {
-			validationErrors.Add(field, "must be a positive number")
-			return fallback
-		}
-		return n * 1024 * 1024
-	}
-
-	imageMaxBytes = parseMB(input.ImageMaxMB, "image_max_mb", imageMaxBytes)
-	videoMaxBytes = parseMB(input.VideoMaxMB, "video_max_mb", videoMaxBytes)
-	textMaxBytes = parseMB(input.TextMaxMB, "text_max_mb", textMaxBytes)
-
-	return models.PreviewSettings{
-		ImageMaxBytes: imageMaxBytes,
-		VideoMaxBytes: videoMaxBytes,
-		TextMaxBytes:  textMaxBytes,
-	}, validationErrors
-}
-
-func ValidatePreviewSettings(settings models.PreviewSettings, validationErrors validation.Errors) {
-	if settings.ImageMaxBytes < 1*1024*1024 || settings.ImageMaxBytes > 512*1024*1024 {
-		validationErrors.Add("image_max_mb", "must be between 1 and 512")
-	}
-	if settings.VideoMaxBytes < 1*1024*1024 || settings.VideoMaxBytes > 2048*1024*1024 {
-		validationErrors.Add("video_max_mb", "must be between 1 and 2048")
-	}
-	if settings.TextMaxBytes < 1*1024 || settings.TextMaxBytes > 32*1024*1024 {
-		validationErrors.Add("text_max_mb", "must be between 1 and 32")
 	}
 }

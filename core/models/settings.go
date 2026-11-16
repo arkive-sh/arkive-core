@@ -16,9 +16,3 @@ type UploadSettings struct {
 	MaxQueueItems    int
 	StaleUploadHours int
 }
-
-type PreviewSettings struct {
-	ImageMaxBytes int64
-	VideoMaxBytes int64
-	TextMaxBytes  int64
-}

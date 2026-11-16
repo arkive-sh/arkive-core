@@ -28,15 +28,6 @@ type EncryptedFileRecord struct {
 	SourceURL         string
 }
 
-func (s *Service) CountArchivedFiles(ctx context.Context, userID string) (int64, error) {
-	var err error
-	userID, err = validateUserID(userID)
-	if err != nil {
-		return 0, err
-	}
-	return s.fileRepo.CountArchivedFilesForUser(ctx, s.db, userID)
-}
-
 func (s *Service) SearchFilesByTokens(ctx context.Context, userID, vaultID string, tokenHashes [][]byte, minimumMatches, limit int, folderID *string, includeTrash bool) ([]models.File, error) {
 	var err error
 	userID, err = validateUserID(userID)
@@ -156,18 +147,6 @@ func (s *Service) GetFileForShare(ctx context.Context, fileID string) (models.Fi
 	}
 
 	return file, nil
-}
-
-func (s *Service) PresignShareDownloadForFile(ctx context.Context, file models.File) (string, error) {
-	expiry := s.shareDownloadExpire
-	if expiry <= 0 {
-		expiry = s.downloadExpire
-	}
-	objectKey, err := storage.BuildObjectKey(file.UserID, file.ID)
-	if err != nil {
-		return "", err
-	}
-	return s.storage.PresignDownload(ctx, objectKey, file.ID, "attachment", expiry)
 }
 
 func (s *Service) PresignShareSourceForFile(ctx context.Context, file models.File) (string, error) {

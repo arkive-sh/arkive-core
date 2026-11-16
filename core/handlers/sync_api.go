@@ -26,11 +26,7 @@ func APIListSyncEntries(syncService *syncsvc.Service) gin.HandlerFunc {
 			return
 		}
 
-		folderID, hasFolderID, err := parseSyncFolderID(c.Query("folder_id"))
-		if err != nil {
-			apierror.InvalidPayload(c)
-			return
-		}
+		folderID := parseSyncFolderID(c.Query("folder_id"))
 		includeDeleted, err := parseSyncIncludeDeleted(c.Query("include_deleted"))
 		if err != nil {
 			apierror.InvalidPayload(c)
@@ -46,10 +42,6 @@ func APIListSyncEntries(syncService *syncsvc.Service) gin.HandlerFunc {
 			apierror.InvalidPayload(c)
 			return
 		}
-		if !hasFolderID {
-			folderID = nil
-		}
-
 		result, err := syncService.ListEntries(c.Request.Context(), models.ListEntriesPageInput{
 			UserID:         user.ID,
 			FolderID:       folderID,
@@ -78,12 +70,12 @@ func APIListSyncEntries(syncService *syncsvc.Service) gin.HandlerFunc {
 	}
 }
 
-func parseSyncFolderID(raw string) (*string, bool, error) {
+func parseSyncFolderID(raw string) *string {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" || strings.EqualFold(trimmed, "null") {
-		return nil, trimmed != "", nil
+		return nil
 	}
-	return &trimmed, true, nil
+	return &trimmed
 }
 
 func parseSyncIncludeDeleted(raw string) (bool, error) {
