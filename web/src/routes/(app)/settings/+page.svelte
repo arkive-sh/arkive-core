@@ -1,10 +1,12 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { Copy, LockKeyhole, Printer } from '@lucide/svelte';
 	import Button from '#lib/components/Button.svelte';
+	import InputField from '#lib/components/InputField.svelte';
 	import Modal from '#lib/components/Modal.svelte';
+	import S3StorageFields from '#lib/components/S3StorageFields.svelte';
 	import { api } from '#lib/api.ts';
 	import { clearThumbnailCache } from '#lib/thumbnail-cache.ts';
 	import { formatBytes } from '#lib/utils/format.ts';
@@ -18,6 +20,16 @@
 		usedBytes: number;
 		reservedBytes: number;
 		maxStorageBytes: number;
+	};
+	type StorageSettings = {
+		maxStorageBytes: number;
+		s3AccessKeyID: string;
+		s3SecretAccessKeyConfigured: boolean;
+		s3SessionTokenConfigured: boolean;
+		s3Bucket: string;
+		s3Endpoint: string;
+		s3Region: string;
+		s3UsePathStyle: boolean;
 	};
 	type RecoveryKeyDraft = {
 		recoveryKey: string;
@@ -35,6 +47,10 @@
 	let storageUsage = $state<StorageUsage | null>(null);
 	let storageLoading = $state(true);
 	let storageError = $state('');
+	let storageSettings = $state<StorageSettings | null>(null);
+	let storageSettingsLoading = $state(true);
+	let storageSettingsError = $state('');
+	let savingStorageSettings = $state(false);
 	let clearingCache = $state(false);
 	let keepVaultOnRefresh = $state(false);
 	let recoveryConfirmOpen = $state(false);
@@ -57,6 +73,7 @@
 	onMount(() => {
 		keepVaultOnRefresh = shouldKeepVaultUnlocked();
 		void loadStorageUsage();
+		void loadStorageSettings();
 	});
 
 	async function loadStorageUsage(): Promise<void> {
@@ -69,6 +86,54 @@
 			storageError = error instanceof Error ? error.message : 'Could not load storage usage.';
 		} finally {
 			storageLoading = false;
+		}
+	}
+
+	async function loadStorageSettings(): Promise<void> {
+		storageSettingsLoading = true;
+		storageSettingsError = '';
+		try {
+			const { data: settings } = await api.get<StorageSettings>('/api/settings/storage');
+			storageSettings = settings;
+		} catch (error) {
+			storageSettingsError =
+				error instanceof Error ? error.message : 'Could not load storage settings.';
+		} finally {
+			storageSettingsLoading = false;
+		}
+	}
+
+	async function saveStorageSettings(event: SubmitEvent): Promise<void> {
+		event.preventDefault();
+		if (savingStorageSettings || !(event.currentTarget instanceof HTMLFormElement)) return;
+		const form = event.currentTarget;
+		const values = new FormData(form);
+		const value = (name: string) => String(values.get(name) ?? '');
+		savingStorageSettings = true;
+		storageSettingsError = '';
+		try {
+			const { data: settings } = await api.put<StorageSettings>('/api/settings/storage', {
+				storageGB: value('storage_gb'),
+				s3AccessKeyID: value('s3_access_key_id'),
+				s3SecretAccessKey: value('s3_secret_access_key'),
+				s3SessionToken: value('s3_session_token'),
+				clearSessionToken: values.get('clear_session_token') === 'on',
+				s3Bucket: value('s3_bucket'),
+				s3Endpoint: value('s3_endpoint'),
+				s3Region: value('s3_region'),
+				s3UsePathStyle: values.get('s3_use_path_style') === 'on',
+			});
+			storageSettings = settings;
+			if (storageUsage)
+				storageUsage = { ...storageUsage, maxStorageBytes: settings.maxStorageBytes };
+			await tick();
+			form.reset();
+			toast.success('Storage settings saved.');
+		} catch (error) {
+			storageSettingsError =
+				error instanceof Error ? error.message : 'Could not save storage settings.';
+		} finally {
+			savingStorageSettings = false;
 		}
 	}
 
@@ -421,6 +486,57 @@
 						{/if}
 					</div>
 				{/if}
+				<div class="border-b border-(--border-soft) py-4">
+					<h3 class="m-0 text-sm leading-5 font-medium text-(--text)">S3-compatible storage</h3>
+					<p class="mt-1 mb-4 text-sm leading-5 text-(--muted)">
+						Edit the connection details saved during setup. Secret values stay on the server; leave
+						their fields blank to keep them.
+					</p>
+					{#if storageSettingsLoading}
+						<p class="m-0 text-sm text-(--muted)" role="status">Loading storage settings…</p>
+					{:else if storageSettingsError && !storageSettings}
+						<p class="m-0 text-sm text-(--danger)" role="alert">{storageSettingsError}</p>
+						<Button text="Retry" variant="secondary" class="mt-3" onclick={loadStorageSettings} />
+					{:else if storageSettings}
+						<form class="grid gap-1" onsubmit={saveStorageSettings}>
+							<InputField
+								label="Storage limit in GB"
+								name="storage_gb"
+								type="number"
+								min="0"
+								step="1"
+								required
+								value={String(Math.floor(storageSettings.maxStorageBytes / 1073741824))}
+								description="Use 0 for unlimited."
+							/>
+							<S3StorageFields
+								required
+								showCredentialStatus
+								secretConfigured={storageSettings.s3SecretAccessKeyConfigured}
+								sessionTokenConfigured={storageSettings.s3SessionTokenConfigured}
+								allowClearSessionToken
+								values={{
+									endpoint: storageSettings.s3Endpoint,
+									bucket: storageSettings.s3Bucket,
+									region: storageSettings.s3Region,
+									accessKeyID: storageSettings.s3AccessKeyID,
+									usePathStyle: storageSettings.s3UsePathStyle,
+								}}
+							/>
+							{#if storageSettingsError}
+								<p class="m-0 text-sm text-(--danger)" role="alert">{storageSettingsError}</p>
+							{/if}
+							<Button
+								text="Save storage settings"
+								busyText="Saving…"
+								busy={savingStorageSettings}
+								variant="primary"
+								type="submit"
+								class="justify-self-start"
+							/>
+						</form>
+					{/if}
+				</div>
 				<div
 					class="flex flex-col gap-4 border-b border-(--border-soft) py-4 min-[640px]:flex-row min-[640px]:items-center min-[640px]:justify-between"
 				>

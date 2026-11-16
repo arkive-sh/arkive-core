@@ -29,6 +29,8 @@ func TestProtectedAPIRoutesRejectRequestsWithoutASession(t *testing.T) {
 	}{
 		{http.MethodGet, "/api/me"},
 		{http.MethodGet, "/api/settings/storage-usage"},
+		{http.MethodGet, "/api/settings/storage"},
+		{http.MethodPut, "/api/settings/storage"},
 		{http.MethodPost, "/api/search"},
 		{http.MethodPost, "/api/uploads/start"},
 		{http.MethodGet, "/api/files/11111111-1111-4111-8111-111111111111/record"},

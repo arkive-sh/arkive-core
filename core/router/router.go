@@ -79,6 +79,8 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 	{
 		api.GET("/me", middleware.RequireSessionJSON(authService), handlers.APIMe(authService))
 		api.GET("/settings/storage-usage", middleware.RequireSessionJSON(authService), handlers.APIStorageUsage(settingsService))
+		api.GET("/settings/storage", middleware.RequireSessionJSON(authService), handlers.APIStorageSettings(settingsService))
+		api.PUT("/settings/storage", middleware.RequireSessionJSON(authService), middleware.LimitBody(16<<10), handlers.APIUpdateStorageSettings(settingsService))
 		api.PUT("/settings/recovery-key", middleware.RequireSessionJSON(authService), middleware.LimitBody(16<<10), handlers.APIUpdateRecoveryKey(authService))
 		api.GET("/health", handlers.Health(db))
 		api.POST("/search", middleware.RequireSessionJSON(authService), handlers.APISearch(filesService, folderService))

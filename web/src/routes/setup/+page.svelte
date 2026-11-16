@@ -5,6 +5,7 @@
 	import { BadgeInfo, Database, LockKeyhole, Rocket, Server, ShieldAlert } from '@lucide/svelte';
 	import Button from '#lib/components/Button.svelte';
 	import InputField from '#lib/components/InputField.svelte';
+	import S3StorageFields from '#lib/components/S3StorageFields.svelte';
 	import SetupSection from '#lib/components/SetupSection.svelte';
 	import { api, type APIErrorResponse } from '#lib/api.ts';
 	import { opaqueAuth } from '#lib/opaque-auth.ts';
@@ -308,41 +309,7 @@
 						/>
 						<div class="rounded border border-(--border-soft) bg-(--surface) p-3.5">
 							<div class="mb-3 text-sm font-medium text-(--text)">S3-compatible storage</div>
-							<div class="grid grid-cols-2 gap-4 max-[760px]:grid-cols-1">
-								<div class="col-span-2 max-[760px]:col-span-1">
-									<InputField
-										label="Endpoint URL"
-										name="s3_endpoint"
-										placeholder="https://s3.region.amazonaws.com"
-										helperText={fieldErrors.s3_endpoint}
-									/>
-								</div>
-								<InputField
-									label="Bucket name"
-									name="s3_bucket"
-									placeholder="arkive-vault-01"
-									helperText={fieldErrors.s3_bucket}
-								/>
-								<InputField label="Region" name="s3_region" placeholder="us-east-1" value="auto" />
-								<InputField
-									label="Access key"
-									name="s3_access_key_id"
-									helperText={fieldErrors.s3_access_key_id}
-								/>
-								<InputField
-									label="Secret key"
-									name="s3_secret_access_key"
-									type="password"
-									helperText={fieldErrors.s3_secret_access_key}
-								/>
-								<InputField label="Session token" name="s3_session_token" type="password" />
-							</div>
-							<label
-								class="mt-1 inline-flex cursor-pointer items-center gap-2.5 text-[13px] leading-5 text-(--muted)"
-							>
-								<input class="accent-(--accent)" type="checkbox" name="s3_use_path_style" />
-								<span>Use path-style addressing</span>
-							</label>
+							<S3StorageFields errors={fieldErrors} />
 						</div>
 					</div>
 				</SetupSection>

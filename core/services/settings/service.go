@@ -27,6 +27,7 @@ type StorageInput struct {
 	S3AccessKeyID     string
 	S3SecretAccessKey string
 	S3SessionToken    string
+	ClearSessionToken bool
 	S3Bucket          string
 	S3Endpoint        string
 	S3Region          string
@@ -55,6 +56,45 @@ func (s *Service) StorageUsage(ctx context.Context, userID string) (models.Stora
 		ReservedBytes:   reservedBytes,
 		MaxStorageBytes: storage.MaxStorageBytes,
 	}, nil
+}
+
+func (s *Service) StorageSettings(ctx context.Context) (models.StorageSettings, error) {
+	return s.settingsRepo.GetStorageSettings(ctx, s.db)
+}
+
+func (s *Service) UpdateStorageSettings(ctx context.Context, input StorageInput) (models.StorageSettings, validation.Errors, error) {
+	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return models.StorageSettings{}, nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	current, err := s.settingsRepo.GetStorageSettings(ctx, tx)
+	if err != nil {
+		return models.StorageSettings{}, nil, err
+	}
+	settings, validationErrors := BuildStorageSettings(input)
+	if strings.TrimSpace(input.S3SecretAccessKey) == "" {
+		settings.S3SecretAccessKey = current.S3SecretAccessKey
+	}
+	if strings.TrimSpace(input.S3SessionToken) == "" {
+		if input.ClearSessionToken {
+			settings.S3SessionToken = ""
+		} else {
+			settings.S3SessionToken = current.S3SessionToken
+		}
+	}
+	ValidateStorageSettings(settings, validationErrors)
+	if validationErrors.HasAny() {
+		return models.StorageSettings{}, validationErrors, nil
+	}
+	if err := SaveStorageSettingsTx(ctx, tx, s.settingsRepo, settings); err != nil {
+		return models.StorageSettings{}, nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return models.StorageSettings{}, nil, err
+	}
+	return settings, nil, nil
 }
 
 func SaveStorageSettingsTx(ctx context.Context, tx pgx.Tx, settingsRepo *settingsrepo.Repository, settings models.StorageSettings) error {
