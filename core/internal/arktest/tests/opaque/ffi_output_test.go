@@ -1,33 +1,15 @@
-package opaque
+package opaque_test
 
 import (
+	"arkive/core/internal/arktest"
+	. "arkive/core/opaque"
 	"errors"
-	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestMain(m *testing.M) {
-	library, err := os.ReadFile(filepath.Join("../../rust/opaque-ffi/target/release", libraryName()))
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	executable, err := os.Executable()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	if err := os.WriteFile(filepath.Join(filepath.Dir(executable), libraryName()), library, 0o600); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	os.Exit(m.Run())
-}
-
 func TestFFIErrorCodesAndRustOwnedOutput(t *testing.T) {
+	arktest.InstallOpaqueLibrary(t)
 	setupBuffer, err := GenerateSetup()
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +48,7 @@ func TestFFIErrorCodesAndRustOwnedOutput(t *testing.T) {
 		t.Fatalf("login request error = %v, want code %s", err, ErrorInvalidMessage)
 	}
 
-	_, err = FinishRegistration(make([]byte, rustLimits.message+1))
+	_, err = FinishRegistration(make([]byte, 3073))
 	if !errors.As(err, &ffiErr) || ffiErr.Code != ErrorInvalidInput {
 		t.Fatalf("oversized registration upload error = %v, want code %s", err, ErrorInvalidInput)
 	}

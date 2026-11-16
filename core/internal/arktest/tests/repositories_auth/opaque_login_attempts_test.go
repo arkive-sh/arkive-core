@@ -1,78 +1,45 @@
-package authrepo
+//go:build integration
+
+package authrepo_test
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
+
+	"arkive/core/internal/arktest"
+	authrepo "arkive/core/repositories/auth"
 )
 
-func TestOpaqueLoginAttemptsAreBoundOneTimeAndExpire(t *testing.T) {
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("set TEST_DATABASE_URL to run the isolated PostgreSQL login-attempt test")
-	}
-
+func TestConsumeOpaqueLoginAttemptEnforcesBindingExpiryAndSingleUse(t *testing.T) {
+	env := arktest.NewEnvironment(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	admin, err := pgx.Connect(ctx, dsn)
+	user, err := arktest.CreateVerifiedUser(ctx, env.DB, "Test User", "authtest", "authtest@example.test", []byte("registration"), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	schema := fmt.Sprintf("opaque_attempt_test_%d", time.Now().UnixNano())
-	quotedSchema := pgx.Identifier{schema}.Sanitize()
-	if _, err := admin.Exec(ctx, "CREATE SCHEMA "+quotedSchema); err != nil {
-		_ = admin.Close(context.Background())
-		t.Fatal(err)
-	}
-	var pool *pgxpool.Pool
-	defer func() {
-		if pool != nil {
-			pool.Close()
-		}
-		_, _ = admin.Exec(context.Background(), "DROP SCHEMA "+quotedSchema+" CASCADE")
-		_ = admin.Close(context.Background())
-	}()
-	config, err := pgxpool.ParseConfig(dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	config.ConnConfig.RuntimeParams["search_path"] = schema
-	config.MaxConns = 4
-	pool, err = pgxpool.NewWithConfig(ctx, config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := pool.Exec(ctx, `CREATE TABLE opaque_login_attempts (
-		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-		user_id UUID,
-		server_state BYTEA NOT NULL,
-		expires_at TIMESTAMPTZ NOT NULL
-	)`); err != nil {
-		t.Fatal(err)
-	}
+	userID := user.ID
 
-	repo := New()
-	userID := "11111111-1111-1111-1111-111111111111"
+	repo := authrepo.New()
 	attemptNumber := 0
 	create := func(expiresAt time.Time) string {
 		t.Helper()
 		attemptNumber++
 		id := fmt.Sprintf("00000000-0000-4000-8000-%012d", attemptNumber)
-		if err := repo.CreateOpaqueLoginAttempt(ctx, pool, id, &userID, []byte("opaque-state"), expiresAt); err != nil {
+		if err := repo.CreateOpaqueLoginAttempt(ctx, env.DB, id, &userID, []byte("opaque-state"), expiresAt); err != nil {
 			t.Fatal(err)
 		}
 		return id
 	}
 
 	id := create(time.Now().Add(time.Minute))
-	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
+	tx, err := env.DB.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +55,7 @@ func TestOpaqueLoginAttemptsAreBoundOneTimeAndExpire(t *testing.T) {
 	if err := tx.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
-	tx, err = pool.BeginTx(ctx, pgx.TxOptions{})
+	tx, err = env.DB.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +66,7 @@ func TestOpaqueLoginAttemptsAreBoundOneTimeAndExpire(t *testing.T) {
 	}
 
 	id = create(time.Now().Add(-time.Minute))
-	tx, err = pool.BeginTx(ctx, pgx.TxOptions{})
+	tx, err = env.DB.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +83,7 @@ func TestOpaqueLoginAttemptsAreBoundOneTimeAndExpire(t *testing.T) {
 	ready.Add(2)
 	for range 2 {
 		go func() {
-			tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
+			tx, err := env.DB.BeginTx(ctx, pgx.TxOptions{})
 			ready.Done()
 			if err != nil {
 				results <- err
