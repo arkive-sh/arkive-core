@@ -9,7 +9,7 @@ import (
 )
 
 const encryptedChunkEnvelopeOverheadBytes int64 = 29
-const thumbnailMaxEncryptedBytes int64 = 150 * 1024
+const thumbnailMaxEncryptedBytes int64 = 200 * 1024
 const maxS3MultipartParts = 10_000
 
 func s3PartNumber(partNumber int) (int32, error) {

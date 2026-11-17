@@ -95,7 +95,7 @@ workerScope.addEventListener('message', async (event: MessageEvent<DecodeRequest
 		context.drawImage(resized, 0, 0);
 		const blob = await canvas.convertToBlob({
 			type: 'image/webp',
-			quality: event.data.maxDimension ? 0.7 : 0.9,
+			quality: event.data.maxDimension ? 0.85 : 0.9,
 		});
 		workerScope.postMessage({
 			ok: true,

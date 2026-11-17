@@ -23,7 +23,7 @@ import (
 
 const uploadTestEncryptedSize int64 = 34
 const encryptedChunkEnvelopeOverheadBytes int64 = 29
-const testThumbnailMaxEncryptedBytes int64 = 150 * 1024
+const testThumbnailMaxEncryptedBytes int64 = 200 * 1024
 
 func reservedUploadSize(encryptedSize int64) int64 {
 	if encryptedSize == 0 {

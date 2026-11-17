@@ -9,7 +9,7 @@ import { decodeHeicImage } from '#lib/utils/heic.ts';
 import type { PdfRangeSource } from '#lib/pdf/range-transport.ts';
 
 const MAX_DIMENSION = 320;
-const WEBP_QUALITY = 0.7;
+const WEBP_QUALITY = 0.85;
 const VIDEO_FRAME_SECONDS = 1;
 const VIDEO_FRAME_DURATION_RATIO = 0.1;
 const LONG_VIDEO_SECONDS = 30 * 60;
@@ -116,6 +116,7 @@ async function renderCanvasThumbnail(
 	const context = canvas.getContext('2d', { alpha: false });
 
 	if (!context) return null;
+	context.imageSmoothingQuality = 'high';
 	draw(context);
 	const blob = await canvasToWebP(canvas);
 	throwIfAborted(signal);
