@@ -3,6 +3,7 @@
 	import { ChevronRight, Folder } from '@lucide/svelte';
 	import FileTypeIcon from './FileTypeIcon.svelte';
 	import InfiniteScrollSentinel from './InfiniteScrollSentinel.svelte';
+	import Skeleton from './Skeleton.svelte';
 	import FolderTreeNode from './FolderTreeNode.svelte';
 	import type { FileManagerEntry } from '../../routes/(app)/files/types';
 	import type { FolderTreeSource } from './folder-tree.svelte';
@@ -34,6 +35,7 @@
 	}: Props = $props();
 	let expanded = $state(false);
 	let children = $state<FileManagerEntry[]>([]);
+	let decrypting = $state(false);
 	let decryptGeneration = 0;
 	const parentFolderId = $derived(folder?.id ?? rootFolderId);
 	const branchExpanded = $derived(folder === null || expanded);
@@ -54,13 +56,21 @@
 
 		if (!enabled || !branchExpanded) {
 			children = [];
+			decrypting = false;
 
 			return;
 		}
 
+		decrypting = pages.length > 0;
 		void Promise.all(pages.map((page) => source.decryptPage(page.payload, parentFolderId))).then(
 			(decryptedPages) => {
-				if (generation === decryptGeneration && enabled) children = decryptedPages.flat();
+				if (generation === decryptGeneration && enabled) {
+					children = decryptedPages.flat();
+					decrypting = false;
+				}
+			},
+			() => {
+				if (generation === decryptGeneration) decrypting = false;
 			},
 		);
 	});
@@ -103,9 +113,19 @@
 
 {#if branchExpanded}
 	<div class="grid gap-0.5">
-		{#if query.isPending}
-			<div class="py-1 text-xs text-(--muted)" style:padding-left={`${depth * 16 + 28}px`}>
-				Loading items…
+		{#if query.isPending || (decrypting && !children.length)}
+			<div
+				class="grid gap-2 py-2"
+				style:padding-left={`${depth * 16 + 28}px`}
+				role="status"
+				aria-label="Loading folder items"
+			>
+				{#each Array.from({ length: 3 }).keys() as index (index)}
+					<div class="flex h-5 items-center gap-2">
+						<Skeleton className="size-4 shrink-0" />
+						<Skeleton className="h-3 w-24" />
+					</div>
+				{/each}
 			</div>
 		{:else if query.isError}
 			<button
@@ -162,11 +182,13 @@
 				>
 			{:else if query.isFetchingNextPage}
 				<div
-					class="py-1 text-xs text-(--muted)"
+					class="flex h-7 items-center gap-2 py-1"
 					style:padding-left={`${depth * 16 + 28}px`}
 					role="status"
+					aria-label="Loading more folder items"
 				>
-					Loading more…
+					<Skeleton className="size-4 shrink-0" />
+					<Skeleton className="h-3 w-20" />
 				</div>
 			{:else}
 				<InfiniteScrollSentinel

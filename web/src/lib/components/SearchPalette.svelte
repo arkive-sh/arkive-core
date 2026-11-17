@@ -5,6 +5,7 @@
 	import { resolve } from '$app/paths';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { Folder, Search } from '@lucide/svelte';
+	import Skeleton from '#lib/components/Skeleton.svelte';
 	import Modal from '#lib/components/Modal.svelte';
 	import { api } from '#lib/api.ts';
 	import { getCachedThumbnail } from '#lib/thumbnail-cache.ts';
@@ -597,9 +598,19 @@
 				</div>
 			</section>
 		{/if}
-		{#if loading}<div class="px-3.5 py-3 text-[13px] leading-4.5 text-[#9eb8ce]">
-				Searching...
-			</div>{/if}
+		{#if loading}
+			<div class="grid gap-2 px-3.5 py-3" role="status" aria-label="Searching files and folders">
+				{#each Array.from({ length: 3 }).keys() as index (index)}
+					<div class="flex items-center gap-3.5 py-2">
+						<Skeleton className="size-8 shrink-0" />
+						<div class="grid flex-1 gap-2">
+							<Skeleton className="h-4 w-1/3" />
+							<Skeleton className="h-3 w-1/4" />
+						</div>
+					</div>
+				{/each}
+			</div>
+		{/if}
 		{#if hasSearched && !loading && !hasSearchScope}<div
 				class="px-3.5 py-3 text-[13px] leading-4.5 text-(--muted)"
 			>

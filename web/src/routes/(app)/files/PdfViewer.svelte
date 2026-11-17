@@ -13,6 +13,7 @@
 		ZoomOut,
 	} from '@lucide/svelte';
 	import ExternalLinkWarning from './ExternalLinkWarning.svelte';
+	import Skeleton from '#lib/components/Skeleton.svelte';
 	import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 	import 'pdfjs-dist/web/pdf_viewer.css';
 	import { DecryptedFileReader } from '#lib/vault/read-file.ts';
@@ -417,12 +418,21 @@
 		<div class="pdf-scroll" bind:this={scrollContainer}>
 			<div class="pdfViewer" bind:this={pageElement}></div>
 		</div>
-		{#if status}<div
-				class="absolute inset-0 grid place-items-center bg-(--bg) text-(--muted)"
+		{#if status}
+			<div
+				class="absolute inset-0 grid place-items-center bg-(--bg)"
 				role="status"
+				aria-label={status}
 			>
-				{status}
-			</div>{/if}
+				<div class="grid w-[min(80vw,48rem)] content-center gap-5 px-8">
+					<Skeleton className="h-5 w-1/3" />
+					<Skeleton className="h-3 w-full" />
+					<Skeleton className="h-3 w-5/6" />
+					<Skeleton className="h-3 w-4/5" />
+					<Skeleton className="mt-5 h-40 w-full" />
+				</div>
+			</div>
+		{/if}
 		{#if error}<div
 				class="absolute inset-0 grid place-items-center bg-(--bg) p-6 text-center text-red-400"
 				role="alert"

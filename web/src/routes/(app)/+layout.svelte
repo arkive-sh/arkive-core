@@ -101,8 +101,12 @@
 	}
 
 	$effect(() => {
-		if (vaultReady && !$vaultUnlocked && page.url.pathname !== '/lock') {
+		if (!vaultReady) return;
+
+		if (!$vaultUnlocked && page.url.pathname !== '/lock') {
 			void goto(resolve('/(app)/lock'), { replace: true });
+		} else if ($vaultUnlocked && page.url.pathname === '/lock') {
+			void goto(resolve('/(app)'), { replace: true });
 		}
 	});
 
@@ -189,6 +193,8 @@
 		class={`min-h-[calc(100vh-56px)] overflow-x-clip print:ml-0! print:min-h-0! print:overflow-visible! ${sidebarTransitioning ? 'transition-[margin-left] duration-240 ease-[ease]' : ''} ${desktopOpen ? 'min-[961px]:ml-(--sidebar-width)' : ''}`}
 		id="main-content"
 	>
-		{@render children()}
+		{#if vaultReady && (($vaultUnlocked && page.url.pathname !== '/lock') || (!$vaultUnlocked && page.url.pathname === '/lock'))}
+			{@render children()}
+		{/if}
 	</main>
 </div>

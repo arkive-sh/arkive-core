@@ -6,6 +6,7 @@
 	import { Pencil, X } from '@lucide/svelte';
 	import Modal from '#lib/components/Modal.svelte';
 	import FileTypeIcon from '#lib/components/FileTypeIcon.svelte';
+	import Skeleton from '#lib/components/Skeleton.svelte';
 	import {
 		useTransferManager,
 		type UploadItem,
@@ -655,12 +656,20 @@
 				<h2 class="m-0 min-w-0 truncate text-base font-semibold">
 					{entry ? entry.name : 'New text file'}
 				</h2>
-				<p class="m-0 shrink-0 text-xs whitespace-nowrap text-(--muted)">
-					{loading
-						? totalPlaintextSize === null
-							? 'Loading…'
-							: `${formatBytes(loadedPlaintextBytes)} of ${formatBytes(totalPlaintextSize)} loaded`
-						: `${formatBytes(textSize)} · ${lines.length.toLocaleString()} lines`}
+				<p
+					class="m-0 shrink-0 text-xs whitespace-nowrap text-(--muted)"
+					role={loading ? 'status' : undefined}
+				>
+					{#if loading}
+						<span class="sr-only">
+							{totalPlaintextSize === null
+								? 'Decrypting text file'
+								: `Decrypting ${formatBytes(loadedPlaintextBytes)} of ${formatBytes(totalPlaintextSize)}`}
+						</span>
+						<Skeleton className="inline-block h-3 w-16 align-middle" />
+					{:else}
+						{formatBytes(textSize)} · {lines.length.toLocaleString()} lines
+					{/if}
 				</p>
 			</div>
 			{#if entry && !readOnly && !editing && !errorMessage && !loading}
@@ -759,12 +768,13 @@
 				{errorMessage}
 			</p>{/if}
 		{#if lines.length}
-			{#if loading}<p
-					class="m-0 border-b border-(--border) px-4 py-2 text-xs text-(--muted)"
+			{#if loading}<div
+					class="border-b border-(--border) px-4 py-2"
 					role="status"
+					aria-label="Decrypting text"
 				>
-					Loading and decrypting text. You can read the lines loaded so far.
-				</p>{/if}
+					<Skeleton className="h-1 w-28" />
+				</div>{/if}
 			<!-- eslint-disable-next-line svelte/no-unused-svelte-ignore -->
 			<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions: the virtual text region needs focus and keyboard handlers for document-level selection. -->
 			<div
@@ -810,8 +820,19 @@
 				</div>
 			</div>
 		{:else if loading}
-			<div class="grid flex-1 place-items-center text-sm text-(--muted)" role="status">
-				Decrypting text file…
+			<div
+				class="grid flex-1 content-start gap-3 px-4 py-4"
+				role="status"
+				aria-label="Decrypting text file"
+			>
+				{#each Array.from({ length: 14 }).keys() as index (index)}
+					<div class="flex items-center gap-3">
+						<Skeleton className="h-3 w-7 shrink-0" />
+						<Skeleton
+							className={`h-3 ${index % 4 === 0 ? 'w-2/3' : index % 3 === 0 ? 'w-1/2' : 'w-5/6'}`}
+						/>
+					</div>
+				{/each}
 			</div>
 		{:else if !errorMessage}
 			<div class="grid flex-1 place-items-center text-sm text-(--muted)">

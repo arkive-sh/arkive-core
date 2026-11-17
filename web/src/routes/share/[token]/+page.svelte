@@ -29,6 +29,7 @@
 	import MediaViewer from '../../(app)/files/MediaViewer.svelte';
 	import PdfViewer from '../../(app)/files/PdfViewer.svelte';
 	import TextFileEditor from '../../(app)/files/TextFileEditor.svelte';
+	import Skeleton from '#lib/components/Skeleton.svelte';
 
 	type PublicFileShareRecord = {
 		itemType: 'file';
@@ -408,10 +409,20 @@
 	<div class="mx-auto flex w-full max-w-[1296px] flex-col" class:min-h-dvh={folderShare !== null}>
 		{#if loading}
 			<section
-				class="grid min-h-80 place-items-center rounded-lg border border-[#30363d] bg-[#161b22] p-8 text-center text-[#87929a]"
+				class="grid min-h-[calc(100dvh-3rem)] content-center gap-5 px-3 py-8"
 				role="status"
+				aria-label="Opening shared file"
 			>
-				Opening shared file…
+				<div class="flex items-center gap-3">
+					<Skeleton className="size-6" />
+					<Skeleton className="h-6 w-52 max-w-[45%]" />
+					<Skeleton className="ml-auto h-4 w-20" />
+				</div>
+				<div class="grid min-h-[55vh] place-content-center justify-items-center gap-3">
+					<Skeleton className="size-8 rounded-full" />
+					<Skeleton className="h-6 w-44 max-w-[80vw]" />
+					<Skeleton className="h-4 w-64 max-w-[80vw]" />
+				</div>
 			</section>
 		{:else if passwordRequired}
 			<section class="grid min-h-[calc(100dvh-3rem)] place-items-center px-3 py-8">

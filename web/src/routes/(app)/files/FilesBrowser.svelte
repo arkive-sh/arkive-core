@@ -10,6 +10,7 @@
 		X,
 	} from '@lucide/svelte';
 	import Breadcrumbs from '#lib/components/Breadcrumbs.svelte';
+	import EntryLoadingSkeleton from '#lib/components/EntryLoadingSkeleton.svelte';
 	import InfiniteScrollSentinel from '#lib/components/InfiniteScrollSentinel.svelte';
 	import FilesGridView from './FilesGridView.svelte';
 	import FilesListView from './FilesListView.svelte';
@@ -272,9 +273,7 @@
 				Unlock the vault from the header to view your files.
 			</section>
 		{:else if query.isPending}
-			<section class="border-b border-(--border-soft) py-8 text-(--muted)" role="status">
-				Loading files…
-			</section>
+			<EntryLoadingSkeleton view={viewMode} {tileSize} />
 		{:else if query.isError && !query.data}
 			<section class="border-b border-(--border-soft) py-8 text-red-400" role="alert">
 				{query.error instanceof Error ? query.error.message : 'Could not load files.'}
@@ -287,9 +286,7 @@
 					oncontextmenu={onShowBackgroundContextMenu}
 				>
 					{#if !entriesReady}
-						<div class="border-b border-(--border-soft) py-8 text-(--muted)" role="status">
-							Decrypting file details…
-						</div>
+						<EntryLoadingSkeleton view={viewMode} {tileSize} />
 					{:else if viewMode === 'grid'}
 						<FilesGridView
 							rows={displayedRows}
@@ -372,7 +369,7 @@
 									onclick={() => void query.fetchNextPage()}>Retry</button
 								>
 							{:else if query.isFetchingNextPage}
-								<p class="m-0" role="status">Loading more…</p>
+								<EntryLoadingSkeleton view={viewMode} count={3} {tileSize} />
 							{:else}
 								<InfiniteScrollSentinel
 									enabled={query.hasNextPage && !query.isFetching}

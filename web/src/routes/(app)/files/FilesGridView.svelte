@@ -4,6 +4,7 @@
 	import { Folder, Share2 } from '@lucide/svelte';
 	import { createWindowVirtualizer } from '@tanstack/svelte-virtual';
 	import { get } from 'svelte/store';
+	import Skeleton from '#lib/components/Skeleton.svelte';
 	import { formatBytes } from '#lib/utils/format.ts';
 	import FileTypeIcon from '#lib/components/FileTypeIcon.svelte';
 	import InlineNameInput from './InlineNameInput.svelte';
@@ -480,6 +481,14 @@
 											loading="lazy"
 											decoding="async"
 										/>
+									</div>
+								{:else if entry.thumbnail && pendingIds.has(entry.id)}
+									<div
+										class="grid w-full place-items-center overflow-hidden"
+										style={`height: ${entryIconSize + 32}px`}
+										aria-hidden="true"
+									>
+										<Skeleton className="h-16 w-20 rounded-md" />
 									</div>
 								{:else}
 									<div

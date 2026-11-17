@@ -5,6 +5,7 @@
 	import { Copy, Download, ExternalLink, Eye, EyeOff, Folder, Settings, X } from '@lucide/svelte';
 	import axios from 'axios';
 	import { api } from '#lib/api.ts';
+	import EntryLoadingSkeleton from '#lib/components/EntryLoadingSkeleton.svelte';
 	import FileTypeIcon from '#lib/components/FileTypeIcon.svelte';
 	import Tooltip from '#lib/components/Tooltip.svelte';
 	import { decryptShareURL } from '#lib/share-link.ts';
@@ -274,7 +275,7 @@
 <div class="mx-auto grid w-full max-w-6xl content-start gap-4 p-4 sm:p-6">
 	<section class="overflow-hidden">
 		{#if loading}
-			<p class="m-0 p-5 text-sm text-(--muted)" role="status">Loading shared links…</p>
+			<EntryLoadingSkeleton view="list" count={6} />
 		{:else if error}
 			<div class="flex flex-wrap items-center justify-between gap-3 p-5">
 				<p class="m-0 text-sm text-red-400" role="alert">{error}</p>

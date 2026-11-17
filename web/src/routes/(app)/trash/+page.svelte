@@ -7,6 +7,7 @@
 	import { ListChecks, RotateCcw, Trash2, X } from '@lucide/svelte';
 	import { api } from '#lib/api.ts';
 	import Breadcrumbs from '#lib/components/Breadcrumbs.svelte';
+	import EntryLoadingSkeleton from '#lib/components/EntryLoadingSkeleton.svelte';
 	import InfiniteScrollSentinel from '#lib/components/InfiniteScrollSentinel.svelte';
 	import FileEntryContextMenu from '../files/FileEntryContextMenu.svelte';
 	import FilesGridView from '../files/FilesGridView.svelte';
@@ -545,17 +546,13 @@
 				Unlock the vault from the header to view Trash.
 			</section>
 		{:else if query.isPending}
-			<section class="border-b border-(--border-soft) py-8 text-(--muted)" role="status">
-				Loading Trash…
-			</section>
+			<EntryLoadingSkeleton view={viewMode} {tileSize} />
 		{:else if query.isError && !query.data}
 			<section class="border-b border-(--border-soft) py-8 text-red-400" role="alert">
 				{query.error instanceof Error ? query.error.message : 'Could not load Trash.'}
 			</section>
 		{:else if !entriesReady}
-			<section class="border-b border-(--border-soft) py-8 text-(--muted)" role="status">
-				Decrypting Trash entries…
-			</section>
+			<EntryLoadingSkeleton view={viewMode} {tileSize} />
 		{:else}
 			<section class="min-w-0" aria-label="Trash entries">
 				{#if entries.length === 0}
@@ -635,7 +632,7 @@
 								onclick={() => void query.fetchNextPage()}>Retry</button
 							>
 						{:else if query.isFetchingNextPage}
-							<p class="m-0" role="status">Loading more…</p>
+							<EntryLoadingSkeleton view={viewMode} count={3} {tileSize} />
 						{:else}
 							<InfiniteScrollSentinel
 								enabled={query.hasNextPage && !query.isFetching}

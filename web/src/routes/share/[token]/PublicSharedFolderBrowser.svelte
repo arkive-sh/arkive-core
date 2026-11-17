@@ -3,6 +3,7 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { Folder, LayoutGrid, LayoutList } from '@lucide/svelte';
 	import { api } from '#lib/api.ts';
+	import EntryLoadingSkeleton from '#lib/components/EntryLoadingSkeleton.svelte';
 	import FolderTree from '#lib/components/FolderTree.svelte';
 	import InfiniteScrollSentinel from '#lib/components/InfiniteScrollSentinel.svelte';
 	import SidebarResizeHandle from '#lib/components/SidebarResizeHandle.svelte';
@@ -324,7 +325,7 @@
 		</aside>
 		<div class="flex min-h-0 min-w-0 flex-col">
 			{#if folderEntries.length === 0 && folderLoading}
-				<p class="py-8 text-center text-[#87929a]" role="status">Loading folder…</p>
+				<EntryLoadingSkeleton view={folderView} tileSize={200} />
 			{:else if folderView === 'grid'}
 				<FilesGridView
 					rows={folderEntries}
@@ -364,22 +365,24 @@
 				/>
 			{/if}
 			{#if folderCursor}
-				<div class="flex justify-center border-t border-[#30363d] py-4">
-					{#if error}
+				{#if error}
+					<div class="flex justify-center border-t border-[#30363d] py-4">
 						<button
 							class="cursor-pointer rounded border border-[#30363d] bg-transparent px-4 py-2 text-[#dee3e8]"
 							type="button"
 							onclick={loadMore}>Retry loading items</button
 						>
-					{:else if folderLoading}
-						<p class="m-0 py-2 text-sm text-[#87929a]" role="status">Loading more…</p>
-					{:else}
+					</div>
+				{:else if folderLoading}
+					<EntryLoadingSkeleton view={folderView} count={3} tileSize={200} />
+				{:else}
+					<div class="flex justify-center border-t border-[#30363d] py-4">
 						<InfiniteScrollSentinel
 							enabled={Boolean(folderCursor) && !folderLoading && !error}
 							onLoad={loadMore}
 						/>
-					{/if}
-				</div>
+					</div>
+				{/if}
 			{/if}
 		</div>
 	</div>
