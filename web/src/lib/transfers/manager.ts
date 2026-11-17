@@ -77,6 +77,16 @@ export function useTransferManager(): TransferManager {
 	return manager;
 }
 
+export async function cancelAndClearTransfers(manager: TransferManager): Promise<void> {
+	const transferIDs = get(manager.state).jobs.map((job) => job.id);
+	manager.setOpen(false);
+	try {
+		await manager.cancelAll();
+	} finally {
+		manager.removeMany(transferIDs);
+	}
+}
+
 export function createTransferManager(): TransferManager {
 	// shortcut: transfers live for this tab, persist task data and server checkpoints before adding reload recovery.
 	const state = writable<TransferState>({ jobs: [], open: false });

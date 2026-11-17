@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { browser } from '$app/env';
+	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
 	import type { Snippet } from 'svelte';
@@ -13,6 +15,11 @@
 		defaultOptions: { queries: { enabled: browser, staleTime: 30_000 } },
 	});
 	const transferManager = createTransferManager();
+	const lockPath = resolve('/(app)/lock');
+	const loginPath = resolve('/login');
+	let hideTransferCenter = $derived(
+		page.url.pathname === lockPath || page.url.pathname === loginPath,
+	);
 	provideTransferManager(transferManager);
 
 	onMount(() => {
@@ -49,7 +56,9 @@
 		class="min-h-screen bg-(--bg) font-sans text-sm leading-5 text-(--text) antialiased print:bg-white print:text-black"
 	>
 		<div class="print:hidden"><ToastHost /></div>
-		<div class="print:hidden"><TransferCenter manager={transferManager} /></div>
+		{#if !hideTransferCenter}
+			<div class="print:hidden"><TransferCenter manager={transferManager} /></div>
+		{/if}
 		{@render children()}
 	</div>
 </QueryClientProvider>

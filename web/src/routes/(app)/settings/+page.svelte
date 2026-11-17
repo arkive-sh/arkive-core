@@ -12,6 +12,7 @@
 	import { formatBytes } from '#lib/utils/format.ts';
 	import { toast } from '#lib/toast.ts';
 	import { lockVault, setKeepVaultUnlocked, shouldKeepVaultUnlocked } from '#lib/vault/session.ts';
+	import { cancelAndClearTransfers, useTransferManager } from '#lib/transfers/manager.ts';
 	import { callVaultWorker } from '#lib/vault/worker-client.ts';
 	import type { PageProps } from './$types';
 
@@ -43,6 +44,7 @@
 	];
 
 	let { data }: PageProps = $props();
+	const transfers = useTransferManager();
 	let activeTab = $state<SettingsTab>('profile');
 	let storageUsage = $state<StorageUsage | null>(null);
 	let storageLoading = $state(true);
@@ -166,6 +168,11 @@
 	}
 
 	async function lockCurrentVault(): Promise<void> {
+		try {
+			await cancelAndClearTransfers(transfers);
+		} catch {
+			toast.error('Could not cancel active transfers.');
+		}
 		await lockVault();
 		await goto(resolve('/(app)/lock'));
 	}

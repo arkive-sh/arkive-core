@@ -6,6 +6,7 @@
 	import AppHeader from '#lib/components/AppHeader.svelte';
 	import AppSidebar from '#lib/components/AppSidebar.svelte';
 	import SearchPalette from '#lib/components/SearchPalette.svelte';
+	import { cancelAndClearTransfers, useTransferManager } from '#lib/transfers/manager.ts';
 	import { lockVault, waitUntilReady } from '#lib/vault/session.ts';
 	import { vaultUnlocked } from '#lib/vault/state.ts';
 	import { toast } from '#lib/toast.ts';
@@ -20,7 +21,11 @@
 	let searchOpen = $state(false);
 	let vaultReady = $state(false);
 	let sidebarTransitionTimer: ReturnType<typeof setTimeout> | undefined;
+	const transfers = useTransferManager();
 	const sidebarOpenStorageKey = 'arkive.sidebar.open';
+	const lockPath = resolve('/(app)/lock');
+	let isLockPage = $derived(page.url.pathname === lockPath);
+	let showAppChrome = $derived($vaultUnlocked && !isLockPage);
 	let searchInTrashPage = $derived(page.url.pathname === resolve('/(app)/trash'));
 	let searchFolderId = $derived(
 		page.url.pathname === resolve('/(app)') ? page.url.searchParams.get('folder_id') : null,
@@ -92,6 +97,11 @@
 	async function toggleVault(): Promise<void> {
 		if ($vaultUnlocked) {
 			try {
+				await cancelAndClearTransfers(transfers);
+			} catch {
+				toast.error('Could not cancel active transfers.');
+			}
+			try {
 				await lockVault();
 			} catch {
 				toast.error('Could not lock the vault.');
@@ -103,9 +113,9 @@
 	$effect(() => {
 		if (!vaultReady) return;
 
-		if (!$vaultUnlocked && page.url.pathname !== '/lock') {
-			void goto(resolve('/(app)/lock'), { replace: true });
-		} else if ($vaultUnlocked && page.url.pathname === '/lock') {
+		if (!$vaultUnlocked && !isLockPage) {
+			void goto(lockPath, { replace: true });
+		} else if ($vaultUnlocked && isLockPage) {
 			void goto(resolve('/(app)'), { replace: true });
 		}
 	});
@@ -152,48 +162,50 @@
 	class="min-h-screen overflow-x-clip bg-(--bg) print:min-h-0 print:bg-white"
 	style={`--sidebar-width:${sidebarWidth}px`}
 >
-	<AppHeader
-		{mobileView}
-		{mobileOpen}
-		{desktopOpen}
-		{sidebarTransitioning}
-		vaultUnlocked={$vaultUnlocked}
-		onToggleSidebar={toggleSidebar}
-		onToggleVault={toggleVault}
-		onOpenSearch={openSearch}
-	/>
-	<SearchPalette
-		open={searchOpen}
-		vaultUnlocked={$vaultUnlocked}
-		vaultId={data.user.id}
-		currentFolderId={searchFolderId}
-		inTrashPage={searchInTrashPage}
-		onOpen={openSearch}
-		onClose={closeSearch}
-	/>
-	<AppSidebar
-		currentPath={page.url.pathname}
-		currentFolderId={page.url.searchParams.get('folder_id')}
-		currentFileId={page.url.searchParams.get('focus_file')}
-		vaultId={data.user.id}
-		vaultUnlocked={$vaultUnlocked}
-		{mobileView}
-		{mobileOpen}
-		{desktopOpen}
-		{sidebarWidth}
-		onResize={updateSidebarWidth}
-		onOpenFolder={openFolder}
-		onOpenFile={openFile}
-		onOpenTrashFolder={openTrashFolder}
-		onOpenTrashFile={openTrashFile}
-		onClose={closeSidebar}
-		onNavigate={() => mobileView && setMobileOpen(false)}
-	/>
+	{#if showAppChrome}
+		<AppHeader
+			{mobileView}
+			{mobileOpen}
+			{desktopOpen}
+			{sidebarTransitioning}
+			vaultUnlocked={$vaultUnlocked}
+			onToggleSidebar={toggleSidebar}
+			onToggleVault={toggleVault}
+			onOpenSearch={openSearch}
+		/>
+		<SearchPalette
+			open={searchOpen}
+			vaultUnlocked={$vaultUnlocked}
+			vaultId={data.user.id}
+			currentFolderId={searchFolderId}
+			inTrashPage={searchInTrashPage}
+			onOpen={openSearch}
+			onClose={closeSearch}
+		/>
+		<AppSidebar
+			currentPath={page.url.pathname}
+			currentFolderId={page.url.searchParams.get('folder_id')}
+			currentFileId={page.url.searchParams.get('focus_file')}
+			vaultId={data.user.id}
+			vaultUnlocked={$vaultUnlocked}
+			{mobileView}
+			{mobileOpen}
+			{desktopOpen}
+			{sidebarWidth}
+			onResize={updateSidebarWidth}
+			onOpenFolder={openFolder}
+			onOpenFile={openFile}
+			onOpenTrashFolder={openTrashFolder}
+			onOpenTrashFile={openTrashFile}
+			onClose={closeSidebar}
+			onNavigate={() => mobileView && setMobileOpen(false)}
+		/>
+	{/if}
 	<main
-		class={`min-h-[calc(100vh-56px)] overflow-x-clip print:ml-0! print:min-h-0! print:overflow-visible! ${sidebarTransitioning ? 'transition-[margin-left] duration-240 ease-[ease]' : ''} ${desktopOpen ? 'min-[961px]:ml-(--sidebar-width)' : ''}`}
+		class={`${showAppChrome ? 'min-h-[calc(100vh-56px)]' : 'min-h-screen'} overflow-x-clip print:ml-0! print:min-h-0! print:overflow-visible! ${showAppChrome && sidebarTransitioning ? 'transition-[margin-left] duration-240 ease-[ease]' : ''} ${showAppChrome && desktopOpen ? 'min-[961px]:ml-(--sidebar-width)' : ''}`}
 		id="main-content"
 	>
-		{#if vaultReady && (($vaultUnlocked && page.url.pathname !== '/lock') || (!$vaultUnlocked && page.url.pathname === '/lock'))}
+		{#if vaultReady && (($vaultUnlocked && !isLockPage) || (!$vaultUnlocked && isLockPage))}
 			{@render children()}
 		{/if}
 	</main>

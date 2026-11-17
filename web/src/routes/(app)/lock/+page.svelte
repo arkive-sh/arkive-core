@@ -5,6 +5,7 @@
 	import { LockKeyhole } from '@lucide/svelte';
 	import Button from '#lib/components/Button.svelte';
 	import InputField from '#lib/components/InputField.svelte';
+	import LogoutButton from '#lib/components/LogoutButton.svelte';
 	import { loginAndUnlock } from '#lib/auth.ts';
 	import { vaultUnlocked } from '#lib/vault/state.ts';
 	import type { PageProps } from './$types';
@@ -41,12 +42,13 @@
 	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
-<section class="mx-auto grid min-h-[calc(100vh-56px)] max-w-md content-center px-4 py-10">
-	<div class="rounded-lg border border-(--border) bg-(--surface-raised) p-6 min-[640px]:p-8">
-		<div
-			class="mb-5 flex size-12 items-center justify-center rounded-md bg-(--surface-highest) text-(--accent-cool)"
-		>
-			<LockKeyhole class="size-6" aria-hidden="true" />
+<section class="relative grid min-h-screen place-items-center px-4 py-10">
+	<div class="absolute top-5 right-5">
+		<LogoutButton side="left" />
+	</div>
+	<div class="w-full max-w-md">
+		<div class="mb-5 flex size-12 items-center justify-center text-(--accent-cool)">
+			<LockKeyhole class="size-7" aria-hidden="true" />
 		</div>
 		<h1 class="m-0 text-2xl leading-8 font-semibold text-(--text)">Unlock your vault</h1>
 		<p class="mt-2 mb-6 text-sm leading-5 text-(--muted)">

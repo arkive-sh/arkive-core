@@ -1,16 +1,10 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { useQueryClient } from '@tanstack/svelte-query';
-	import { get } from 'svelte/store';
-	import { ChevronRight, FolderOpen, LogOut, Settings, Share2, Trash2, X } from '@lucide/svelte';
-	import { logoutAndLock } from '#lib/auth.ts';
+	import { ChevronRight, FolderOpen, Settings, Share2, Trash2, X } from '@lucide/svelte';
 	import FolderTree from './FolderTree.svelte';
 	import SidebarResizeHandle from './SidebarResizeHandle.svelte';
-	import Tooltip from './Tooltip.svelte';
+	import LogoutButton from './LogoutButton.svelte';
 	import { createFilesFolderTreeSource, createTrashFolderTreeSource } from './folder-tree.svelte';
-	import { useTransferManager } from '#lib/transfers/manager.ts';
-	import { toast } from '#lib/toast.ts';
 	import type { FileManagerEntry } from '../../routes/(app)/files/types';
 
 	type Props = {
@@ -52,10 +46,7 @@
 	}: Props = $props();
 	let folderTreeOpen = $state(true);
 	let trashTreeOpen = $state(true);
-	let loggingOut = $state(false);
 	const navigation = [{ route: '/(app)/shares', label: 'Shares', icon: Share2 }] as const;
-	const transfers = useTransferManager();
-	const queryClient = useQueryClient();
 	const filesHref = resolve('/(app)');
 	const trashHref = resolve('/(app)/trash');
 	const settingsHref = resolve('/(app)/settings');
@@ -86,30 +77,6 @@
 	function openTrashFile(entry: FileManagerEntry) {
 		onOpenTrashFile(entry.id, entry.parentFolderId ?? null);
 		onNavigate();
-	}
-
-	async function logout(): Promise<void> {
-		if (loggingOut) return;
-		loggingOut = true;
-		queryClient.clear();
-		const transferIDs = get(transfers.state).jobs.map((job) => job.id);
-		const clearTransfers = (async () => {
-			await transfers.cancelAll();
-			transfers.removeMany(transferIDs);
-		})();
-		transfers.setOpen(false);
-		try {
-			try {
-				await logoutAndLock();
-			} finally {
-				await clearTransfers;
-			}
-			await goto(resolve('/login'), { replace: true });
-		} catch (error) {
-			toast.error(error instanceof Error ? error.message : 'Logout failed. Please try again.');
-		} finally {
-			loggingOut = false;
-		}
 	}
 </script>
 
@@ -249,18 +216,7 @@
 			<Settings class="size-5 shrink-0 stroke-2" aria-hidden="true" />
 			<span>Settings</span>
 		</a>
-		<Tooltip label="Log out" side="right">
-			<button
-				class="inline-flex size-10 shrink-0 cursor-pointer items-center justify-center rounded text-(--muted) transition-colors hover:bg-(--surface-raised) hover:text-(--text) disabled:cursor-wait disabled:opacity-60"
-				type="button"
-				aria-label="Log out"
-				aria-busy={loggingOut}
-				disabled={loggingOut}
-				onclick={logout}
-			>
-				<LogOut class="size-5 stroke-2" aria-hidden="true" />
-			</button>
-		</Tooltip>
+		<LogoutButton />
 	</div>
 	<SidebarResizeHandle width={sidebarWidth} visible={!mobileView} {onResize} />
 </aside>
