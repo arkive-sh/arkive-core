@@ -11,17 +11,18 @@ import (
 )
 
 type Config struct {
-	DatabaseURL           string
-	Port                  string
-	SessionTTL            time.Duration
-	PasswordResetTokenTTL time.Duration
-	BaseURL               string
-	CORSAllowedOrigins    []string
-	TrustedProxies        []string
-	RateLimitRPM          int
-	CookieSecret          string
-	OpaqueServerSetup     string
-	Env                   string
+	DatabaseURL             string
+	Port                    string
+	SessionTTL              time.Duration
+	PasswordResetTokenTTL   time.Duration
+	BaseURL                 string
+	CORSAllowedOrigins      []string
+	TrustedProxies          []string
+	RateLimitRPM            int
+	PublicShareRateLimitRPM int
+	CookieSecret            string
+	OpaqueServerSetup       string
+	Env                     string
 }
 
 func Load() (Config, error) {
@@ -87,19 +88,27 @@ func Load() (Config, error) {
 			return Config{}, errors.New("RATE_LIMIT_RPM must be a non-negative integer")
 		}
 	}
+	publicShareRateLimitRPM := 120
+	if value := strings.TrimSpace(os.Getenv("PUBLIC_SHARE_RATE_LIMIT_RPM")); value != "" {
+		publicShareRateLimitRPM, err = strconv.Atoi(value)
+		if err != nil || publicShareRateLimitRPM < 0 {
+			return Config{}, errors.New("PUBLIC_SHARE_RATE_LIMIT_RPM must be a non-negative integer")
+		}
+	}
 
 	return Config{
-		DatabaseURL:           dsn,
-		Port:                  addr,
-		SessionTTL:            sessionTTL,
-		PasswordResetTokenTTL: passwordResetTTL,
-		BaseURL:               baseURL,
-		CORSAllowedOrigins:    corsAllowedOrigins,
-		TrustedProxies:        trustedProxies,
-		RateLimitRPM:          rateLimitRPM,
-		CookieSecret:          cookieSecret,
-		OpaqueServerSetup:     opaqueServerSetup,
-		Env:                   env,
+		DatabaseURL:             dsn,
+		Port:                    addr,
+		SessionTTL:              sessionTTL,
+		PasswordResetTokenTTL:   passwordResetTTL,
+		BaseURL:                 baseURL,
+		CORSAllowedOrigins:      corsAllowedOrigins,
+		TrustedProxies:          trustedProxies,
+		RateLimitRPM:            rateLimitRPM,
+		PublicShareRateLimitRPM: publicShareRateLimitRPM,
+		CookieSecret:            cookieSecret,
+		OpaqueServerSetup:       opaqueServerSetup,
+		Env:                     env,
 	}, nil
 }
 func parseDurationEnv(key string) (time.Duration, error) {

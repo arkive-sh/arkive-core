@@ -170,7 +170,8 @@ For local dev, keep these values:
 - `SESSION_TTL`
 - `OPAQUE_SERVER_SETUP` (generate once with `make opaque-setup` and save the output)
 - `TRUSTED_PROXIES` (optional; leave empty for direct access)
-- `RATE_LIMIT_RPM` (requests per minute per IP for public auth/setup and share unlock; default `10`, `0` disables)
+- `RATE_LIMIT_RPM` (requests per minute per IP for public auth/setup and public-share password attempts; default `10`, `0` disables)
+- `PUBLIC_SHARE_RATE_LIMIT_RPM` (requests per minute per IP for public-share browsing; default `120`, `0` disables)
 
 Keep `OPAQUE_SERVER_SETUP` private and stable. Changing it invalidates existing password registrations.
 
@@ -226,7 +227,8 @@ Set these values in `.env`:
 - `SESSION_TTL` to desired duration
 - `OPAQUE_SERVER_SETUP` generated once with `make opaque-setup`
 - `TRUSTED_PROXIES` to the IP/CIDR of the reverse proxy that connects directly to Arkive
-- `RATE_LIMIT_RPM` requests per minute per IP for public auth/setup and share unlock (`10` by default; `0` disables)
+- `RATE_LIMIT_RPM` requests per minute per IP for public auth/setup and public-share password attempts (`10` by default; `0` disables)
+- `PUBLIC_SHARE_RATE_LIMIT_RPM` requests per minute per IP for public-share browsing (`120` by default; `0` disables)
 
 If Nginx or Caddy runs on the same host and proxies to Arkive over loopback, use:
 

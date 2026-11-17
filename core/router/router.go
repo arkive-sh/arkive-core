@@ -51,13 +51,14 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 		r.OPTIONS("/api/*path", corsMiddleware)
 	}
 	publicShares := api.Group("/public/shares/:token")
-	publicShares.Use(middleware.LimitRequestsPerIP(cfg.RateLimitRPM))
+	publicShareAuthLimit := middleware.LimitRequestsPerIP(cfg.RateLimitRPM)
+	publicShareBrowseLimit := middleware.LimitRequestsPerIP(cfg.PublicShareRateLimitRPM)
 	{
-		publicShares.POST("/unlock", middleware.LimitBody(16<<10), handlers.APIPublicShareUnlock(shareService, cfg.CookieSecret))
-		publicShares.GET("", handlers.APIPublicShareRecord(shareService, filesService, cfg.CookieSecret))
-		publicShares.POST("/consume", handlers.APIPublicShareConsume(shareService, filesService, cfg.CookieSecret))
-		publicShares.GET("/folders/:folderID/entries", handlers.APIPublicShareFolderEntries(shareService, cfg.CookieSecret))
-		publicShares.GET("/files/:fileID", handlers.APIPublicShareFolderFile(shareService, filesService, cfg.CookieSecret))
+		publicShares.POST("/unlock", publicShareAuthLimit, middleware.LimitBody(16<<10), handlers.APIPublicShareUnlock(shareService, cfg.CookieSecret))
+		publicShares.GET("", publicShareBrowseLimit, handlers.APIPublicShareRecord(shareService, filesService, cfg.CookieSecret))
+		publicShares.POST("/consume", publicShareBrowseLimit, handlers.APIPublicShareConsume(shareService, filesService, cfg.CookieSecret))
+		publicShares.GET("/folders/:folderID/entries", publicShareBrowseLimit, handlers.APIPublicShareFolderEntries(shareService, cfg.CookieSecret))
+		publicShares.GET("/files/:fileID", publicShareBrowseLimit, handlers.APIPublicShareFolderFile(shareService, filesService, cfg.CookieSecret))
 	}
 	publicAuth := api.Group("")
 	// Bound auth and setup JSON before ShouldBindJSON reads it; uploads have their own larger limit.

@@ -42,9 +42,10 @@ func TestRateLimiterIsAppliedToAuthSetupAndPublicShareRoutes(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
 			r := New(env.DB, config.Config{
-				RateLimitRPM:      1,
-				CookieSecret:      "test-cookie-secret",
-				OpaqueServerSetup: "unused-in-this-test",
+				RateLimitRPM:            1,
+				PublicShareRateLimitRPM: 1,
+				CookieSecret:            "test-cookie-secret",
+				OpaqueServerSetup:       "unused-in-this-test",
 			}, nil, nil, nil, nil)
 			if err := r.SetTrustedProxies(nil); err != nil {
 				t.Fatal(err)
