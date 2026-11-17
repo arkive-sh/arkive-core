@@ -414,29 +414,29 @@
 				Opening shared file…
 			</section>
 		{:else if passwordRequired}
-			<section
-				class="grid min-h-80 place-items-center rounded-lg border border-[#30363d] bg-[#161b22] p-8 text-center text-[#87929a]"
-			>
+			<section class="grid min-h-[calc(100dvh-3rem)] place-items-center px-3 py-8">
 				<form
-					class="grid w-[min(100%,380px)] justify-items-stretch gap-3 text-left"
+					class="grid w-[min(100%,380px)] justify-items-stretch gap-3"
 					onsubmit={submitPassword}
 				>
-					<LockKeyhole class="size-8 text-sky-400" aria-hidden="true" />
-					<h1 class="m-0 text-2xl text-[#e5eaef]">This link is password protected</h1>
-					<p class="m-0 text-[#87929a]">
+					<LockKeyhole class="mx-auto size-8 text-sky-400" aria-hidden="true" />
+					<h1 class="m-0 text-center text-2xl text-[#e5eaef]">This link is password protected</h1>
+					<p class="m-0 text-center text-[#87929a]">
 						Enter the password provided by the sender to open this file.
 					</p>
-					<label for="share-password">Share password</label>
+					<label for="share-password" class="mt-2">Share password</label>
 					<input
 						id="share-password"
-						class="rounded border border-(--border) bg-(--bg) px-3 py-2.5"
+						class="box-border w-full rounded border border-(--border) bg-(--bg) px-3 py-2.5"
 						type="password"
 						autocomplete="current-password"
 						bind:value={password}
 					/>
-					{#if error}<p class="m-0 leading-[1.5] text-red-400" role="alert">{error}</p>{/if}
+					{#if error}<p class="m-0 text-center leading-[1.5] text-red-400" role="alert">
+							{error}
+						</p>{/if}
 					<button
-						class="inline-flex min-h-12 cursor-pointer items-center justify-center gap-3 rounded-[4px] border-0 bg-[linear-gradient(180deg,#4ab8f0,#3aa9e3)] px-6 text-[13px] font-extrabold tracking-[0.08em] text-[#052235] uppercase hover:brightness-[1.06] disabled:cursor-wait disabled:opacity-[0.65] max-[640px]:min-h-[42px] max-[640px]:px-[14px] max-[640px]:text-[11px]"
+						class="inline-flex min-h-12 w-full cursor-pointer items-center justify-center gap-3 rounded-[4px] border-0 bg-[linear-gradient(180deg,#4ab8f0,#3aa9e3)] px-6 text-[13px] font-extrabold tracking-[0.08em] text-[#052235] uppercase hover:brightness-[1.06] disabled:cursor-wait disabled:opacity-[0.65] max-[640px]:min-h-[42px] max-[640px]:px-[14px] max-[640px]:text-[11px]"
 						type="submit"
 						disabled={!password}>Open share</button
 					>
