@@ -20,6 +20,9 @@
 	type StorageUsage = {
 		usedBytes: number;
 		reservedBytes: number;
+		currentFileBytes: number;
+		versionHistoryBytes: number;
+		trashBytes: number;
 		maxStorageBytes: number;
 	};
 	type StorageSettings = {
@@ -71,6 +74,50 @@
 			? Math.min(100, Math.round((totalStorageBytes / storageUsage.maxStorageBytes) * 100))
 			: 0,
 	);
+	const storageBreakdown = $derived.by(() => {
+		if (!storageUsage) return [];
+		const scale = storageUsage.maxStorageBytes || totalStorageBytes;
+		const parts = [
+			{
+				label: 'Current files',
+				bytes: storageUsage.currentFileBytes,
+				color: 'bg-(--accent)',
+				available: false,
+			},
+			{
+				label: 'Version history',
+				bytes: storageUsage.versionHistoryBytes,
+				color: 'bg-violet-500',
+				available: false,
+			},
+			{
+				label: 'Trash',
+				bytes: storageUsage.trashBytes,
+				color: 'bg-(--muted-strong)',
+				available: false,
+			},
+			{
+				label: 'Active uploads',
+				bytes: storageUsage.reservedBytes,
+				color: 'bg-amber-400',
+				available: false,
+			},
+		];
+
+		if (storageUsage.maxStorageBytes > 0) {
+			parts.push({
+				label: 'Available',
+				bytes: Math.max(0, storageUsage.maxStorageBytes - totalStorageBytes),
+				color: 'bg-(--surface-raised)',
+				available: true,
+			});
+		}
+
+		return parts.map((part) => ({
+			...part,
+			width: scale > 0 ? Math.min(100, (part.bytes / scale) * 100) : 0,
+		}));
+	});
 
 	onMount(() => {
 		keepVaultOnRefresh = shouldKeepVaultUnlocked();
@@ -471,7 +518,7 @@
 				{:else if storageUsage}
 					<div class="border-b border-(--border-soft) py-4">
 						<div class="flex flex-wrap items-baseline justify-between gap-2">
-							<h3 class="m-0 text-sm font-medium text-(--text)">Storage used</h3>
+							<h3 class="m-0 text-sm font-medium text-(--text)">Storage allocation</h3>
 							<p class="m-0 text-sm text-(--muted)">
 								{formatBytes(totalStorageBytes)}
 								{storageUsage.maxStorageBytes > 0
@@ -479,26 +526,38 @@
 									: '· no configured limit'}
 							</p>
 						</div>
-						{#if storageUsage.maxStorageBytes > 0}
-							<div
-								class="mt-3 h-2 overflow-hidden rounded-full bg-(--surface-raised)"
-								role="progressbar"
-								aria-label="Storage used"
-								aria-valuemin="0"
-								aria-valuemax="100"
-								aria-valuenow={storagePercent}
-							>
-								<div
-									class="h-full rounded-full bg-(--accent)"
-									style={`width:${storagePercent}%`}
-								></div>
-							</div>
-						{/if}
-						{#if storageUsage.reservedBytes > 0}
-							<p class="mt-2 mb-0 text-xs text-(--muted)">
-								{formatBytes(storageUsage.reservedBytes)} reserved for active uploads.
-							</p>
-						{/if}
+						<div
+							class="mt-3 flex h-2 overflow-hidden rounded-full bg-(--surface-raised)"
+							role={storageUsage.maxStorageBytes > 0 ? 'progressbar' : 'img'}
+							aria-label={storageUsage.maxStorageBytes > 0
+								? 'Storage capacity used'
+								: 'Storage breakdown'}
+							aria-valuemin={storageUsage.maxStorageBytes > 0 ? 0 : undefined}
+							aria-valuemax={storageUsage.maxStorageBytes > 0 ? 100 : undefined}
+							aria-valuenow={storageUsage.maxStorageBytes > 0 ? storagePercent : undefined}
+						>
+							{#each storageBreakdown as part (part.label)}
+								{#if !part.available && part.bytes > 0}
+									<div class={`h-full shrink-0 ${part.color}`} style={`width:${part.width}%`}></div>
+								{/if}
+							{/each}
+						</div>
+						<div class="mt-3 grid grid-cols-1 gap-x-5 gap-y-2 text-xs sm:grid-cols-2">
+							{#each storageBreakdown as part (part.label)}
+								<div class="flex min-w-0 items-center justify-between gap-3">
+									<span class="flex min-w-0 items-center gap-2 text-(--muted)">
+										<span class={`size-2 shrink-0 rounded-full ${part.color}`} aria-hidden="true"
+										></span>
+										<span class="truncate">{part.label}</span>
+									</span>
+									<span class="shrink-0 text-(--text)">{formatBytes(part.bytes)}</span>
+								</div>
+							{/each}
+						</div>
+						<p class="mt-3 mb-0 text-xs text-(--muted)">
+							Uploads reserve space while in progress. Trash remains counted until permanently
+							deleted.
+						</p>
 					</div>
 				{/if}
 				<div class="border-b border-(--border-soft) py-4">

@@ -35,6 +35,65 @@ func (r *Repository) GetStorageUsage(ctx context.Context, db database.PgExecutor
 	return usedBytes, reservedBytes, nil
 }
 
+func (r *Repository) GetStorageUsageBreakdown(ctx context.Context, db database.PgExecutor, userID string) (models.StorageUsage, error) {
+	query := `WITH stored_objects AS (
+		SELECT
+			file.user_id,
+			file.id,
+			file.deleted_at,
+			COALESCE(file.storage_object_id, file.id)::text AS storage_object_id,
+			file.actual_encrypted_size + file.thumbnail_size_bytes AS current_bytes,
+			TRUE AS is_current
+		FROM files file
+		WHERE file.user_id = $1
+			AND file.upload_status = 'complete'
+			AND file.purged_at IS NULL
+		UNION ALL
+		SELECT
+			file.user_id,
+			file.id,
+			file.deleted_at,
+			version.storage_object_id::text,
+			version.actual_encrypted_size + version.thumbnail_size_bytes,
+			FALSE
+		FROM file_versions version
+		JOIN files file ON file.id = version.file_id
+		WHERE file.user_id = $1
+			AND file.upload_status = 'complete'
+			AND file.purged_at IS NULL
+	), unique_objects AS (
+		SELECT
+			user_id,
+			storage_object_id,
+			MAX(current_bytes) AS size_bytes,
+			BOOL_OR(deleted_at IS NULL) AS has_active_reference,
+			BOOL_OR(deleted_at IS NULL AND is_current) AS is_active_current
+		FROM stored_objects
+		GROUP BY user_id, storage_object_id
+	)
+	SELECT
+		u.used_bytes,
+		u.reserved_bytes,
+		COALESCE(SUM(CASE WHEN unique_objects.is_active_current THEN unique_objects.size_bytes ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN unique_objects.has_active_reference AND NOT unique_objects.is_active_current THEN unique_objects.size_bytes ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN NOT unique_objects.has_active_reference THEN unique_objects.size_bytes ELSE 0 END), 0)
+	FROM users u
+	LEFT JOIN unique_objects ON unique_objects.user_id = u.id
+	WHERE u.id = $1
+	GROUP BY u.used_bytes, u.reserved_bytes`
+	var usage models.StorageUsage
+	if err := db.QueryRow(ctx, query, userID).Scan(
+		&usage.UsedBytes,
+		&usage.ReservedBytes,
+		&usage.CurrentFileBytes,
+		&usage.VersionHistoryBytes,
+		&usage.TrashBytes,
+	); err != nil {
+		return models.StorageUsage{}, err
+	}
+	return usage, nil
+}
+
 func (r *Repository) UpdateLoginActivity(ctx context.Context, db database.PgExecutor, userID string, loginAt time.Time) error {
 	query := `UPDATE
 		users

@@ -43,7 +43,7 @@ func NewService(db database.PgPool, settingsRepo *settingsrepo.Repository, users
 }
 
 func (s *Service) StorageUsage(ctx context.Context, userID string) (models.StorageUsage, error) {
-	usedBytes, reservedBytes, err := s.usersRepo.GetStorageUsage(ctx, s.db, userID)
+	usage, err := s.usersRepo.GetStorageUsageBreakdown(ctx, s.db, userID)
 	if err != nil {
 		return models.StorageUsage{}, err
 	}
@@ -51,11 +51,8 @@ func (s *Service) StorageUsage(ctx context.Context, userID string) (models.Stora
 	if err != nil {
 		return models.StorageUsage{}, err
 	}
-	return models.StorageUsage{
-		UsedBytes:       usedBytes,
-		ReservedBytes:   reservedBytes,
-		MaxStorageBytes: storage.MaxStorageBytes,
-	}, nil
+	usage.MaxStorageBytes = storage.MaxStorageBytes
+	return usage, nil
 }
 
 func (s *Service) StorageSettings(ctx context.Context) (models.StorageSettings, error) {
