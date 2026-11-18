@@ -96,7 +96,7 @@ func (s *Service) PresignDownload(ctx context.Context, userID, fileID string) (s
 	if err != nil {
 		return "", err
 	}
-	objectKey, err := storage.BuildObjectKey(userID, file.ID)
+	objectKey, err := storage.BuildObjectKey(userID, file.StorageObjectID)
 	if err != nil {
 		return "", err
 	}
@@ -111,7 +111,7 @@ func (s *Service) PresignThumbnailDownload(ctx context.Context, userID, fileID s
 	if file.ThumbnailSizeBytes <= 0 {
 		return "", ErrNotFound
 	}
-	objectKey, err := storage.BuildThumbnailObjectKey(userID, file.ID)
+	objectKey, err := storage.BuildThumbnailObjectKey(userID, file.StorageObjectID)
 	if err != nil {
 		return "", err
 	}
@@ -154,7 +154,7 @@ func (s *Service) PresignShareSourceForFile(ctx context.Context, file models.Fil
 	if expiry <= 0 {
 		expiry = s.downloadExpire
 	}
-	objectKey, err := storage.BuildObjectKey(file.UserID, file.ID)
+	objectKey, err := storage.BuildObjectKey(file.UserID, file.StorageObjectID)
 	if err != nil {
 		return "", err
 	}
@@ -185,7 +185,7 @@ func (s *Service) GetEncryptedFileRecord(ctx context.Context, userID, fileID str
 		return EncryptedFileRecord{}, ErrNotFound
 	}
 
-	objectKey, err := storage.BuildObjectKey(file.UserID, file.ID)
+	objectKey, err := storage.BuildObjectKey(file.UserID, file.StorageObjectID)
 	if err != nil {
 		return EncryptedFileRecord{}, err
 	}

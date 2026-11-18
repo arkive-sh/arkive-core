@@ -9,6 +9,7 @@
 	import { api } from '#lib/api.ts';
 	import { toast } from '#lib/toast.ts';
 	import { isImageFile } from '#lib/utils/image.ts';
+	import { isMediaMimeType } from '#lib/utils/media.ts';
 	import { rewrapFileKeyForParent, rewrapFolderMetadataForParent } from '#lib/vault/files.ts';
 	import {
 		fileManagerEntryKey,
@@ -16,6 +17,7 @@
 		type FileManagerEntry,
 		type FilesView,
 	} from './files/types';
+	import { isPdfFile, isTextFile } from './files/types';
 	import { createFolderEntries } from './files/folder-entries.svelte';
 	import FilesBrowser from './files/FilesBrowser.svelte';
 	import FileManagerOverlays from './files/FileManagerOverlays.svelte';
@@ -57,7 +59,13 @@
 	let renameName = $state('');
 	let renaming = $state(false);
 	let shareEntry = $state<FileManagerEntry | null>(null);
-	let imagePreviewRequest = $state<{ fileId: string; trigger?: HTMLElement } | null>(null);
+	let versionHistoryEntry = $state<FileManagerEntry | null>(null);
+	let imageVersionPreviewEntry = $state<FileManagerEntry | null>(null);
+	let imagePreviewRequest = $state<{
+		fileId: string;
+		versionId?: string;
+		trigger?: HTMLElement;
+	} | null>(null);
 	let mediaPreviewEntry = $state<FileManagerEntry | null>(null);
 	let MediaViewer = $state<typeof import('./files/MediaViewer.svelte').default>();
 	let pdfPreviewEntry = $state<FileManagerEntry | null>(null);
@@ -119,9 +127,10 @@
 			: rows,
 	);
 	// shortcut: PhotoSwipe navigates loaded rows; add paged image lookup if full-folder navigation is needed.
-	const imageEntries = $derived(
-		rows.filter((entry) => entry.kind === 'file' && isImageFile(entry.name, entry.type)),
-	);
+	const imageEntries = $derived([
+		...rows.filter((entry) => entry.kind === 'file' && isImageFile(entry.name, entry.type)),
+		...(imageVersionPreviewEntry ? [imageVersionPreviewEntry] : []),
+	]);
 	const allRowsSelected = $derived(
 		loadedEntries.length > 0 && selectedEntries.length === loadedEntries.length,
 	);
@@ -445,7 +454,8 @@
 	}
 
 	function previewImage(entry: FileManagerEntry, trigger?: HTMLElement): void {
-		imagePreviewRequest = { fileId: entry.id, trigger };
+		imageVersionPreviewEntry = entry.versionId ? entry : null;
+		imagePreviewRequest = { fileId: entry.id, versionId: entry.versionId, trigger };
 	}
 
 	function previewMedia(entry: FileManagerEntry): void {
@@ -469,6 +479,14 @@
 		textEditorOpen = true;
 	}
 
+	function previewVersion(entry: FileManagerEntry): void {
+		if (isImageFile(entry.name, entry.type)) previewImage(entry);
+		else if (isMediaMimeType(entry.type)) previewMedia(entry);
+		else if (isPdfFile(entry)) previewPdf(entry);
+		else if (isTextFile(entry)) previewText(entry);
+		else toast.error('Preview is not available for this file type.');
+	}
+
 	function createTextFile(): void {
 		textEditorEntry = null;
 		textEditorOpen = true;
@@ -484,7 +502,14 @@
 			entry.size ?? 0,
 			async (signal, onProgress, concurrency) => {
 				const { downloadEncryptedFile } = await import('#lib/downloads/download-file.ts');
-				await downloadEncryptedFile(entry.id, getTarget, signal, onProgress, concurrency);
+				await downloadEncryptedFile(
+					entry.id,
+					getTarget,
+					signal,
+					onProgress,
+					concurrency,
+					entry.versionId,
+				);
 			},
 		);
 	}
@@ -821,13 +846,17 @@
 	clipboardCount={movingEntries ? 0 : cutEntries.length}
 	{propertiesEntry}
 	{shareEntry}
+	{versionHistoryEntry}
 	{currentLocation}
 	{deleteDialogOpen}
 	{permanentDeleteDialogOpen}
 	{deleting}
 	{deleteTargets}
 	{permanentDeleteTargets}
-	onCloseImage={() => (imagePreviewRequest = null)}
+	onCloseImage={() => {
+		imagePreviewRequest = null;
+		imageVersionPreviewEntry = null;
+	}}
 	onError={(message) => toast.error(message)}
 	onCloseMedia={() => (mediaPreviewEntry = null)}
 	onClosePdf={() => (pdfPreviewEntry = null)}
@@ -845,6 +874,9 @@
 	onProperties={(entry) => (propertiesEntry = entry)}
 	onRequestRename={requestRename}
 	onShareEntry={(entry) => (shareEntry = entry)}
+	onShowVersionHistory={(entry) => (versionHistoryEntry = entry)}
+	onCloseVersionHistory={() => (versionHistoryEntry = null)}
+	onPreviewVersion={previewVersion}
 	onCloseShare={() => (shareEntry = null)}
 	onDeleteEntry={requestDelete}
 	onCutEntry={cutEntry}

@@ -5,6 +5,7 @@
 	import ShareDialog from './ShareDialog.svelte';
 	import ImageViewer from './ImageViewer.svelte';
 	import TextFileEditor from './TextFileEditor.svelte';
+	import VersionHistoryDialog from './VersionHistoryDialog.svelte';
 	import type { FileManagerEntry } from './types';
 
 	let {
@@ -24,6 +25,7 @@
 		clipboardCount,
 		propertiesEntry,
 		shareEntry,
+		versionHistoryEntry,
 		currentLocation,
 		deleteDialogOpen,
 		deleting,
@@ -45,6 +47,9 @@
 		onProperties,
 		onRequestRename,
 		onShareEntry,
+		onCloseVersionHistory,
+		onPreviewVersion,
+		onShowVersionHistory,
 		onCloseShare,
 		onDeleteEntry,
 		onPermanentDeleteEntry,
@@ -62,7 +67,7 @@
 		onConfirmPermanentDelete,
 	}: {
 		imageEntries: FileManagerEntry[];
-		imagePreviewRequest: { fileId: string; trigger?: HTMLElement } | null;
+		imagePreviewRequest: { fileId: string; versionId?: string; trigger?: HTMLElement } | null;
 		MediaViewer?: typeof import('./MediaViewer.svelte').default;
 		mediaPreviewEntry: FileManagerEntry | null;
 		PdfViewer?: typeof import('./PdfViewer.svelte').default;
@@ -77,6 +82,7 @@
 		clipboardCount: number;
 		propertiesEntry: FileManagerEntry | null;
 		shareEntry: FileManagerEntry | null;
+		versionHistoryEntry: FileManagerEntry | null;
 		currentLocation: string;
 		deleteDialogOpen: boolean;
 		deleting: boolean;
@@ -98,6 +104,9 @@
 		onProperties: (entry: FileManagerEntry) => void;
 		onRequestRename: (entry: FileManagerEntry) => void;
 		onShareEntry: (entry: FileManagerEntry) => void;
+		onCloseVersionHistory: () => void;
+		onPreviewVersion: (entry: FileManagerEntry) => void;
+		onShowVersionHistory: (entry: FileManagerEntry) => void;
 		onCloseShare: () => void;
 		onDeleteEntry: (entry: FileManagerEntry) => void;
 		onPermanentDeleteEntry: (entry: FileManagerEntry) => void;
@@ -149,6 +158,7 @@
 	{onPreviewPdf}
 	{onPreviewText}
 	{onProperties}
+	onVersionHistory={onShowVersionHistory}
 	onRename={onRequestRename}
 	onShare={onShareEntry}
 	onDelete={onDeleteEntry}
@@ -163,6 +173,16 @@
 
 {#if shareEntry}
 	<ShareDialog entry={shareEntry} {vaultId} onClose={onCloseShare} />
+{/if}
+
+{#if versionHistoryEntry}
+	<VersionHistoryDialog
+		entry={versionHistoryEntry}
+		{vaultId}
+		onClose={onCloseVersionHistory}
+		onPreview={onPreviewVersion}
+		{onDownload}
+	/>
 {/if}
 
 <FilePropertiesModal

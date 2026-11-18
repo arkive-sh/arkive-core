@@ -13,6 +13,8 @@ type Repository struct{}
 type StaleUpload struct {
 	ID               string
 	FileID           string
+	StorageObjectID  string
+	IsVersion        bool
 	UserID           string
 	ProviderUploadID string
 	EncryptedSize    int64
@@ -25,13 +27,18 @@ func New() *Repository {
 func (r *Repository) CreateUploadSession(ctx context.Context, db database.PgExecutor, upload models.UploadSession) (models.UploadSession, error) {
 	var created models.UploadSession
 	query := `INSERT INTO upload_sessions
-		(file_id, provider_upload_id, encrypted_size, upload_part_size, upload_part_count, status, expires_at)
+		(file_id, storage_object_id, is_version, target_folder_id, file_chunk_size, total_chunks, provider_upload_id, encrypted_size, upload_part_size, upload_part_count, status, expires_at)
 	VALUES
-		($1, $2, $3, $4, $5, $6, $7)
+		($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	RETURNING
-		id, file_id, provider_upload_id, encrypted_size, upload_part_size, upload_part_count, status, expires_at`
+		id, file_id, storage_object_id, is_version, target_folder_id, file_chunk_size, total_chunks, provider_upload_id, encrypted_size, upload_part_size, upload_part_count, status, expires_at`
 	if err := db.QueryRow(ctx, query,
 		upload.FileID,
+		upload.StorageObjectID,
+		upload.IsVersion,
+		upload.FolderID,
+		upload.FileChunkSize,
+		upload.TotalChunks,
 		upload.ProviderUploadID,
 		upload.EncryptedSize,
 		upload.UploadPartSize,
@@ -41,6 +48,11 @@ func (r *Repository) CreateUploadSession(ctx context.Context, db database.PgExec
 	).Scan(
 		&created.ID,
 		&created.FileID,
+		&created.StorageObjectID,
+		&created.IsVersion,
+		&created.FolderID,
+		&created.FileChunkSize,
+		&created.TotalChunks,
 		&created.ProviderUploadID,
 		&created.EncryptedSize,
 		&created.UploadPartSize,
@@ -64,7 +76,10 @@ func (r *Repository) GetUploadSessionForUserForUpdate(ctx context.Context, db da
 func (r *Repository) getUploadSessionForUser(ctx context.Context, db database.PgExecutor, uploadSessionID, ownerID string, lock bool) (models.UploadSession, error) {
 	var upload models.UploadSession
 	query := `SELECT
-		upload_sessions.id, upload_sessions.file_id, upload_sessions.provider_upload_id,
+		upload_sessions.id, upload_sessions.file_id, upload_sessions.storage_object_id,
+		upload_sessions.is_version, upload_sessions.target_folder_id,
+		upload_sessions.file_chunk_size, upload_sessions.total_chunks,
+		upload_sessions.provider_upload_id,
 		upload_sessions.upload_part_size,
 		upload_sessions.upload_part_count,
 		upload_sessions.status, upload_sessions.expires_at
@@ -80,6 +95,11 @@ func (r *Repository) getUploadSessionForUser(ctx context.Context, db database.Pg
 	if err := db.QueryRow(ctx, query, uploadSessionID, ownerID).Scan(
 		&upload.ID,
 		&upload.FileID,
+		&upload.StorageObjectID,
+		&upload.IsVersion,
+		&upload.FolderID,
+		&upload.FileChunkSize,
+		&upload.TotalChunks,
 		&upload.ProviderUploadID,
 		&upload.UploadPartSize,
 		&upload.UploadPartCount,
@@ -105,7 +125,8 @@ func (r *Repository) UpdateUploadSessionStatus(ctx context.Context, db database.
 
 func (r *Repository) ListExpiredActiveUploads(ctx context.Context, db database.PgExecutor, limit int) ([]StaleUpload, error) {
 	rows, err := db.Query(ctx, `SELECT
-		upload_sessions.id, upload_sessions.file_id, files.user_id,
+		upload_sessions.id, upload_sessions.file_id, upload_sessions.storage_object_id,
+		upload_sessions.is_version, files.user_id,
 		COALESCE(upload_sessions.provider_upload_id, ''), upload_sessions.encrypted_size
 	FROM upload_sessions
 	JOIN files ON files.id = upload_sessions.file_id
@@ -120,7 +141,8 @@ func (r *Repository) ListExpiredActiveUploads(ctx context.Context, db database.P
 	var uploads []StaleUpload
 	for rows.Next() {
 		var upload StaleUpload
-		if err := rows.Scan(&upload.ID, &upload.FileID, &upload.UserID,
+		if err := rows.Scan(&upload.ID, &upload.FileID, &upload.StorageObjectID,
+			&upload.IsVersion, &upload.UserID,
 			&upload.ProviderUploadID, &upload.EncryptedSize); err != nil {
 			return nil, err
 		}
@@ -131,13 +153,15 @@ func (r *Repository) ListExpiredActiveUploads(ctx context.Context, db database.P
 
 func (r *Repository) GetExpiredUploadForUpdate(ctx context.Context, db database.PgExecutor, uploadSessionID string) (StaleUpload, error) {
 	var upload StaleUpload
-	err := db.QueryRow(ctx, `SELECT upload_sessions.id, upload_sessions.file_id, files.user_id,
+	err := db.QueryRow(ctx, `SELECT upload_sessions.id, upload_sessions.file_id, upload_sessions.storage_object_id,
+		upload_sessions.is_version, files.user_id,
 		COALESCE(upload_sessions.provider_upload_id, ''), upload_sessions.encrypted_size
 	FROM upload_sessions
 	JOIN files ON files.id = upload_sessions.file_id
 	WHERE upload_sessions.id = $1 AND upload_sessions.status = 'active' AND upload_sessions.expires_at <= now()
 	FOR UPDATE OF upload_sessions`, uploadSessionID).Scan(
-		&upload.ID, &upload.FileID, &upload.UserID, &upload.ProviderUploadID, &upload.EncryptedSize)
+		&upload.ID, &upload.FileID, &upload.StorageObjectID, &upload.IsVersion, &upload.UserID,
+		&upload.ProviderUploadID, &upload.EncryptedSize)
 	return upload, err
 }
 

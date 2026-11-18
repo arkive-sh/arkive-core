@@ -109,12 +109,12 @@ func (s *Service) CleanupExpiredUploads(ctx context.Context) (int, error) {
 			_ = tx.Rollback(ctx)
 			return cleaned, err
 		}
-		objectKey, keyErr := storage.BuildObjectKey(upload.UserID, upload.FileID)
+		objectKey, keyErr := storage.BuildObjectKey(upload.UserID, upload.StorageObjectID)
 		if keyErr != nil {
 			_ = tx.Rollback(ctx)
 			return cleaned, keyErr
 		}
-		thumbnailKey, err := storage.BuildThumbnailObjectKey(upload.UserID, upload.FileID)
+		thumbnailKey, err := storage.BuildThumbnailObjectKey(upload.UserID, upload.StorageObjectID)
 		if err != nil {
 			_ = tx.Rollback(ctx)
 			return cleaned, err
@@ -137,7 +137,9 @@ func (s *Service) CleanupExpiredUploads(ctx context.Context) (int, error) {
 		}
 		claimed, err := s.uploadRepo.ExpireUploadSession(ctx, tx, upload.ID)
 		updated := false
-		if err == nil && claimed {
+		if err == nil && claimed && upload.IsVersion {
+			updated = true
+		} else if err == nil && claimed {
 			updated, err = s.fileRepo.UpdateEncryptedFileStatusIf(ctx, tx, upload.FileID, FileUploadFailed, []string{FileUploadUploading, FileUploadPending})
 			if err == nil && !updated {
 				err = ErrUploadFailed

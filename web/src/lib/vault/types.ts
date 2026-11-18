@@ -198,7 +198,12 @@ export interface VaultWorkerCalls {
 		result: { shareSecret: Uint8Array<ArrayBuffer> };
 	};
 	prepareUpload: {
-		params: { uploadToken: string; totalParts: number; fileKeyAad: string };
+		params: {
+			uploadToken: string;
+			totalParts: number;
+			fileKeyAad: string;
+			encryptedFileKey?: string;
+		};
 		result: { encryptedFileKey: string; totalParts: number; encryptionVersion: number };
 	};
 	rewrapFileKey: {

@@ -24,6 +24,7 @@ type uploadStartRequest struct {
 	UploadPartCount   int     `json:"uploadPartCount"`
 	EncryptionVersion int16   `json:"encryptionVersion"`
 	FolderID          *string `json:"folderId"`
+	ReplaceFileID     string  `json:"replaceFileId"`
 	SinglePart        bool    `json:"singlePart"`
 }
 
@@ -141,6 +142,7 @@ func uploadStartInput(req uploadStartRequest) uploads.MultipartUploadStartInput 
 		UploadPartCount:   req.UploadPartCount,
 		EncryptionVersion: req.EncryptionVersion,
 		FolderID:          req.FolderID,
+		ReplaceFileID:     req.ReplaceFileID,
 		SinglePart:        req.SinglePart,
 	}
 }

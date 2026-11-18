@@ -95,6 +95,7 @@ export function createTransferManager(): TransferManager {
 	const uploadSources = new Map<string, UploadSource>();
 	const controllers = new Map<string, AbortController>();
 	const runningTasks = new Map<string, Promise<void>>();
+	const uploadPathQueues = new Map<string, Promise<void>>();
 	let processing = false;
 	let uploadsChanged = false;
 
@@ -338,46 +339,50 @@ export function createTransferManager(): TransferManager {
 		state,
 		enqueueUploads(files, vaultId, baseFolderId) {
 			if (typeof window === 'undefined' || files.length === 0) return 0;
-			const folderIds = new Map<string, Promise<string>>();
-			async function getFolderId(file: UploadItem, signal: AbortSignal): Promise<string | null> {
-				let parentFolderId = baseFolderId;
-				let path = '';
-
-				for (const name of file.relativePath.split('/').filter(Boolean).slice(0, -1)) {
-					path = path ? `${path}/${name}` : name;
-					let folderId = folderIds.get(path);
-
-					if (!folderId) {
-						const currentParentId = parentFolderId;
-						folderId = import('#lib/uploads/upload-file.ts')
-							.then(({ createUploadFolder }) =>
-								createUploadFolder(name, currentParentId, vaultId, signal),
-							)
-							.catch((error: unknown) => {
-								folderIds.delete(path);
-
-								throw error;
-							});
-						folderIds.set(path, folderId);
-					}
-					parentFolderId = await folderId;
-				}
-
-				return parentFolderId;
-			}
+			const folderEntries = {
+				listings: new Map(),
+				folders: new Map(),
+			};
 
 			const jobs = files.map((file): Transfer => {
 				const id = crypto.randomUUID();
 				uploadSources.set(id, file.file);
 				runners.set(id, async (signal, onProgress, concurrency) => {
-					const { uploadFile } = await import('#lib/uploads/upload-file.ts');
-					await uploadFile(
-						file.file,
-						signal,
-						onProgress,
-						await getFolderId(file, signal),
-						concurrency,
-					);
+					const pathKey = `${baseFolderId ?? 'root'}:${file.relativePath}`;
+					const previous = uploadPathQueues.get(pathKey) ?? Promise.resolve();
+					let release!: () => void;
+					const gate = new Promise<void>((resolve) => (release = resolve));
+					const tail = previous.then(() => gate);
+					uploadPathQueues.set(pathKey, tail);
+					await previous;
+					try {
+						const { rememberUploadedFile, resolveUploadTarget, uploadFile } =
+							await import('#lib/uploads/upload-file.ts');
+						const destination = await resolveUploadTarget(
+							file.relativePath || file.file.name,
+							baseFolderId,
+							vaultId,
+							signal,
+							folderEntries,
+						);
+						const uploaded = await uploadFile(
+							file.file,
+							signal,
+							onProgress,
+							destination.folderId,
+							concurrency,
+							destination.target,
+						);
+						await rememberUploadedFile(
+							folderEntries,
+							destination.folderId,
+							file.file.name,
+							uploaded,
+						);
+					} finally {
+						release();
+						if (uploadPathQueues.get(pathKey) === tail) uploadPathQueues.delete(pathKey);
+					}
 				});
 
 				return {

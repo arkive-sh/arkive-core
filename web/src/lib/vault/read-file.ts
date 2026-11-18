@@ -107,6 +107,7 @@ export class DecryptedFileReader {
 		private readonly fileId: string,
 		private readonly signal?: AbortSignal,
 		private readonly source?: FileReaderSource,
+		private readonly versionId?: string,
 	) {}
 
 	load(): Promise<FileReadContext> {
@@ -125,10 +126,10 @@ export class DecryptedFileReader {
 			const session = await waitUntilReady();
 
 			if (!session.unlocked) throw new Error('Unlock the vault to open this file.');
-			const response = await api.get<EncryptedFileRecord>(
-				`/api/files/${encodeURIComponent(this.fileId)}/record`,
-				{ signal: this.signal },
-			);
+			const recordPath = this.versionId
+				? `/api/files/${encodeURIComponent(this.fileId)}/versions/${encodeURIComponent(this.versionId)}/record`
+				: `/api/files/${encodeURIComponent(this.fileId)}/record`;
+			const response = await api.get<EncryptedFileRecord>(recordPath, { signal: this.signal });
 			record = response.data;
 		}
 
@@ -457,8 +458,9 @@ export async function readDecryptedFile(
 	mimeType: string,
 	signal: AbortSignal,
 	maxPlaintextBytes?: number,
+	versionId?: string,
 ): Promise<Blob> {
-	const reader = new DecryptedFileReader(fileId, signal);
+	const reader = new DecryptedFileReader(fileId, signal, undefined, versionId);
 
 	try {
 		return await reader.createBlob(mimeType, maxPlaintextBytes);

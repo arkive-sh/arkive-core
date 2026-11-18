@@ -17,8 +17,7 @@ const (
 )
 
 type deletedFileObjectKeys struct {
-	file      string
-	thumbnail string
+	keys []string
 }
 
 func (s *Service) PurgeDeletedFiles(ctx context.Context) (int, error) {
@@ -54,23 +53,47 @@ func (s *Service) purgeDeletedFilesBatch(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 
+	fileIDs := make([]string, 0, len(files))
+	uniqueStoredSizes := make(map[string]int64, len(files))
+	for _, file := range files {
+		fileIDs = append(fileIDs, file.ID)
+		uniqueStoredSizes[file.ID] = file.TotalStoredBytes
+	}
+	versions, err := s.fileRepo.ListVersionStorageObjects(ctx, tx, fileIDs)
+	if err != nil {
+		return 0, err
+	}
 	keys := make([]string, 0, len(files)*2)
+	seenKeys := make(map[string]struct{})
 	fileKeys := make(map[string]deletedFileObjectKeys, len(files))
 	for _, file := range files {
-		objectKey, err := storage.BuildObjectKey(file.UserID, file.ID)
-		if err != nil {
-			return 0, err
+		objectSizes := map[string]int64{file.StorageObjectID: file.ThumbnailSizeBytes}
+		for _, version := range versions[file.ID] {
+			objectSizes[version.StorageObjectID] = version.ThumbnailSizeBytes
 		}
-		keys = append(keys, objectKey)
-		objectKeys := deletedFileObjectKeys{file: objectKey}
-		var thumbnailKey string
-		if file.ThumbnailSizeBytes > 0 {
-			thumbnailKey, err = storage.BuildThumbnailObjectKey(file.UserID, file.ID)
+		objectKeys := deletedFileObjectKeys{}
+		for objectID, thumbnailSize := range objectSizes {
+			objectKey, err := storage.BuildObjectKey(file.UserID, objectID)
 			if err != nil {
 				return 0, err
 			}
-			keys = append(keys, thumbnailKey)
-			objectKeys.thumbnail = thumbnailKey
+			objectKeys.keys = append(objectKeys.keys, objectKey)
+			if _, exists := seenKeys[objectKey]; !exists {
+				keys = append(keys, objectKey)
+				seenKeys[objectKey] = struct{}{}
+			}
+			if thumbnailSize <= 0 {
+				continue
+			}
+			thumbnailKey, err := storage.BuildThumbnailObjectKey(file.UserID, objectID)
+			if err != nil {
+				return 0, err
+			}
+			objectKeys.keys = append(objectKeys.keys, thumbnailKey)
+			if _, exists := seenKeys[thumbnailKey]; !exists {
+				keys = append(keys, thumbnailKey)
+				seenKeys[thumbnailKey] = struct{}{}
+			}
 		}
 		fileKeys[file.ID] = objectKeys
 	}
@@ -83,12 +106,14 @@ func (s *Service) purgeDeletedFilesBatch(ctx context.Context) (int, error) {
 	purgedIDs := make([]string, 0, len(files))
 	for _, file := range files {
 		objectKeys := fileKeys[file.ID]
-		if err := failedKeys[objectKeys.file]; err != nil {
-			log.Printf("files: purge skipped file=%s user=%s object=%s: %v", file.ID, file.UserID, objectKeys.file, err)
-			continue
+		failed := false
+		for _, key := range objectKeys.keys {
+			if err := failedKeys[key]; err != nil {
+				log.Printf("files: purge skipped file=%s user=%s object=%s: %v", file.ID, file.UserID, key, err)
+				failed = true
+			}
 		}
-		if err := failedKeys[objectKeys.thumbnail]; objectKeys.thumbnail != "" && err != nil {
-			log.Printf("files: purge skipped file=%s user=%s object=%s: %v", file.ID, file.UserID, objectKeys.thumbnail, err)
+		if failed {
 			continue
 		}
 		purgedIDs = append(purgedIDs, file.ID)
@@ -108,9 +133,12 @@ func (s *Service) purgeDeletedFilesBatch(ctx context.Context) (int, error) {
 	purgedFileIDs := make([]string, 0, len(purgedFiles))
 	for _, file := range purgedFiles {
 		purgedFileIDs = append(purgedFileIDs, file.ID)
-		if err := s.storageRepo.DecreaseUsedStorage(ctx, tx, file.UserID, totalStoredSize(file)); err != nil {
+		if err := s.storageRepo.DecreaseUsedStorage(ctx, tx, file.UserID, uniqueStoredSizes[file.ID]); err != nil {
 			return 0, err
 		}
+	}
+	if err := s.fileRepo.DeleteVersionsForFiles(ctx, tx, purgedFileIDs); err != nil {
+		return 0, err
 	}
 	if err := s.shareRepo.DeleteLinksForFiles(ctx, tx, purgedFileIDs); err != nil {
 		return 0, err

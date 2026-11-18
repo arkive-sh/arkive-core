@@ -13,11 +13,13 @@
 		fileId,
 		fileName,
 		mimeType,
+		versionId,
 		reader: providedReader,
 	}: {
 		fileId: string;
 		fileName: string;
 		mimeType: string;
+		versionId?: string;
 		reader?: DecryptedFileReader;
 	} = $props();
 	const isAudio = $derived(isAudioMimeType(mimeType));
@@ -31,7 +33,8 @@
 		if (!element) return;
 		const player = element as HTMLMediaElement;
 		const controller = new AbortController();
-		const reader = providedReader ?? new DecryptedFileReader(fileId, controller.signal);
+		const reader =
+			providedReader ?? new DecryptedFileReader(fileId, controller.signal, undefined, versionId);
 		let file: Awaited<ReturnType<typeof reader.load>> | undefined;
 		let stream: EncryptedStream | undefined;
 		let disposed = false;

@@ -46,6 +46,13 @@ func validateOptionalFolderID(folderID *string) (*string, error) {
 	return &normalized, nil
 }
 
+func sameFolder(left, right *string) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
+}
+
 func expiresAtPtr(t time.Time) *time.Time {
 	return &t
 }

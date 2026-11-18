@@ -9,11 +9,13 @@ export function prepareUpload(
 	fileId: string,
 	folderId: string | null,
 	totalParts: number,
+	encryptedFileKey?: string,
 ): Promise<VaultWorkerCalls['prepareUpload']['result']> {
 	return callVaultWorker('prepareUpload', {
 		uploadToken,
 		totalParts,
 		fileKeyAad: fileKeyAAD(vaultId, fileId, folderId),
+		encryptedFileKey,
 	});
 }
 

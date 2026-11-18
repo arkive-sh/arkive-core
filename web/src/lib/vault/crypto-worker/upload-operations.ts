@@ -4,6 +4,7 @@ import {
 	assertVaultGeneration,
 	aadBytes,
 	clearBytes,
+	decryption,
 	encryption,
 	hashes,
 	randomBytes,
@@ -25,19 +26,32 @@ async function handlePrepareUpload(params: WorkerInput<'prepareUpload'>) {
 	const generation = workerState.vaultGeneration;
 	let fileKey;
 	let encryptedFileKey;
+	let wrappedFileKey;
 
 	try {
-		fileKey = randomBytes(32);
-		encryptedFileKey = await encryption.wrapKey(
-			fileKey,
-			workerState.unlockedMasterKey,
-			aadBytes(params.fileKeyAad),
-		);
+		if (params.encryptedFileKey) {
+			encryptedFileKey = fromBase64(params.encryptedFileKey);
+			fileKey = await decryption.unwrapKey(
+				encryptedFileKey,
+				workerState.unlockedMasterKey,
+				aadBytes(params.fileKeyAad),
+			);
+			wrappedFileKey = params.encryptedFileKey;
+		} else {
+			fileKey = randomBytes(32);
+			const wrapped = await encryption.wrapKey(
+				fileKey,
+				workerState.unlockedMasterKey,
+				aadBytes(params.fileKeyAad),
+			);
+			wrappedFileKey = toBase64(wrapped);
+			wrapped.fill(0);
+		}
 		assertVaultGeneration(generation);
 		workerState.activeUploads.set(uploadToken, { fileKey: fileKey.slice() });
 
 		return {
-			encryptedFileKey: toBase64(encryptedFileKey),
+			encryptedFileKey: wrappedFileKey,
 			totalParts: Number(params.totalParts || 0),
 			encryptionVersion: ENCRYPTION_VERSION,
 		};

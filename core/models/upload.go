@@ -19,6 +19,11 @@ type UploadStartResponse struct {
 type UploadSession struct {
 	ID               string
 	FileID           string
+	StorageObjectID  string
+	IsVersion        bool
+	FolderID         *string
+	FileChunkSize    int64
+	TotalChunks      int
 	ProviderUploadID string
 	EncryptedSize    int64
 	UploadPartSize   int64

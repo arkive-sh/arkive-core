@@ -62,6 +62,7 @@
 				fileId={entry.id}
 				fileName={entry.name}
 				mimeType={entry.type}
+				versionId={entry.versionId}
 				{reader}
 			/>
 		</div>

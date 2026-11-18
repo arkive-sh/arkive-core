@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"arkive/core/database"
 	"arkive/core/models"
 )
@@ -30,7 +32,7 @@ func (r *Repository) CreateEncryptedFile(ctx context.Context, db database.PgExec
 	VALUES
 		($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	RETURNING
-		id, user_id, folder_id, encrypted_metadata, encrypted_file_key, encrypted_manifest, encryption_version, chunk_size, chunk_count,
+		id, user_id, folder_id, COALESCE(storage_object_id, id)::text, version_number, encrypted_metadata, encrypted_file_key, encrypted_manifest, encryption_version, chunk_size, chunk_count,
 		actual_encrypted_size, encrypted_hash, upload_status,
 		thumbnail_size_bytes,
 		created_at, updated_at, expires_at`
@@ -51,6 +53,8 @@ func (r *Repository) CreateEncryptedFile(ctx context.Context, db database.PgExec
 		&created.ID,
 		&created.UserID,
 		&folderID,
+		&created.StorageObjectID,
+		&created.VersionNumber,
 		&created.EncryptedMetadata,
 		&created.EncryptedFileKey,
 		&created.EncryptedManifest,
@@ -74,7 +78,7 @@ func (r *Repository) CreateEncryptedFile(ctx context.Context, db database.PgExec
 func (r *Repository) GetUploadDetailsForSession(ctx context.Context, db database.PgExecutor, uploadSessionID, userID string) (UploadDetails, error) {
 	var details UploadDetails
 	err := db.QueryRow(ctx, `SELECT
-		files.id, files.chunk_size, files.chunk_count, upload_sessions.encrypted_size, files.upload_status
+		files.id, upload_sessions.file_chunk_size, upload_sessions.total_chunks, upload_sessions.encrypted_size, files.upload_status
 	FROM upload_sessions
 	JOIN files ON files.id = upload_sessions.file_id
 	WHERE upload_sessions.id = $1 AND files.user_id = $2
@@ -103,11 +107,159 @@ func (r *Repository) UpdateEncryptedFileEnvelope(ctx context.Context, db databas
 	return err
 }
 
+func (r *Repository) SnapshotCurrentVersion(ctx context.Context, db database.PgExecutor, fileID string) error {
+	_, err := db.Exec(ctx, `INSERT INTO file_versions
+		(file_id, version_number, folder_id, storage_object_id, encrypted_metadata, encrypted_file_key,
+		 encrypted_manifest, encryption_version, chunk_size, chunk_count, actual_encrypted_size, encrypted_hash,
+		 thumbnail_size_bytes, created_at)
+	SELECT id, version_number, folder_id, COALESCE(storage_object_id, id), encrypted_metadata, encrypted_file_key,
+		 encrypted_manifest, encryption_version, chunk_size, chunk_count, actual_encrypted_size, encrypted_hash,
+		 thumbnail_size_bytes, updated_at
+	FROM files
+	WHERE id = $1 AND upload_status = 'complete' AND deleted_at IS NULL
+	ON CONFLICT (file_id, version_number) DO NOTHING`, fileID)
+	return err
+}
+
+func (r *Repository) LockFileForVersioning(ctx context.Context, db database.PgExecutor, fileID, userID string) (models.File, error) {
+	var file models.File
+	var folderID *string
+	err := db.QueryRow(ctx, `SELECT id, user_id, folder_id, COALESCE(storage_object_id, id)::text, version_number,
+		encrypted_metadata, encrypted_file_key, encrypted_manifest, encryption_version, chunk_size, chunk_count,
+		actual_encrypted_size, encrypted_hash, upload_status, thumbnail_size_bytes, expires_at
+	FROM files
+	WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL AND purged_at IS NULL
+	FOR UPDATE`, fileID, userID).Scan(
+		&file.ID, &file.UserID, &folderID, &file.StorageObjectID, &file.VersionNumber,
+		&file.EncryptedMetadata, &file.EncryptedFileKey, &file.EncryptedManifest, &file.EncryptionVersion,
+		&file.ChunkSize, &file.ChunkCount, &file.ActualEncryptedSize, &file.EncryptedHash,
+		&file.UploadStatus, &file.ThumbnailSizeBytes, &file.ExpiresAt)
+	file.FolderID = folderID
+	return file, err
+}
+
+func (r *Repository) ApplyVersionUpload(ctx context.Context, db database.PgExecutor, fileID, storageObjectID string, encryptedMetadata, encryptedFileKey, encryptedManifest, encryptedHash []byte, encryptionVersion int16, chunkSize int64, chunkCount int, encryptedSize, thumbnailSize int64) error {
+	tag, err := db.Exec(ctx, `UPDATE files
+	SET storage_object_id = $2,
+		encrypted_metadata = $3,
+		encrypted_file_key = $4,
+		encrypted_manifest = $5,
+		encrypted_hash = $6,
+		encryption_version = $7,
+		chunk_size = $8,
+		chunk_count = $9,
+		actual_encrypted_size = $10,
+		thumbnail_size_bytes = $11,
+		version_number = version_number + 1,
+		updated_at = now()
+	WHERE id = $1 AND upload_status = 'complete' AND deleted_at IS NULL`,
+		fileID, storageObjectID, encryptedMetadata, encryptedFileKey, encryptedManifest, encryptedHash,
+		encryptionVersion, chunkSize, chunkCount, encryptedSize, thumbnailSize)
+	if err == nil && tag.RowsAffected() != 1 {
+		return pgx.ErrNoRows
+	}
+	return err
+}
+
+func (r *Repository) ListFileVersionsForUser(ctx context.Context, db database.PgExecutor, fileID, userID string) ([]models.FileVersion, error) {
+	rows, err := db.Query(ctx, `SELECT version.id, version.file_id, version.version_number, version.folder_id,
+		version.storage_object_id, version.encrypted_metadata, version.encrypted_file_key, version.encrypted_manifest,
+		version.encryption_version, version.chunk_size, version.chunk_count, version.actual_encrypted_size,
+		version.encrypted_hash, version.thumbnail_size_bytes, version.created_at
+	FROM file_versions version
+	JOIN files file ON file.id = version.file_id
+	WHERE version.file_id = $1 AND file.user_id = $2 AND file.upload_status = 'complete'
+		AND file.expires_at IS NULL AND file.deleted_at IS NULL AND file.purged_at IS NULL
+	ORDER BY version.version_number DESC`, fileID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	versions := make([]models.FileVersion, 0)
+	for rows.Next() {
+		var version models.FileVersion
+		if err := rows.Scan(&version.ID, &version.FileID, &version.VersionNumber, &version.FolderID,
+			&version.StorageObjectID, &version.EncryptedMetadata, &version.EncryptedFileKey, &version.EncryptedManifest,
+			&version.EncryptionVersion, &version.ChunkSize, &version.ChunkCount, &version.ActualEncryptedSize,
+			&version.EncryptedHash, &version.ThumbnailSizeBytes, &version.CreatedAt); err != nil {
+			return nil, err
+		}
+		versions = append(versions, version)
+	}
+	return versions, rows.Err()
+}
+
+func (r *Repository) GetFileVersionForUser(ctx context.Context, db database.PgExecutor, fileID, versionID, userID string) (models.FileVersion, error) {
+	var version models.FileVersion
+	err := db.QueryRow(ctx, `SELECT version.id, version.file_id, version.version_number, version.folder_id,
+		version.storage_object_id, version.encrypted_metadata, version.encrypted_file_key, version.encrypted_manifest,
+		version.encryption_version, version.chunk_size, version.chunk_count, version.actual_encrypted_size,
+		version.encrypted_hash, version.thumbnail_size_bytes, version.created_at
+	FROM file_versions version
+	JOIN files file ON file.id = version.file_id
+	WHERE version.file_id = $1 AND version.id = $2 AND file.user_id = $3
+		AND file.upload_status = 'complete' AND file.expires_at IS NULL
+		AND file.deleted_at IS NULL AND file.purged_at IS NULL`, fileID, versionID, userID).Scan(
+		&version.ID, &version.FileID, &version.VersionNumber, &version.FolderID,
+		&version.StorageObjectID, &version.EncryptedMetadata, &version.EncryptedFileKey, &version.EncryptedManifest,
+		&version.EncryptionVersion, &version.ChunkSize, &version.ChunkCount, &version.ActualEncryptedSize,
+		&version.EncryptedHash, &version.ThumbnailSizeBytes, &version.CreatedAt)
+	return version, err
+}
+
+func (r *Repository) RestoreFileVersion(ctx context.Context, db database.PgExecutor, fileID, versionID string, encryptedMetadata, encryptedFileKey []byte) error {
+	_, err := db.Exec(ctx, `UPDATE files current
+	SET encrypted_metadata = $3,
+		encrypted_file_key = $4,
+		encrypted_manifest = version.encrypted_manifest,
+		encryption_version = version.encryption_version,
+		chunk_size = version.chunk_size,
+		chunk_count = version.chunk_count,
+		actual_encrypted_size = version.actual_encrypted_size,
+		encrypted_hash = version.encrypted_hash,
+		thumbnail_size_bytes = version.thumbnail_size_bytes,
+		storage_object_id = version.storage_object_id,
+		version_number = current.version_number + 1,
+		updated_at = now()
+	FROM file_versions version
+	WHERE current.id = $1 AND version.id = $2 AND version.file_id = current.id
+		AND current.upload_status = 'complete' AND current.deleted_at IS NULL`, fileID, versionID, encryptedMetadata, encryptedFileKey)
+	return err
+}
+
+func (r *Repository) DeleteFileVersion(ctx context.Context, db database.PgExecutor, fileID, versionID, userID string) (models.FileVersion, bool, error) {
+	var version models.FileVersion
+	err := db.QueryRow(ctx, `DELETE FROM file_versions version
+	USING files file
+	WHERE version.id = $1 AND version.file_id = $2 AND file.id = version.file_id AND file.user_id = $3
+		AND file.deleted_at IS NULL AND file.purged_at IS NULL
+	RETURNING version.id, version.file_id, version.version_number, version.folder_id, version.storage_object_id,
+		version.actual_encrypted_size, version.thumbnail_size_bytes`, versionID, fileID, userID).Scan(
+		&version.ID, &version.FileID, &version.VersionNumber, &version.FolderID, &version.StorageObjectID,
+		&version.ActualEncryptedSize, &version.ThumbnailSizeBytes)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return models.FileVersion{}, false, nil
+		}
+		return models.FileVersion{}, false, err
+	}
+	var referenced bool
+	if err := db.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1 FROM files WHERE id = $1 AND COALESCE(storage_object_id, id) = $2
+		UNION ALL
+		SELECT 1 FROM file_versions WHERE file_id = $1 AND storage_object_id = $2
+	)`, fileID, version.StorageObjectID).Scan(&referenced); err != nil {
+		return models.FileVersion{}, false, err
+	}
+	return version, !referenced, nil
+}
+
 func (r *Repository) GetEncryptedFileRecordForUser(ctx context.Context, db database.PgExecutor, fileID, userID string) (models.File, error) {
 	var file models.File
 	var folderID *string
 	query := `SELECT
-		id, user_id, folder_id, encrypted_metadata, encrypted_file_key, encrypted_manifest, encryption_version,
+		id, user_id, folder_id, COALESCE(storage_object_id, id)::text, version_number, encrypted_metadata, encrypted_file_key, encrypted_manifest, encryption_version,
 		chunk_size, chunk_count, actual_encrypted_size, encrypted_hash, upload_status,
 		thumbnail_size_bytes
 	FROM
@@ -119,6 +271,8 @@ func (r *Repository) GetEncryptedFileRecordForUser(ctx context.Context, db datab
 		&file.ID,
 		&file.UserID,
 		&folderID,
+		&file.StorageObjectID,
+		&file.VersionNumber,
 		&file.EncryptedMetadata,
 		&file.EncryptedFileKey,
 		&file.EncryptedManifest,
@@ -181,14 +335,14 @@ func (r *Repository) UpdateEncryptedFileStatusIf(ctx context.Context, db databas
 func (r *Repository) CountInFlightForUser(ctx context.Context, db database.PgExecutor, userID string) (int64, error) {
 	var total int64
 	query := `SELECT
-		COUNT(DISTINCT files.id)
+		COUNT(DISTINCT upload_sessions.id)
 	FROM
 		files
 	INNER JOIN
 		upload_sessions ON upload_sessions.file_id = files.id
 	WHERE
 		files.user_id = $1
-		AND files.upload_status IN ('pending', 'uploading')
+		AND (files.upload_status IN ('pending', 'uploading') OR upload_sessions.is_version)
 		AND files.deleted_at IS NULL
 		AND upload_sessions.status = 'active'
 		AND upload_sessions.expires_at > now()`
@@ -202,7 +356,7 @@ func (r *Repository) GetFileByID(ctx context.Context, db database.PgExecutor, fi
 	var file models.File
 	var folderID *string
 	query := `SELECT
-		id, user_id, folder_id, encrypted_metadata, encrypted_file_key, encrypted_manifest, encryption_version, chunk_size, chunk_count,
+		id, user_id, folder_id, COALESCE(storage_object_id, id)::text, version_number, encrypted_metadata, encrypted_file_key, encrypted_manifest, encryption_version, chunk_size, chunk_count,
 		actual_encrypted_size, encrypted_hash, upload_status,
 		thumbnail_size_bytes,
 		created_at, updated_at, expires_at
@@ -215,6 +369,8 @@ func (r *Repository) GetFileByID(ctx context.Context, db database.PgExecutor, fi
 		&file.ID,
 		&file.UserID,
 		&folderID,
+		&file.StorageObjectID,
+		&file.VersionNumber,
 		&file.EncryptedMetadata,
 		&file.EncryptedFileKey,
 		&file.EncryptedManifest,
@@ -239,7 +395,7 @@ func (r *Repository) GetFileForUser(ctx context.Context, db database.PgExecutor,
 	var file models.File
 	var folderID *string
 	query := `SELECT
-		id, user_id, folder_id, encrypted_metadata, encrypted_file_key, encrypted_manifest, encryption_version, chunk_size, chunk_count,
+		id, user_id, folder_id, COALESCE(storage_object_id, id)::text, version_number, encrypted_metadata, encrypted_file_key, encrypted_manifest, encryption_version, chunk_size, chunk_count,
 		actual_encrypted_size, encrypted_hash, upload_status,
 		thumbnail_size_bytes,
 		created_at, updated_at, expires_at
@@ -252,6 +408,8 @@ func (r *Repository) GetFileForUser(ctx context.Context, db database.PgExecutor,
 		&file.ID,
 		&file.UserID,
 		&folderID,
+		&file.StorageObjectID,
+		&file.VersionNumber,
 		&file.EncryptedMetadata,
 		&file.EncryptedFileKey,
 		&file.EncryptedManifest,
@@ -359,6 +517,7 @@ func (r *Repository) ListByFolderBefore(ctx context.Context, db database.PgExecu
 func (r *Repository) listByFolder(ctx context.Context, db database.PgExecutor, userID string, folderID *string, limit int, cursorCreatedAt *time.Time, cursorID *string, inclusive, before bool) ([]models.File, error) {
 	query := `SELECT
 		file.id, file.folder_id, file.encrypted_metadata, file.encrypted_file_key, file.created_at, file.updated_at,
+		file.version_number,
 		EXISTS (
 			SELECT 1
 			FROM share_snapshot_files snapshot
@@ -416,6 +575,7 @@ func (r *Repository) listByFolder(ctx context.Context, db database.PgExecutor, u
 			&file.EncryptedFileKey,
 			&file.CreatedAt,
 			&file.UpdatedAt,
+			&file.VersionNumber,
 			&file.IsShared,
 		); err != nil {
 			return nil, err
@@ -539,7 +699,22 @@ func (r *Repository) ListDeletedPendingPurge(ctx context.Context, db database.Pg
 		JOIN expired_folders folder ON folder.id = file.folder_id AND folder.user_id = file.user_id
 		WHERE file.upload_status = 'complete' AND file.deleted_at IS NOT NULL AND file.purged_at IS NULL
 	)
-	SELECT file.id, file.user_id, file.actual_encrypted_size, file.thumbnail_size_bytes
+	SELECT file.id, file.user_id, COALESCE(file.storage_object_id, file.id)::text,
+		file.actual_encrypted_size, file.thumbnail_size_bytes,
+		(SELECT COALESCE(SUM(objects.size_bytes), 0)
+		 FROM (
+			SELECT stored.storage_object_id, MAX(stored.size_bytes) AS size_bytes
+			FROM (
+				SELECT COALESCE(current.storage_object_id, current.id)::text AS storage_object_id,
+					current.actual_encrypted_size + current.thumbnail_size_bytes AS size_bytes
+				FROM files current WHERE current.id = file.id
+				UNION ALL
+				SELECT version.storage_object_id::text,
+					version.actual_encrypted_size + version.thumbnail_size_bytes
+				FROM file_versions version WHERE version.file_id = file.id
+			) stored
+			GROUP BY stored.storage_object_id
+		) objects)
 	FROM files file
 	JOIN eligible_files eligible ON eligible.id = file.id
 	ORDER BY file.deleted_at ASC, file.id ASC
@@ -556,8 +731,10 @@ func (r *Repository) ListDeletedPendingPurge(ctx context.Context, db database.Pg
 		if err := rows.Scan(
 			&file.ID,
 			&file.UserID,
+			&file.StorageObjectID,
 			&file.ActualEncryptedSize,
 			&file.ThumbnailSizeBytes,
+			&file.TotalStoredBytes,
 		); err != nil {
 			return nil, err
 		}
@@ -567,6 +744,35 @@ func (r *Repository) ListDeletedPendingPurge(ctx context.Context, db database.Pg
 		return nil, rows.Err()
 	}
 	return files, nil
+}
+
+func (r *Repository) ListVersionStorageObjects(ctx context.Context, db database.PgExecutor, fileIDs []string) (map[string][]models.FileVersion, error) {
+	objects := make(map[string][]models.FileVersion, len(fileIDs))
+	if len(fileIDs) == 0 {
+		return objects, nil
+	}
+	rows, err := db.Query(ctx, `SELECT file_id, storage_object_id, thumbnail_size_bytes
+	FROM file_versions WHERE file_id = ANY($1::uuid[])`, fileIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var version models.FileVersion
+		if err := rows.Scan(&version.FileID, &version.StorageObjectID, &version.ThumbnailSizeBytes); err != nil {
+			return nil, err
+		}
+		objects[version.FileID] = append(objects[version.FileID], version)
+	}
+	return objects, rows.Err()
+}
+
+func (r *Repository) DeleteVersionsForFiles(ctx context.Context, db database.PgExecutor, fileIDs []string) error {
+	if len(fileIDs) == 0 {
+		return nil
+	}
+	_, err := db.Exec(ctx, `DELETE FROM file_versions WHERE file_id = ANY($1::uuid[])`, fileIDs)
+	return err
 }
 
 func (r *Repository) MarkFilesPurged(ctx context.Context, db database.PgExecutor, fileIDs []string) ([]models.File, error) {
@@ -582,7 +788,7 @@ func (r *Repository) MarkFilesPurged(ctx context.Context, db database.PgExecutor
 		id = ANY($1::uuid[])
 		AND deleted_at IS NOT NULL
 		AND purged_at IS NULL
-	RETURNING id, user_id, actual_encrypted_size, thumbnail_size_bytes`, fileIDs)
+		RETURNING id, user_id, actual_encrypted_size, thumbnail_size_bytes`, fileIDs)
 	if err != nil {
 		return nil, err
 	}

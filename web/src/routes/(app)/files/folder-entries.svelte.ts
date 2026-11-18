@@ -20,6 +20,7 @@ export type ApiFolder = {
 export type ApiFile = {
 	ID: string;
 	FolderID: string | null;
+	VersionNumber: number;
 	EncryptedMetadata: string;
 	EncryptedFileKey: string;
 	UpdatedAt: string;
@@ -102,6 +103,7 @@ export function createFolderEntries(
 						type: 'application/octet-stream',
 						size: null,
 						updatedAt: file.UpdatedAt,
+						versionNumber: file.VersionNumber,
 					})),
 				]),
 				...rows,
@@ -209,6 +211,7 @@ export function createFolderEntries(
 									: undefined,
 							size: typeof decrypted.metadata.size === 'number' ? decrypted.metadata.size : null,
 							updatedAt: file.UpdatedAt,
+							versionNumber: file.VersionNumber,
 							isShared: file.IsShared,
 							parentFolderId: file.FolderID,
 							encryptedMetadata: file.EncryptedMetadata,

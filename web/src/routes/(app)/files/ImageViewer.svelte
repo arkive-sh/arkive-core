@@ -10,7 +10,7 @@
 	import { isHeicImage, MAX_IMAGE_PREVIEW_BYTES } from '#lib/utils/image.ts';
 	import { decodeHeicImage } from '#lib/utils/heic.ts';
 
-	type PreviewRequest = { fileId: string; trigger?: HTMLElement };
+	type PreviewRequest = { fileId: string; versionId?: string; trigger?: HTMLElement };
 	type Props = {
 		entries: FileManagerEntry[];
 		request: PreviewRequest | null;
@@ -44,6 +44,7 @@
 	let destroyed = false;
 	let originalButton: HTMLButtonElement | undefined;
 	const contentResources = new SvelteMap<Content, ContentResource>();
+	const imageEntryKey = (entry: FileManagerEntry) => `${entry.id}:${entry.versionId ?? 'current'}`;
 
 	function updateOriginalButton(): void {
 		const content = lightbox?.pswp?.currSlide?.content;
@@ -99,7 +100,7 @@
 			instance.on('contentLoadImage', (event) => {
 				event.preventDefault();
 				const { content } = event;
-				const entry = entries.find((candidate) => candidate.id === content.data.id);
+				const entry = entries.find((candidate) => imageEntryKey(candidate) === content.data.id);
 				const image = content.element;
 
 				if (!entry || !(image instanceof HTMLImageElement)) {
@@ -136,25 +137,27 @@
 	): Promise<void> {
 		const resource: ContentResource = {
 			controller: new AbortController(),
-			status: entry.thumbnail ? 'loading-thumbnail' : 'ready',
+			status: entry.thumbnail && !entry.versionId ? 'loading-thumbnail' : 'ready',
 		};
 		contentResources.set(content, resource);
 		image.style.visibility = 'hidden';
 		updateOriginalButton();
 		try {
-			const blob = entry.thumbnail
-				? await readDecryptedThumbnail(
-						{ id: entry.id, ...entry.thumbnail },
-						resource.controller.signal,
-					)
-				: null;
+			const blob =
+				entry.thumbnail && !entry.versionId
+					? await readDecryptedThumbnail(
+							{ id: entry.id, ...entry.thumbnail },
+							resource.controller.signal,
+						)
+					: null;
 
 			if (resource.controller.signal.aborted) return;
 			if (!blob) {
 				resource.status = 'ready';
 				content.onLoaded();
 				updateOriginalButton();
-				if (autoLoadOriginal && (reader || getReader)) void loadOriginal(content);
+				if (autoLoadOriginal && (reader || getReader || entry.versionId))
+					void loadOriginal(content);
 
 				return;
 			}
@@ -187,7 +190,7 @@
 	}
 
 	async function loadOriginal(content: Content): Promise<void> {
-		const entry = entries.find((candidate) => candidate.id === content.data.id);
+		const entry = entries.find((candidate) => imageEntryKey(candidate) === content.data.id);
 		const resource = contentResources.get(content);
 		const image = content.element;
 
@@ -219,6 +222,7 @@
 						entry.type,
 						resource.controller.signal,
 						MAX_IMAGE_PREVIEW_BYTES,
+						entry.versionId,
 					);
 
 			if (resource.controller.signal.aborted) return;
@@ -314,7 +318,8 @@
 				const instance = await ensureLightbox();
 
 				if (generation !== openGeneration) return;
-				const index = availableEntries.findIndex((entry) => entry.id === pending.fileId);
+				const pendingKey = `${pending.fileId}:${pending.versionId ?? 'current'}`;
+				const index = availableEntries.findIndex((entry) => imageEntryKey(entry) === pendingKey);
 
 				if (index < 0) {
 					onClose();
@@ -332,15 +337,15 @@
 					const scale = 4000 / Math.max(width, height);
 
 					return {
-						id: entry.id,
+						id: imageEntryKey(entry),
 						src: entry.id,
 						type: 'image',
-						element: entry.id === pending.fileId ? thumbnail : undefined,
+						element: imageEntryKey(entry) === pendingKey ? thumbnail : undefined,
 						width: Math.round(width * scale),
 						height: Math.round(height * scale),
 						alt: entry.name,
 						msrc:
-							entry.id === pending.fileId && thumbnail instanceof HTMLImageElement
+							imageEntryKey(entry) === pendingKey && thumbnail instanceof HTMLImageElement
 								? thumbnail.currentSrc
 								: undefined,
 					};

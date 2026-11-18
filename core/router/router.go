@@ -109,6 +109,10 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 	apiFiles.Use(middleware.RequireSessionJSON(authService))
 	{
 		apiFiles.GET("/:id/record", handlers.APIFileRecord(filesService))
+		apiFiles.GET("/:id/versions", handlers.APIListFileVersions(filesService))
+		apiFiles.GET("/:id/versions/:versionID/record", handlers.APIFileVersionRecord(filesService))
+		apiFiles.POST("/:id/versions/:versionID/restore", middleware.LimitBody(2<<20), handlers.APIRestoreFileVersion(filesService))
+		apiFiles.DELETE("/:id/versions/:versionID", handlers.APIDeleteFileVersion(filesService))
 		apiFiles.GET("/:id/thumbnail/presign", handlers.APIThumbnailDownloadPresign(filesService))
 		apiFiles.GET("/:id/share", handlers.APIGetShareForFile(shareService))
 		apiFiles.POST("/:id/share", middleware.LimitBody(64<<10), handlers.APICreateShare(shareService))

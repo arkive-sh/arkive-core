@@ -30,6 +30,8 @@ export interface FileManagerEntry {
 	dimensions?: MediaDimensions;
 	thumbnail?: ThumbnailSource;
 	isShared?: boolean;
+	versionNumber?: number;
+	versionId?: string;
 }
 
 export function fileManagerEntryKey(entry: Pick<FileManagerEntry, 'id' | 'kind'>): string {

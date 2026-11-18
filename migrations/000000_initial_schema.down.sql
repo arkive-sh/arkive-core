@@ -7,6 +7,7 @@ DROP TABLE IF EXISTS upload_parts;
 DROP TABLE IF EXISTS upload_sessions;
 DROP TABLE IF EXISTS folder_search_tokens;
 DROP TABLE IF EXISTS file_search_tokens;
+DROP TABLE IF EXISTS file_versions;
 DROP TABLE IF EXISTS files;
 DROP TABLE IF EXISTS folders;
 DROP TABLE IF EXISTS opaque_login_attempts;

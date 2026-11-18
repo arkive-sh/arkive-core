@@ -90,6 +90,7 @@ type folderEntrySummary struct {
 type fileEntrySummary struct {
 	ID                string
 	FolderID          *string
+	VersionNumber     int
 	EncryptedMetadata []byte
 	EncryptedFileKey  []byte
 	UpdatedAt         time.Time
@@ -291,6 +292,7 @@ func fileEntrySummaries(files []models.File) []fileEntrySummary {
 		entries[i] = fileEntrySummary{
 			ID:                file.ID,
 			FolderID:          file.FolderID,
+			VersionNumber:     file.VersionNumber,
 			EncryptedMetadata: file.EncryptedMetadata,
 			EncryptedFileKey:  file.EncryptedFileKey,
 			UpdatedAt:         file.UpdatedAt,

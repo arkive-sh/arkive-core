@@ -9,6 +9,7 @@
 		ClipboardPaste,
 		Film,
 		FileText,
+		History,
 		FolderOpen,
 		FolderPlus,
 		Image,
@@ -43,6 +44,7 @@
 		onPreviewPdf: (entry: FileManagerEntry) => void;
 		onPreviewText?: (entry: FileManagerEntry) => void;
 		onProperties?: (entry: FileManagerEntry) => void;
+		onVersionHistory?: (entry: FileManagerEntry) => void;
 		onDelete?: (entry: FileManagerEntry) => void;
 		onCut?: (entry: FileManagerEntry) => void;
 		onPaste?: (entry: FileManagerEntry | null) => void;
@@ -76,6 +78,7 @@
 		onPreviewPdf,
 		onPreviewText,
 		onProperties,
+		onVersionHistory,
 		onDelete,
 		onPermanentDelete,
 		onCut,
@@ -124,6 +127,13 @@
 		const selected = entry;
 		onClose();
 		onProperties?.(selected);
+	}
+
+	function showVersionHistory(): void {
+		if (!entry) return;
+		const selected = entry;
+		onClose();
+		onVersionHistory?.(selected);
 	}
 
 	function downloadFile(): void {
@@ -432,6 +442,17 @@
 				</button>
 			{/if}
 			{#if entry?.kind === 'file'}
+				{#if mode === 'files' && (entry.versionNumber ?? 1) > 1 && onVersionHistory}
+					<button
+						class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"
+						type="button"
+						role="menuitem"
+						onclick={showVersionHistory}
+					>
+						<History class="size-4 text-(--muted)" aria-hidden="true" />
+						<span>Version history</span>
+					</button>
+				{/if}
 				{#if isImageFile(entry.name, entry.type)}
 					<button
 						class="inline-flex cursor-pointer items-center gap-2 rounded px-2.5 py-2 text-left text-sm hover:bg-(--surface-highest)"

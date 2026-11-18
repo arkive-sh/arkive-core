@@ -7,8 +7,9 @@ export async function downloadEncryptedFile(
 	signal: AbortSignal,
 	onProgress: (transferredBytes: number) => void,
 	concurrency: number,
+	versionId?: string,
 ): Promise<void> {
-	const reader = new DecryptedFileReader(fileId, signal);
+	const reader = new DecryptedFileReader(fileId, signal, undefined, versionId);
 
 	try {
 		const { record, metadata } = await reader.load();

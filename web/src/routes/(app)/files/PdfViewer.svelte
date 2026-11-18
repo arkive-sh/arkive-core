@@ -151,7 +151,9 @@
 
 	onMount(() => {
 		const controller = new AbortController();
-		const reader = providedReader ?? new DecryptedFileReader(entry.id, controller.signal);
+		const reader =
+			providedReader ??
+			new DecryptedFileReader(entry.id, controller.signal, undefined, entry.versionId);
 		let transport: PdfRangeTransport | undefined;
 		let disposed = false;
 

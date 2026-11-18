@@ -267,7 +267,9 @@
 		if (!entry) return;
 		controller = new AbortController();
 		ownsReader = !fileReader;
-		reader = fileReader ?? new DecryptedFileReader(entry.id, controller.signal);
+		reader =
+			fileReader ??
+			new DecryptedFileReader(entry.id, controller.signal, undefined, entry.versionId);
 		let pending = '';
 		const decoder = new TextDecoder('utf-8', { fatal: true });
 		const decode = (bytes?: Uint8Array, stream = false) => {

@@ -1,6 +1,6 @@
 import { CORE_API_ORIGIN } from '$app/env/public';
 import { api } from '../api';
-import { createSearchTokens } from '../vault/search';
+import { createSearchTokens, decryptSearchFile, decryptSearchFolder } from '../vault/search';
 import { waitUntilReady } from '../vault/session';
 import { encryptFolderMetadata, encryptFolderName } from '../vault/files';
 import { ENCRYPTED_ENVELOPE_OVERHEAD_BYTES, ENCRYPTION_VERSION } from '../vault/crypto-format';
@@ -46,7 +46,191 @@ interface UploadStartRequest {
 	uploadPartCount: number;
 	encryptionVersion: number;
 	folderId: string | null;
+	replaceFileId?: string;
 	singlePart: boolean;
+}
+
+export type UploadTarget = { fileId: string; encryptedFileKey: string };
+
+export type UploadListing = {
+	folders: Array<{ id: string; name: string }>;
+	files: Array<{ id: string; name: string; encryptedFileKey: string }>;
+};
+
+type UploadListingPage = {
+	Folders: Array<{
+		ID: string;
+		VaultID: string;
+		ParentFolderID: string | null;
+		EncryptedName: string;
+		EncryptedMetadata: string;
+	}>;
+	Files: Array<{
+		ID: string;
+		FolderID: string | null;
+		EncryptedMetadata: string;
+		EncryptedFileKey: string;
+	}>;
+	NextCursor: string | null;
+	HasMore: boolean;
+};
+
+export type UploadListingCache = {
+	listings: Map<string, Promise<UploadListing>>;
+	folders: Map<string, Promise<{ id: string; name: string }>>;
+};
+
+export async function resolveUploadTarget(
+	relativePath: string,
+	baseFolderId: string | null,
+	vaultId: string,
+	signal: AbortSignal,
+	cache: UploadListingCache,
+): Promise<{ folderId: string | null; target: UploadTarget | null }> {
+	const checkAborted = () => {
+		if (signal.aborted) throw new DOMException('Upload canceled.', 'AbortError');
+	};
+	checkAborted();
+
+	async function list(parentFolderId: string | null): Promise<UploadListing> {
+		const cacheKey = parentFolderId ?? 'root';
+		let listing = cache.listings.get(cacheKey);
+
+		if (!listing) {
+			// shortcut: decrypt the destination folder for exact-name matching; add blind exact-name lookup if large folders slow uploads.
+			listing = (async () => {
+				const result: UploadListing = { folders: [], files: [] };
+				let cursor: string | undefined;
+				do {
+					const endpoint = parentFolderId
+						? `/api/folders/${encodeURIComponent(parentFolderId)}/entries`
+						: '/api/folders/root/entries';
+					const { data } = await api.get<UploadListingPage>(endpoint, {
+						params: { cursor, pageSize: 50 },
+					});
+					const [folders, files] = await Promise.all([
+						Promise.all(
+							data.Folders.map(async (folder) => {
+								try {
+									const decrypted = await decryptSearchFolder({
+										id: folder.ID,
+										parentFolderId: folder.ParentFolderID,
+										vaultId: folder.VaultID || vaultId,
+										encryptedName: folder.EncryptedName,
+										encryptedMetadata: folder.EncryptedMetadata,
+										score: 0,
+										url: '',
+									});
+
+									return { id: folder.ID, name: decrypted.name.name || '' };
+								} catch {
+									return { id: folder.ID, name: '' };
+								}
+							}),
+						),
+						Promise.all(
+							data.Files.map(async (file) => {
+								try {
+									const decrypted = await decryptSearchFile({
+										id: file.ID,
+										folderId: file.FolderID,
+										vaultId,
+										encryptedMetadata: file.EncryptedMetadata,
+										encryptedFileKey: file.EncryptedFileKey,
+										score: 0,
+										url: '',
+									});
+
+									return {
+										id: file.ID,
+										name: decrypted.metadata.name || '',
+										encryptedFileKey: file.EncryptedFileKey,
+									};
+								} catch {
+									return { id: file.ID, name: '', encryptedFileKey: file.EncryptedFileKey };
+								}
+							}),
+						),
+					]);
+					result.folders.push(...folders);
+					result.files.push(...files);
+					cursor = data.HasMore && data.NextCursor ? data.NextCursor : undefined;
+				} while (cursor);
+
+				return result;
+			})().catch((error: unknown) => {
+				cache.listings.delete(cacheKey);
+
+				throw error;
+			});
+			cache.listings.set(cacheKey, listing);
+		}
+
+		return listing;
+	}
+
+	let folderId = baseFolderId;
+	const segments = relativePath.split('/').filter(Boolean);
+
+	for (const name of segments.slice(0, -1)) {
+		const listing = await list(folderId);
+		checkAborted();
+		let folder = listing.folders.find((entry) => entry.name === name);
+
+		if (!folder) {
+			const folderKey = `${folderId ?? 'root'}:${name}`;
+			let creation = cache.folders.get(folderKey);
+
+			if (!creation) {
+				creation = createUploadFolder(name, folderId, vaultId)
+					.then((id) => {
+						const created = { id, name };
+
+						if (!listing.folders.some((item) => item.id === id)) listing.folders.push(created);
+
+						return created;
+					})
+					.catch((error: unknown) => {
+						cache.folders.delete(folderKey);
+
+						throw error;
+					});
+				cache.folders.set(folderKey, creation);
+			}
+			folder = await creation;
+			checkAborted();
+		}
+		folderId = folder.id;
+	}
+	const listing = await list(folderId);
+	checkAborted();
+	const name = segments.at(-1) || relativePath;
+	const existing = listing.files.find((entry) => entry.name === name);
+
+	return {
+		folderId,
+		target: existing ? { fileId: existing.id, encryptedFileKey: existing.encryptedFileKey } : null,
+	};
+}
+
+export async function rememberUploadedFile(
+	cache: UploadListingCache,
+	folderId: string | null,
+	name: string,
+	target: UploadTarget,
+): Promise<void> {
+	const listing = cache.listings.get(folderId ?? 'root');
+
+	if (!listing) return;
+	const entries = await listing;
+	const existing = entries.files.find((entry) => entry.id === target.fileId);
+
+	if (existing) {
+		existing.name = name;
+		existing.encryptedFileKey = target.encryptedFileKey;
+	} else {
+		entries.files.push({ id: target.fileId, name, encryptedFileKey: target.encryptedFileKey });
+	}
 }
 
 interface UploadBatchStartResult extends UploadStart {
@@ -323,7 +507,8 @@ export async function uploadFile(
 	onProgress?: (uploadedBytes: number) => void,
 	folderId: string | null = null,
 	partConcurrency = 3,
-): Promise<void> {
+	target: UploadTarget | null = null,
+): Promise<UploadTarget> {
 	if (!(await waitUntilReady()).unlocked)
 		throw new Error('Unlock the vault before uploading files.');
 	checkAborted(signal);
@@ -344,6 +529,7 @@ export async function uploadFile(
 		uploadPartCount,
 		encryptionVersion: ENCRYPTION_VERSION,
 		folderId,
+		replaceFileId: target?.fileId,
 		singlePart: uploadPartCount === 1,
 	};
 	const started = useBatchEndpoint
@@ -360,6 +546,7 @@ export async function uploadFile(
 			started.fileId,
 			folderId,
 			started.totalChunks,
+			target?.encryptedFileKey,
 		);
 		const chunksByPart: Array<
 			Array<{ n: number; plain_size: number; cipher_size: number; hash: string }>
@@ -576,6 +763,8 @@ export async function uploadFile(
 			);
 		}
 		complete = true;
+
+		return { fileId: started.fileId, encryptedFileKey: prepared.encryptedFileKey };
 	} finally {
 		if (!complete) {
 			await clearUploadContext(uploadToken).catch(() => {});

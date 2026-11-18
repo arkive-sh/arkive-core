@@ -95,6 +95,8 @@ CREATE INDEX idx_folders_user_parent_created
 
 CREATE TABLE files (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  storage_object_id UUID,
+  version_number INTEGER NOT NULL DEFAULT 1,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   folder_id UUID REFERENCES folders(id) ON DELETE SET NULL,
   encrypted_metadata BYTEA NOT NULL,
@@ -125,6 +127,31 @@ CREATE INDEX idx_files_user_folder_complete_created
   WHERE upload_status = 'complete'
     AND expires_at IS NULL;
 
+CREATE TABLE file_versions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  file_id UUID NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+  version_number INTEGER NOT NULL,
+  folder_id UUID,
+  storage_object_id UUID NOT NULL,
+  encrypted_metadata BYTEA NOT NULL,
+  encrypted_file_key BYTEA NOT NULL,
+  encrypted_manifest BYTEA NOT NULL,
+  encryption_version SMALLINT NOT NULL,
+  chunk_size BIGINT NOT NULL,
+  chunk_count INTEGER NOT NULL,
+  actual_encrypted_size BIGINT NOT NULL,
+  encrypted_hash BYTEA,
+  thumbnail_size_bytes BIGINT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT file_versions_file_number_unique UNIQUE (file_id, version_number),
+  CONSTRAINT file_versions_number_positive_chk CHECK (version_number > 0),
+  CONSTRAINT file_versions_size_nonnegative_chk CHECK (actual_encrypted_size >= 0),
+  CONSTRAINT file_versions_thumbnail_nonnegative_chk CHECK (thumbnail_size_bytes >= 0)
+);
+
+CREATE INDEX file_versions_file_id_number_idx
+  ON file_versions (file_id, version_number DESC);
+
 CREATE TABLE file_search_tokens (
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   vault_id UUID NOT NULL,
@@ -154,6 +181,11 @@ CREATE INDEX idx_folder_search_tokens_lookup
 CREATE TABLE upload_sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   file_id UUID NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+  storage_object_id UUID NOT NULL,
+  is_version BOOLEAN NOT NULL DEFAULT false,
+  target_folder_id UUID,
+  file_chunk_size BIGINT NOT NULL DEFAULT 0,
+  total_chunks INTEGER NOT NULL DEFAULT 0,
   provider_upload_id TEXT,
   encrypted_size BIGINT NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'active',
