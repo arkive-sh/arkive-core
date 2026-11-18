@@ -43,7 +43,7 @@ func TestFileShareReturnsEncryptedRecordAndRevocationBlocksPublicAccess(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := NewService(env.DB, files, folderrepo.New(), sharerepo.New())
+	service := NewService(env.DB, files, folderrepo.New(), sharerepo.New(), "")
 	input := CreateInput{
 		FileID: file.ID, OwnerUserID: userID, Token: strings.Repeat("c", TokenMinLength),
 		AllowPreview:             true,
@@ -113,7 +113,7 @@ func TestFolderShareRequiresOwnerAndCanBeActivatedAndListed(t *testing.T) {
 
 	files := filerepo.New()
 	folders := folderrepo.New()
-	service := NewService(env.DB, files, folders, sharerepo.New())
+	service := NewService(env.DB, files, folders, sharerepo.New(), "")
 	input := CreateInput{
 		FolderID:                folderID,
 		OwnerUserID:             userID,

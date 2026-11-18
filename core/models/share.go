@@ -3,25 +3,25 @@ package models
 import "time"
 
 type Share struct {
-	ID                string
-	ItemType          string
-	FileID            string
-	FolderID          string
-	OwnerUserID       string
-	Token             string
-	EncryptedShareKey []byte
-	AllowPreview      bool
-	AllowDownload     bool
-	BurnAfterRead     bool
-	AccessCount       int
-	MaxAccessCount    *int
-	PasswordHash      *string
-	ExpiresAt         *time.Time
-	Status            string
-	RevokedAt         *time.Time
-	ConsumedAt        *time.Time
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	ID                       string
+	ItemType                 string
+	FileID                   string
+	FolderID                 string
+	OwnerUserID              string
+	Token                    string
+	EncryptedShareKey        []byte
+	AllowPreview             bool
+	AllowDownload            bool
+	BurnAfterRead            bool
+	AccessCount              int
+	MaxAccessCount           *int
+	OpaqueRegistrationRecord []byte
+	ExpiresAt                *time.Time
+	Status                   string
+	RevokedAt                *time.Time
+	ConsumedAt               *time.Time
+	CreatedAt                time.Time
+	UpdatedAt                time.Time
 }
 
 type ShareWithFile struct {

@@ -12,7 +12,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
-	"golang.org/x/crypto/bcrypt"
 
 	"arkive/core/models"
 	filessvc "arkive/core/services/files"
@@ -27,54 +26,77 @@ const (
 	shareAccessTTL        = 15 * time.Minute
 )
 
-func APIPublicShareUnlock(shareService *shares.Service, cookieSecret string) gin.HandlerFunc {
+func APIPublicSharePasswordLoginStart(shareService *shares.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := strings.TrimSpace(c.Param("token"))
 		if token == "" {
 			apierror.Write(c, http.StatusNotFound, "share_not_found", "Share not found", nil)
 			return
 		}
-
 		var input struct {
-			Password string `json:"password"`
+			StartLoginRequest string `json:"startLoginRequest"`
 		}
-		if err := c.ShouldBindJSON(&input); err != nil {
+		if err := c.ShouldBindJSON(&input); err != nil || len(input.StartLoginRequest) == 0 || len(input.StartLoginRequest) > 2048 {
 			apierror.InvalidPayload(c)
 			return
 		}
-
-		share, err := shareService.GetShareByToken(c.Request.Context(), token)
+		request, err := base64.RawURLEncoding.DecodeString(input.StartLoginRequest)
+		if err != nil || len(request) == 0 {
+			apierror.InvalidPayload(c)
+			return
+		}
+		result, err := shareService.StartPasswordLogin(c.Request.Context(), token, request)
 		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
+			switch err {
+			case shares.ErrNotFound:
 				apierror.Write(c, http.StatusNotFound, "share_not_found", "Share not found", nil)
-				return
+			case shares.ErrPasswordNotConfigured:
+				apierror.Write(c, http.StatusConflict, "share_password_not_configured", "Share password is not configured", nil)
+			case shares.ErrInvalidInput:
+				apierror.InvalidPayload(c)
+			default:
+				_ = c.Error(errs.WithStack(err))
+				apierror.Internal(c, "Share password login failed")
 			}
-			_ = c.Error(errs.WithStack(err))
-			apierror.Internal(c, "Share lookup failed")
 			return
 		}
-		if share.Status == "burned" {
-			apierror.Write(c, http.StatusGone, "share_consumed", "Share has already been used", nil)
-			return
-		}
-		if share.Status != shares.ShareStatusActive || (share.ExpiresAt != nil && !share.ExpiresAt.After(time.Now())) {
-			apierror.Write(c, http.StatusNotFound, "share_not_found", "Share not found", nil)
-			return
-		}
-		if !share.AllowPreview && !share.AllowDownload {
-			apierror.Write(c, http.StatusForbidden, "forbidden", "Share access denied", nil)
-			return
-		}
-		if share.PasswordHash == nil || hasShareAccess(c, share, cookieSecret) {
-			c.Status(http.StatusNoContent)
-			return
-		}
+		c.JSON(http.StatusOK, gin.H{"attemptId": result.AttemptID, "loginResponse": result.LoginResponse})
+	}
+}
 
-		if input.Password == "" || bcrypt.CompareHashAndPassword([]byte(*share.PasswordHash), []byte(input.Password)) != nil {
-			apierror.Write(c, http.StatusUnauthorized, "invalid_share_password", "Password is incorrect.", nil)
+func APIPublicSharePasswordLoginFinish(shareService *shares.Service, cookieSecret string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		token := strings.TrimSpace(c.Param("token"))
+		var input struct {
+			AttemptID          string `json:"attemptId"`
+			FinishLoginRequest string `json:"finishLoginRequest"`
+		}
+		if token == "" || c.ShouldBindJSON(&input) != nil || strings.TrimSpace(input.AttemptID) == "" || len(input.FinishLoginRequest) == 0 || len(input.FinishLoginRequest) > 2048 {
+			apierror.InvalidPayload(c)
 			return
 		}
-
+		finalization, err := base64.RawURLEncoding.DecodeString(input.FinishLoginRequest)
+		if err != nil || len(finalization) == 0 {
+			apierror.InvalidPayload(c)
+			return
+		}
+		share, err := shareService.FinishPasswordLogin(c.Request.Context(), token, input.AttemptID, finalization)
+		if err != nil {
+			switch err {
+			case shares.ErrInvalidCredentials:
+				apierror.Write(c, http.StatusUnauthorized, "invalid_share_password", "Password is incorrect.", nil)
+			case shares.ErrNotFound:
+				apierror.Write(c, http.StatusNotFound, "share_not_found", "Share not found", nil)
+			case shares.ErrPasswordNotConfigured:
+				apierror.Write(c, http.StatusConflict, "share_password_not_configured", "Share password is not configured", nil)
+			case shares.ErrInvalidInput:
+				apierror.InvalidPayload(c)
+			default:
+				_ = c.Error(errs.WithStack(err))
+				apierror.Internal(c, "Share password login failed")
+			}
+			return
+		}
 		setShareAccess(c, share, cookieSecret)
 		c.Status(http.StatusNoContent)
 	}
@@ -106,7 +128,7 @@ func APIPublicShareRecord(shareService *shares.Service, filesService *filessvc.S
 			apierror.Write(c, http.StatusNotFound, "share_not_found", "Share not found", nil)
 			return
 		}
-		if share.PasswordHash != nil && !hasShareAccess(c, share, cookieSecret) {
+		if len(share.OpaqueRegistrationRecord) > 0 && !hasShareAccess(c, share, cookieSecret) {
 			apierror.Write(c, http.StatusForbidden, "forbidden", "Share access denied", nil)
 			return
 		}
@@ -138,7 +160,6 @@ func APIPublicShareRecord(shareService *shares.Service, filesService *filessvc.S
 			})
 			return
 		}
-
 		file, err := filesService.GetFileForShare(c.Request.Context(), share.FileID)
 		if err != nil {
 			switch err {
@@ -315,7 +336,7 @@ func loadAuthorizedPublicShare(c *gin.Context, shareService *shares.Service, coo
 		apierror.Write(c, http.StatusNotFound, "share_not_found", "Share not found", nil)
 		return models.Share{}, false
 	}
-	if share.PasswordHash != nil && !hasShareAccess(c, share, cookieSecret) {
+	if len(share.OpaqueRegistrationRecord) > 0 && !hasShareAccess(c, share, cookieSecret) {
 		apierror.Write(c, http.StatusForbidden, "forbidden", "Share access denied", nil)
 		return models.Share{}, false
 	}
@@ -344,7 +365,7 @@ func APIPublicShareConsume(shareService *shares.Service, filesService *filessvc.
 			apierror.Internal(c, "Share lookup failed")
 			return
 		}
-		if share.PasswordHash != nil && !hasShareAccess(c, share, cookieSecret) {
+		if len(share.OpaqueRegistrationRecord) > 0 && !hasShareAccess(c, share, cookieSecret) {
 			apierror.Write(c, http.StatusForbidden, "forbidden", "Share access denied", nil)
 			return
 		}
@@ -441,7 +462,7 @@ func APIPublicShareConsume(shareService *shares.Service, filesService *filessvc.
 }
 
 func hasShareAccess(c *gin.Context, share models.Share, cookieSecret string) bool {
-	if share.PasswordHash == nil {
+	if len(share.OpaqueRegistrationRecord) == 0 {
 		return true
 	}
 	cookie, err := c.Request.Cookie(shareAccessCookieName)
@@ -458,13 +479,16 @@ func hasShareAccess(c *gin.Context, share models.Share, cookieSecret string) boo
 	}
 	payload := string(payloadBytes)
 	payloadParts := strings.Split(payload, ":")
-	if len(payloadParts) != 2 {
+	if len(payloadParts) != 3 {
 		return false
 	}
 	if payloadParts[0] != share.Token {
 		return false
 	}
-	expiresUnix, err := strconv.ParseInt(payloadParts[1], 10, 64)
+	if payloadParts[1] != sharePasswordFingerprint(share) {
+		return false
+	}
+	expiresUnix, err := strconv.ParseInt(payloadParts[2], 10, 64)
 	if err != nil || expiresUnix <= time.Now().Unix() {
 		return false
 	}
@@ -473,13 +497,22 @@ func hasShareAccess(c *gin.Context, share models.Share, cookieSecret string) boo
 }
 
 func setShareAccess(c *gin.Context, share models.Share, cookieSecret string) {
-	if share.PasswordHash == nil {
+	if len(share.OpaqueRegistrationRecord) == 0 {
 		return
 	}
 	expiresAt := time.Now().Add(shareAccessTTL)
-	payload := share.Token + ":" + strconv.FormatInt(expiresAt.Unix(), 10)
+	payload := strings.Join([]string{
+		share.Token,
+		sharePasswordFingerprint(share),
+		strconv.FormatInt(expiresAt.Unix(), 10),
+	}, ":")
 	value := base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." + signShareAccessPayload(payload, cookieSecret)
 	cookies.SetCustom(c, shareAccessCookieName, value, expiresAt)
+}
+
+func sharePasswordFingerprint(share models.Share) string {
+	fingerprint := sha256.Sum256(share.OpaqueRegistrationRecord)
+	return base64.RawURLEncoding.EncodeToString(fingerprint[:])
 }
 
 func signShareAccessPayload(payload, secret string) string {

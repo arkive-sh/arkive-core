@@ -182,7 +182,7 @@ CREATE TABLE share_links (
   token TEXT NOT NULL UNIQUE,
   status TEXT NOT NULL DEFAULT 'active',
   encrypted_share_key BYTEA NOT NULL,
-  password_hash TEXT,
+  opaque_registration_record BYTEA,
   access_count INTEGER NOT NULL DEFAULT 0,
   max_access_count INTEGER,
   consumed_at TIMESTAMPTZ,
@@ -198,6 +198,16 @@ CREATE TABLE share_links (
 );
 
 CREATE INDEX share_links_owner_user_id_idx ON share_links (owner_user_id);
+
+CREATE TABLE share_opaque_login_attempts (
+  id UUID PRIMARY KEY,
+  share_link_id UUID NOT NULL REFERENCES share_links(id) ON DELETE CASCADE,
+  server_state BYTEA NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX share_opaque_login_attempts_expiry_idx ON share_opaque_login_attempts (expires_at);
 
 CREATE TABLE share_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

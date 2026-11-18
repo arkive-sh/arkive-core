@@ -2,10 +2,13 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { Copy, ExternalLink, Folder, Link2, ShieldOff, Trash2 } from '@lucide/svelte';
 	import axios from 'axios';
+	import * as v from 'valibot';
 	import Button from '#lib/components/Button.svelte';
 	import Drawer from '#lib/components/Drawer.svelte';
 	import FileTypeIcon from '#lib/components/FileTypeIcon.svelte';
+	import InputField from '#lib/components/InputField.svelte';
 	import { api } from '#lib/api.ts';
+	import { opaqueAuth } from '#lib/opaque-auth.ts';
 	import { buildShareURL, decryptShareURL } from '#lib/share-link.ts';
 	import {
 		addEntriesToFolderShares,
@@ -46,11 +49,24 @@
 	let allowPreview = $state(true);
 	let allowDownload = $state(true);
 	let expiresAt = $state('');
+	let passwordEnabled = $state(false);
+	let password = $state('');
+	let confirmPassword = $state('');
+	let passwordTouched = $state(false);
+	let confirmPasswordTouched = $state(false);
 	let loading = $state(true);
 	let saving = $state(false);
 	let error = $state('');
 	let confirmRevoke = $state(false);
 	let confirmDelete = $state(false);
+	const sharePasswordSchema = v.pipe(
+		v.string(),
+		v.nonEmpty('Enter a password for this link.'),
+		v.minBytes(8, 'Password must be at least 8 characters.'),
+		v.regex(/\p{Ll}/u, 'Password must include a lowercase letter.'),
+		v.regex(/\p{Lu}/u, 'Password must include an uppercase letter.'),
+		v.regex(/[\p{P}\p{S}]/u, 'Password must include a symbol.'),
+	);
 
 	function toLocalDateTime(value: string | null): string {
 		if (!value) return '';
@@ -100,6 +116,7 @@
 			allowPreview = data.allowPreview;
 			allowDownload = data.allowDownload;
 			expiresAt = toLocalDateTime(data.expiresAt);
+			passwordEnabled = data.hasPassword;
 			await restoreLink(data);
 			if (data.status === 'provisioning' && entry.kind === 'folder') {
 				const { shareSecret } = await openShareKey(data.encryptedShareKey, data.token);
@@ -129,8 +146,33 @@
 		return Number.isNaN(date.getTime()) ? '' : date.toISOString();
 	}
 
+	function passwordFieldError(): string {
+		if (!passwordEnabled || (password === '' && share?.hasPassword) || !passwordTouched) return '';
+		const result = v.safeParse(sharePasswordSchema, password);
+
+		if (!result.success) return result.issues[0]?.message ?? 'Enter a valid password.';
+
+		return '';
+	}
+
+	function confirmPasswordFieldError(): string {
+		if (!passwordEnabled || (password === '' && share?.hasPassword) || !confirmPasswordTouched)
+			return '';
+
+		return password === confirmPassword ? '' : 'Passwords do not match.';
+	}
+
+	function validatePasswordForSave(): boolean {
+		if (!passwordEnabled || (password === '' && share?.hasPassword)) return true;
+		passwordTouched = true;
+		confirmPasswordTouched = true;
+
+		return !passwordFieldError() && !confirmPasswordFieldError();
+	}
+
 	async function saveShare(): Promise<void> {
 		if (saving) return;
+		error = '';
 		if (!allowPreview && !allowDownload) {
 			error = 'Enable preview or download to create a usable link.';
 
@@ -141,23 +183,34 @@
 
 			return;
 		}
+		if (!validatePasswordForSave()) return;
 
 		saving = true;
-		error = '';
 		try {
 			if (share) {
+				if (passwordEnabled && password) {
+					await opaqueAuth.registerSharePassword(share.id, password);
+					share = { ...share, hasPassword: true };
+				} else if (!passwordEnabled && share.hasPassword) {
+					await api.delete(`/api/shares/${encodeURIComponent(share.id)}/password`);
+					share = { ...share, hasPassword: false };
+				}
 				const { data } = await api.patch<ShareRecord>(
 					`/api/shares/${encodeURIComponent(share.id)}`,
 					{
 						expiresAt: expiryValue(),
 						allowPreview,
 						allowDownload,
-						requirePassword: share.hasPassword,
 						burnAfterRead: share.burnAfterRead,
 					},
 				);
 				share = data;
 				expiresAt = toLocalDateTime(data.expiresAt);
+				passwordEnabled = data.hasPassword;
+				password = '';
+				confirmPassword = '';
+				passwordTouched = false;
+				confirmPasswordTouched = false;
 				toast.success('Share settings updated.');
 			} else {
 				const random = crypto.getRandomValues(new Uint8Array(32));
@@ -191,6 +244,9 @@
 							);
 
 				try {
+					const opaqueRegistrationUpload = passwordEnabled
+						? await opaqueAuth.createSharePasswordRegistration(token, password)
+						: undefined;
 					const endpoint = entry.kind === 'folder' ? '/api/folders' : '/api/files';
 					const { data: created } = await api.post<ShareRecord>(
 						`${endpoint}/${encodeURIComponent(entry.id)}/share`,
@@ -199,6 +255,8 @@
 							expiresAt: expiryValue(),
 							allowPreview,
 							allowDownload,
+							requirePassword: passwordEnabled,
+							...(opaqueRegistrationUpload ? { opaqueRegistrationUpload } : {}),
 							encryptedShareKey: prepared.encryptedShareKey,
 							...('encryptedFileKeyForShare' in prepared
 								? { encryptedFileKeyForShare: prepared.encryptedFileKeyForShare }
@@ -209,20 +267,24 @@
 						},
 					);
 
-					if (entry.kind === 'folder') {
-						try {
+					try {
+						if (entry.kind === 'folder') {
 							await prepareFolderShareContents(created, prepared.shareSecret);
-						} catch (cause) {
-							await api.delete(`/api/shares/${encodeURIComponent(created.id)}`).catch(() => {});
-
-							throw cause;
+						} else {
+							share = created;
 						}
-					} else {
-						share = created;
+					} catch (cause) {
+						await api.delete(`/api/shares/${encodeURIComponent(created.id)}`).catch(() => {});
+
+						throw cause;
 					}
 					clearFolderShareScopeCache();
 					link = buildShareURL(window.location.origin, token, prepared.shareSecret);
 					toast.success('Encrypted share link created.');
+					password = '';
+					confirmPassword = '';
+					passwordTouched = false;
+					confirmPasswordTouched = false;
 				} finally {
 					prepared.shareSecret.fill(0);
 				}
@@ -323,6 +385,8 @@
 	onMount(() => void loadShare());
 	onDestroy(() => {
 		link = '';
+		password = '';
+		confirmPassword = '';
 	});
 </script>
 
@@ -392,6 +456,61 @@
 					{/if}
 				</section>
 			{/if}
+
+			<fieldset
+				class="grid gap-3 border-b border-(--border) p-0 pb-5"
+				disabled={saving || share?.status === 'revoked' || share?.status === 'burned'}
+			>
+				<legend class="mb-1 text-sm font-semibold">Password protection</legend>
+				<label class="flex cursor-pointer items-start gap-3 py-1">
+					<input
+						class="mt-1 size-4 accent-(--accent)"
+						type="checkbox"
+						bind:checked={passwordEnabled}
+					/>
+					<span class="grid gap-0.5">
+						<span class="text-sm font-medium">Require a password</span>
+						<span class="text-xs leading-5 text-(--muted)"
+							>Visitors need it before opening this link.</span
+						>
+					</span>
+				</label>
+				{#if passwordEnabled}
+					<InputField
+						label={share?.hasPassword ? 'New password (leave blank to keep current)' : 'Password'}
+						name="share-password"
+						type="password"
+						autocomplete="new-password"
+						value={password}
+						helperText={passwordFieldError()}
+						fieldClass="mb-0! gap-1.5!"
+						labelClass="normal-case! text-sm! font-medium! tracking-normal! text-(--text)!"
+						oninput={(event) => {
+							password = event.currentTarget.value;
+							passwordTouched = true;
+						}}
+					/>
+					{#if !share?.hasPassword || password}
+						<InputField
+							label="Confirm password"
+							name="confirm-share-password"
+							type="password"
+							autocomplete="new-password"
+							value={confirmPassword}
+							helperText={confirmPasswordFieldError()}
+							fieldClass="mb-0! gap-1.5!"
+							labelClass="normal-case! text-sm! font-medium! tracking-normal! text-(--text)!"
+							oninput={(event) => {
+								confirmPassword = event.currentTarget.value;
+								confirmPasswordTouched = true;
+							}}
+						/>
+					{/if}
+					<p class="m-0 text-xs leading-5 text-(--muted)">
+						Password authentication runs in your browser. Arkive never receives the password.
+					</p>
+				{/if}
+			</fieldset>
 
 			<fieldset
 				class="grid gap-1 border-b border-(--border) p-0 pb-5"

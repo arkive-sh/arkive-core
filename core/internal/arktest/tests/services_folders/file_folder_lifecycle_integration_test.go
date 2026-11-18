@@ -52,7 +52,7 @@ func TestFileAndFolderMoveRenameTrashRestoreAndSharedFilePurgeThroughServices(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	shareService := sharesvc.NewService(env.DB, fileRepo, folderRepo, shareRepo)
+	shareService := sharesvc.NewService(env.DB, fileRepo, folderRepo, shareRepo, "")
 	share, validationErrors, err := shareService.CreateShare(ctx, sharesvc.CreateInput{
 		FileID: file.ID, OwnerUserID: userID, Token: strings.Repeat("s", sharesvc.TokenMinLength),
 		AllowPreview: true, EncryptedShareKey: "c2hhcmUta2V5", EncryptedFileKeyForShare: "c2hhcmUtZmlsZS1rZXk=",

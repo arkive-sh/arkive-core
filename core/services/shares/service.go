@@ -2,13 +2,20 @@ package shares
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
+	"uuid"
 
 	"arkive/core/database"
 	"arkive/core/models"
+	"arkive/core/opaque"
 	filerepo "arkive/core/repositories/files"
 	folderrepo "arkive/core/repositories/folders"
 	sharerepo "arkive/core/repositories/shares"
@@ -16,19 +23,21 @@ import (
 	"arkive/pkg/validation"
 
 	"github.com/jackc/pgx/v5"
-	"golang.org/x/crypto/bcrypt"
 )
 
 const (
-	ShareStatusActive  = "active"
-	ShareStatusRevoked = "revoked"
+	ShareStatusActive                = "active"
+	ShareStatusRevoked               = "revoked"
+	shareOpaqueLoginTTL              = 2 * time.Minute
+	maxEncryptedShareLoginStateBytes = 8 << 10
 )
 
 type Service struct {
-	db         database.PgPool
-	fileRepo   *filerepo.Repository
-	folderRepo *folderrepo.Repository
-	shareRepo  *sharerepo.Repository
+	db          database.PgPool
+	fileRepo    *filerepo.Repository
+	folderRepo  *folderrepo.Repository
+	shareRepo   *sharerepo.Repository
+	opaqueSetup string
 }
 
 type CreateInput struct {
@@ -36,7 +45,8 @@ type CreateInput struct {
 	FolderID                 string
 	OwnerUserID              string
 	Token                    string
-	Password                 string
+	RequirePassword          bool
+	OpaqueRegistrationUpload []byte
 	ExpiresAt                *time.Time
 	AllowPreview             bool
 	AllowDownload            bool
@@ -47,12 +57,13 @@ type CreateInput struct {
 	EncryptedFolderMetadata  string
 }
 
-func NewService(db database.PgPool, fileRepo *filerepo.Repository, folderRepo *folderrepo.Repository, shareRepo *sharerepo.Repository) *Service {
+func NewService(db database.PgPool, fileRepo *filerepo.Repository, folderRepo *folderrepo.Repository, shareRepo *sharerepo.Repository, opaqueSetup string) *Service {
 	return &Service{
-		db:         db,
-		fileRepo:   fileRepo,
-		folderRepo: folderRepo,
-		shareRepo:  shareRepo,
+		db:          db,
+		fileRepo:    fileRepo,
+		folderRepo:  folderRepo,
+		shareRepo:   shareRepo,
+		opaqueSetup: opaqueSetup,
 	}
 }
 
@@ -61,7 +72,6 @@ func (s *Service) CreateShare(ctx context.Context, input CreateInput) (models.Sh
 	input.FolderID = strings.TrimSpace(input.FolderID)
 	input.OwnerUserID = strings.TrimSpace(input.OwnerUserID)
 	input.Token = strings.TrimSpace(input.Token)
-	input.Password = strings.TrimSpace(input.Password)
 	input.EncryptedShareKey = strings.TrimSpace(input.EncryptedShareKey)
 	input.EncryptedFileKeyForShare = strings.TrimSpace(input.EncryptedFileKeyForShare)
 	input.EncryptedFolderName = strings.TrimSpace(input.EncryptedFolderName)
@@ -87,10 +97,8 @@ func (s *Service) CreateShare(ctx context.Context, input CreateInput) (models.Sh
 	if isFolder && input.BurnAfterRead {
 		validationErrors.Add("burnAfterRead", "one-time links are only supported for file shares")
 	}
-	if input.Password != "" {
-		if message := sharePasswordValidationMessage(input.Password); message != "" {
-			validationErrors.Add("password", message)
-		}
+	if input.RequirePassword != (len(input.OpaqueRegistrationUpload) > 0) {
+		validationErrors.Add("opaqueRegistrationRecord", "password registration is missing or unexpected")
 	}
 	if input.EncryptedShareKey == "" {
 		validationErrors.Add("encryptedShareKey", "encrypted share key is required")
@@ -173,15 +181,15 @@ func (s *Service) CreateShare(ctx context.Context, input CreateInput) (models.Sh
 		validationErrors.Add("token", ErrTokenInvalid.Error())
 		return models.Share{}, validationErrors, nil
 	}
-
-	var passwordHash *string
-	if input.Password != "" {
-		hashed, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+	var opaqueRegistrationRecord []byte
+	if input.RequirePassword {
+		serverRecord, err := opaque.FinishRegistration(input.OpaqueRegistrationUpload)
 		if err != nil {
-			return models.Share{}, nil, ErrPasswordHashFailed
+			validationErrors.Add("opaqueRegistrationRecord", "password registration is invalid")
+			return models.Share{}, validationErrors, nil
 		}
-		hashStr := string(hashed)
-		passwordHash = &hashStr
+		defer serverRecord.Close()
+		opaqueRegistrationRecord = serverRecord.Bytes()
 	}
 
 	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
@@ -193,16 +201,16 @@ func (s *Service) CreateShare(ctx context.Context, input CreateInput) (models.Sh
 		status = "provisioning"
 	}
 	shareLinkID, err := s.shareRepo.CreateShareLink(ctx, tx, sharerepo.CreateShareLinkInput{
-		OwnerUserID:       input.OwnerUserID,
-		Token:             token,
-		EncryptedShareKey: encryptedShareKey,
-		AllowPreview:      input.AllowPreview,
-		AllowDownload:     input.AllowDownload,
-		PasswordHash:      passwordHash,
-		ExpiresAt:         input.ExpiresAt,
-		BurnAfterRead:     input.BurnAfterRead,
-		MaxAccessCount:    shareMaxAccessCount(input.BurnAfterRead),
-		Status:            status,
+		OwnerUserID:              input.OwnerUserID,
+		Token:                    token,
+		EncryptedShareKey:        encryptedShareKey,
+		AllowPreview:             input.AllowPreview,
+		AllowDownload:            input.AllowDownload,
+		OpaqueRegistrationRecord: opaqueRegistrationRecord,
+		ExpiresAt:                input.ExpiresAt,
+		BurnAfterRead:            input.BurnAfterRead,
+		MaxAccessCount:           shareMaxAccessCount(input.BurnAfterRead),
+		Status:                   status,
 	})
 	if err != nil {
 		_ = tx.Rollback(ctx)
@@ -249,6 +257,265 @@ func (s *Service) CreateShare(ctx context.Context, input CreateInput) (models.Sh
 
 func (s *Service) GetShareByToken(ctx context.Context, token string) (models.Share, error) {
 	return s.shareRepo.GetShareByToken(ctx, s.db, token)
+}
+
+type OpaqueLoginStartResult struct {
+	AttemptID     string
+	LoginResponse string
+}
+
+func (s *Service) StartPasswordRegistration(ctx context.Context, shareID, ownerUserID string, request []byte) (string, error) {
+	var valid bool
+	shareID, valid = validation.NormalizeUUID(shareID)
+	if !valid {
+		return "", ErrInvalidInput
+	}
+	share, err := s.GetShareForUser(ctx, shareID, ownerUserID)
+	if err != nil {
+		return "", err
+	}
+	if share.Status != ShareStatusActive && share.Status != "provisioning" {
+		return "", ErrNotFound
+	}
+	return s.passwordRegistrationResponse(share.Token, request)
+}
+
+func (s *Service) StartNewSharePasswordRegistration(token string, request []byte) (string, error) {
+	token = strings.TrimSpace(token)
+	if !isTokenValid(token) {
+		return "", ErrInvalidInput
+	}
+	return s.passwordRegistrationResponse(token, request)
+}
+
+func (s *Service) passwordRegistrationResponse(identifier string, request []byte) (string, error) {
+	response, err := opaque.RegistrationResponse(s.opaqueSetup, identifier, request)
+	if err != nil {
+		return "", ErrInvalidInput
+	}
+	defer response.Close()
+	return base64.RawURLEncoding.EncodeToString(response.Bytes()), nil
+}
+
+func (s *Service) FinishPasswordRegistration(ctx context.Context, shareID, ownerUserID string, upload []byte) (models.Share, error) {
+	var valid bool
+	shareID, valid = validation.NormalizeUUID(shareID)
+	if !valid {
+		return models.Share{}, ErrInvalidInput
+	}
+	share, err := s.GetShareForUser(ctx, shareID, ownerUserID)
+	if err != nil {
+		return models.Share{}, err
+	}
+	if share.Status != ShareStatusActive && share.Status != "provisioning" {
+		return models.Share{}, ErrNotFound
+	}
+	serverRecord, err := opaque.FinishRegistration(upload)
+	if err != nil {
+		return models.Share{}, ErrInvalidInput
+	}
+	defer serverRecord.Close()
+
+	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return models.Share{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := s.shareRepo.DeleteOpaqueLoginAttempts(ctx, tx, share.ID); err != nil {
+		return models.Share{}, err
+	}
+	updated, err := s.shareRepo.SetOpaqueRegistrationRecord(ctx, tx, share.ID, ownerUserID, serverRecord.Bytes())
+	if err != nil {
+		return models.Share{}, err
+	}
+	if !updated {
+		return models.Share{}, ErrNotFound
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return models.Share{}, err
+	}
+	return s.GetShareForUser(ctx, share.ID, ownerUserID)
+}
+
+func (s *Service) RemovePassword(ctx context.Context, shareID, ownerUserID string) (models.Share, error) {
+	var valid bool
+	shareID, valid = validation.NormalizeUUID(shareID)
+	if !valid {
+		return models.Share{}, ErrInvalidInput
+	}
+	share, err := s.GetShareForUser(ctx, shareID, ownerUserID)
+	if err != nil {
+		return models.Share{}, err
+	}
+	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return models.Share{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := s.shareRepo.DeleteOpaqueLoginAttempts(ctx, tx, share.ID); err != nil {
+		return models.Share{}, err
+	}
+	updated, err := s.shareRepo.ClearOpaqueRegistrationRecord(ctx, tx, share.ID, ownerUserID)
+	if err != nil {
+		return models.Share{}, err
+	}
+	if !updated {
+		return models.Share{}, ErrNotFound
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return models.Share{}, err
+	}
+	return s.GetShareForUser(ctx, share.ID, ownerUserID)
+}
+
+func (s *Service) StartPasswordLogin(ctx context.Context, token string, request []byte) (OpaqueLoginStartResult, error) {
+	token = strings.TrimSpace(token)
+	if !isTokenValid(token) {
+		return OpaqueLoginStartResult{}, ErrNotFound
+	}
+	share, err := s.shareRepo.GetShareByToken(ctx, s.db, token)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return OpaqueLoginStartResult{}, ErrNotFound
+		}
+		return OpaqueLoginStartResult{}, err
+	}
+	if share.Status != ShareStatusActive || (share.ExpiresAt != nil && !share.ExpiresAt.After(time.Now())) {
+		return OpaqueLoginStartResult{}, ErrNotFound
+	}
+	if len(share.OpaqueRegistrationRecord) == 0 {
+		return OpaqueLoginStartResult{}, ErrPasswordNotConfigured
+	}
+	registrationFingerprint := shareOpaqueRegistrationFingerprint(share.OpaqueRegistrationRecord)
+	result, err := opaque.StartLogin(s.opaqueSetup, share.Token, share.OpaqueRegistrationRecord, request)
+	if err != nil {
+		return OpaqueLoginStartResult{}, ErrInvalidInput
+	}
+	defer result.Response.Close()
+	defer result.State.Close()
+
+	attemptID := uuid.NewV4().String()
+	expiresAt := time.Now().UTC().Add(shareOpaqueLoginTTL).Truncate(time.Second)
+	state, err := s.sealPasswordLoginState(
+		attemptID,
+		share.ID,
+		registrationFingerprint,
+		expiresAt,
+		result.State.Bytes(),
+	)
+	if err != nil {
+		return OpaqueLoginStartResult{}, err
+	}
+	if err := s.shareRepo.CreateOpaqueLoginAttempt(ctx, s.db, attemptID, share.ID, state, expiresAt); err != nil {
+		return OpaqueLoginStartResult{}, err
+	}
+	return OpaqueLoginStartResult{
+		AttemptID:     attemptID,
+		LoginResponse: base64.RawURLEncoding.EncodeToString(result.Response.Bytes()),
+	}, nil
+}
+
+func (s *Service) FinishPasswordLogin(ctx context.Context, token, attemptID string, finalization []byte) (models.Share, error) {
+	token = strings.TrimSpace(token)
+	if !isTokenValid(token) {
+		return models.Share{}, ErrNotFound
+	}
+	var valid bool
+	attemptID, valid = validation.NormalizeUUID(attemptID)
+	if !valid {
+		return models.Share{}, ErrInvalidCredentials
+	}
+	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return models.Share{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	share, err := s.shareRepo.GetShareByToken(ctx, tx, token)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return models.Share{}, ErrNotFound
+		}
+		return models.Share{}, err
+	}
+	if share.Status != ShareStatusActive || (share.ExpiresAt != nil && !share.ExpiresAt.After(time.Now())) {
+		return models.Share{}, ErrNotFound
+	}
+	if len(share.OpaqueRegistrationRecord) == 0 {
+		return models.Share{}, ErrPasswordNotConfigured
+	}
+	attemptID = strings.TrimSpace(attemptID)
+	attempt, err := s.shareRepo.ConsumeOpaqueLoginAttempt(ctx, tx, attemptID, share.ID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return models.Share{}, ErrInvalidCredentials
+		}
+		return models.Share{}, err
+	}
+	state, stateErr := s.openPasswordLoginState(
+		attemptID,
+		share.ID,
+		shareOpaqueRegistrationFingerprint(share.OpaqueRegistrationRecord),
+		attempt.ExpiresAt,
+		attempt.State,
+	)
+	var finishErr error
+	if stateErr == nil {
+		finishErr = opaque.FinishLogin(state, finalization)
+	}
+	if stateErr != nil || finishErr != nil {
+		if err := tx.Commit(ctx); err != nil {
+			return models.Share{}, err
+		}
+		return models.Share{}, ErrInvalidCredentials
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return models.Share{}, err
+	}
+	return share, nil
+}
+
+func (s *Service) sealPasswordLoginState(attemptID, shareID, registrationFingerprint string, expiresAt time.Time, state []byte) ([]byte, error) {
+	aead, err := s.passwordLoginStateAEAD()
+	if err != nil {
+		return nil, err
+	}
+	nonce := make([]byte, aead.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, err
+	}
+	sealed := append([]byte(nil), nonce...)
+	return aead.Seal(sealed, nonce, state, passwordLoginStateAAD(attemptID, shareID, registrationFingerprint, expiresAt)), nil
+}
+
+func (s *Service) openPasswordLoginState(attemptID, shareID, registrationFingerprint string, expiresAt time.Time, state []byte) ([]byte, error) {
+	aead, err := s.passwordLoginStateAEAD()
+	if err != nil {
+		return nil, err
+	}
+	if len(state) < aead.NonceSize()+aead.Overhead() || len(state) > maxEncryptedShareLoginStateBytes {
+		return nil, errors.New("encrypted share OPAQUE state has invalid size")
+	}
+	return aead.Open(nil, state[:aead.NonceSize()], state[aead.NonceSize():], passwordLoginStateAAD(attemptID, shareID, registrationFingerprint, expiresAt))
+}
+
+func (s *Service) passwordLoginStateAEAD() (cipher.AEAD, error) {
+	key := sha256.Sum256([]byte("arkive:opaque-share-login-state:v1\x00" + s.opaqueSetup))
+	block, err := aes.NewCipher(key[:])
+	if err != nil {
+		return nil, err
+	}
+	return cipher.NewGCM(block)
+}
+
+func passwordLoginStateAAD(attemptID, shareID, registrationFingerprint string, expiresAt time.Time) []byte {
+	// Bind the proof to its verifier so a racing password change invalidates it.
+	return []byte(fmt.Sprintf("arkive:opaque-share-login-attempt:v1\n%s\n%s\n%s\n%d", attemptID, shareID, registrationFingerprint, expiresAt.Unix()))
+}
+
+func shareOpaqueRegistrationFingerprint(record []byte) string {
+	fingerprint := sha256.Sum256(record)
+	return base64.RawURLEncoding.EncodeToString(fingerprint[:])
 }
 
 func (s *Service) GetPublicShareRecord(ctx context.Context, token string) (models.PublicShareRecord, error) {
@@ -430,10 +697,9 @@ func (s *Service) GetShareForUser(ctx context.Context, shareID, ownerUserID stri
 	return share, nil
 }
 
-func (s *Service) UpdateShareForUser(ctx context.Context, shareID, ownerUserID string, expiresAt *time.Time, password string, requirePassword bool, burnAfterRead *bool, allowPreview, allowDownload *bool) (models.Share, validation.Errors, error) {
+func (s *Service) UpdateShareForUser(ctx context.Context, shareID, ownerUserID string, expiresAt *time.Time, burnAfterRead *bool, allowPreview, allowDownload *bool) (models.Share, validation.Errors, error) {
 	shareID = strings.TrimSpace(shareID)
 	ownerUserID = strings.TrimSpace(ownerUserID)
-	password = strings.TrimSpace(password)
 
 	validationErrors := validation.New()
 	if ownerUserID == "" {
@@ -468,35 +734,10 @@ func (s *Service) UpdateShareForUser(ctx context.Context, shareID, ownerUserID s
 		validationErrors.Add("permissions", "preview or download must be enabled")
 	}
 
-	var passwordHash *string
-	if requirePassword {
-		if password == "" && existing.PasswordHash == nil {
-			validationErrors.Add("password", ErrPasswordRequired.Error())
-		}
-		if password != "" {
-			if message := sharePasswordValidationMessage(password); message != "" {
-				validationErrors.Add("password", message)
-			}
-		}
-	}
 	if validationErrors.HasAny() {
 		return models.Share{}, validationErrors, nil
 	}
-
-	if requirePassword {
-		if password == "" && existing.PasswordHash != nil {
-			passwordHash = existing.PasswordHash
-		} else {
-			hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-			if err != nil {
-				return models.Share{}, nil, ErrPasswordHashFailed
-			}
-			hashStr := string(hashed)
-			passwordHash = &hashStr
-		}
-	}
-
-	updated, err := s.shareRepo.UpdateShareForUser(ctx, s.db, shareID, ownerUserID, passwordHash, expiresAt, *burnAfterRead, shareMaxAccessCount(*burnAfterRead), *allowPreview, *allowDownload)
+	updated, err := s.shareRepo.UpdateShareForUser(ctx, s.db, shareID, ownerUserID, expiresAt, *burnAfterRead, shareMaxAccessCount(*burnAfterRead), *allowPreview, *allowDownload)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return models.Share{}, nil, ErrNotFound
@@ -504,21 +745,6 @@ func (s *Service) UpdateShareForUser(ctx context.Context, shareID, ownerUserID s
 		return models.Share{}, nil, err
 	}
 	return updated, nil, nil
-}
-
-func sharePasswordValidationMessage(password string) string {
-	switch validation.PasswordIssueFor(password) {
-	case validation.PasswordTooShort:
-		return ErrPasswordTooShort.Error()
-	case validation.PasswordMissingLower:
-		return ErrPasswordNeedLower.Error()
-	case validation.PasswordMissingUpper:
-		return ErrPasswordNeedUpper.Error()
-	case validation.PasswordMissingSymbol:
-		return ErrPasswordNeedSymbol.Error()
-	default:
-		return ""
-	}
 }
 
 func (s *Service) DeleteShareForUser(ctx context.Context, shareID, ownerUserID string) (bool, error) {

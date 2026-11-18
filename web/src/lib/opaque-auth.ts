@@ -1,4 +1,5 @@
 import * as opaque from '@serenity-kit/opaque';
+import axios from 'axios';
 import { api } from '#lib/api.ts';
 import { fromBase64 } from '#lib/vault/bytes.ts';
 
@@ -107,6 +108,90 @@ export class OpaqueAuth {
 			});
 		} finally {
 			password = '';
+		}
+	}
+
+	async registerSharePassword(shareID: string, password: string): Promise<void> {
+		let registration: RegistrationResult | null = null;
+
+		try {
+			registration = await this.register(password, async (registrationRequest) => {
+				const path = `/api/shares/${encodeURIComponent(shareID)}/password/opaque/start`;
+				const { data } = await api.post<RegistrationStartResponse>(path, { registrationRequest });
+
+				return data.registrationResponse;
+			});
+			await api.post(`/api/shares/${encodeURIComponent(shareID)}/password/opaque/finish`, {
+				registrationRecord: registration.registrationRecord,
+			});
+		} finally {
+			password = '';
+			registration?.exportKey.fill(0);
+			registration = null;
+		}
+	}
+
+	async createSharePasswordRegistration(token: string, password: string): Promise<string> {
+		let registration: RegistrationResult | null = null;
+
+		try {
+			registration = await this.register(password, async (registrationRequest) => {
+				const { data } = await api.post<RegistrationStartResponse>(
+					'/api/shares/password/opaque/start',
+					{ token, registrationRequest },
+				);
+
+				return data.registrationResponse;
+			});
+
+			return registration.registrationRecord;
+		} finally {
+			password = '';
+			registration?.exportKey.fill(0);
+			registration = null;
+		}
+	}
+
+	async loginShare(token: string, password: string): Promise<void> {
+		let clientState: ReturnType<typeof opaque.client.startLogin> | null = opaque.client.startLogin({
+			password,
+		});
+		let login: ReturnType<typeof opaque.client.finishLogin> | null = null;
+		let exportKey: Uint8Array<ArrayBuffer> | null = null;
+
+		try {
+			const base = `/api/public/shares/${encodeURIComponent(token)}/password/opaque`;
+			const { data: start } = await api.post<LoginStartResponse>(`${base}/start`, {
+				startLoginRequest: clientState.startLoginRequest,
+			});
+
+			try {
+				login = opaque.client.finishLogin({
+					clientLoginState: clientState.clientLoginState,
+					loginResponse: start.loginResponse,
+					password,
+				});
+			} catch {
+				throw new Error('Password is incorrect.');
+			}
+			if (!login) throw new Error('Password is incorrect.');
+			const finishLoginRequest = login.finishLoginRequest;
+			exportKey = fromBase64(login.exportKey);
+			clientState = null;
+			login = null;
+			await api.post(`${base}/finish`, { attemptId: start.attemptId, finishLoginRequest });
+		} catch (cause) {
+			if (axios.isAxiosError(cause) && cause.response?.status === 401) {
+				throw new Error('Password is incorrect.', { cause });
+			}
+
+			throw cause;
+		} finally {
+			password = '';
+			exportKey?.fill(0);
+			exportKey = null;
+			login = null;
+			clientState = null;
 		}
 	}
 

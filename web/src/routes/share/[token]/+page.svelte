@@ -4,6 +4,7 @@
 	import { Database, Download, Eye, EyeOff, LockKeyhole } from '@lucide/svelte';
 	import axios from 'axios';
 	import { api } from '#lib/api.ts';
+	import { opaqueAuth } from '#lib/opaque-auth.ts';
 	import FileTypeIcon from '#lib/components/FileTypeIcon.svelte';
 	import { streamDownload } from '#lib/downloads/stream.ts';
 	import { useTransferManager } from '#lib/transfers/manager.ts';
@@ -341,7 +342,7 @@
 		loading = true;
 		error = '';
 		try {
-			await api.post(`/api/public/shares/${encodeURIComponent(token)}/unlock`, { password });
+			await opaqueAuth.loginShare(token, password);
 			password = '';
 			await openShare();
 		} catch (cause) {

@@ -19,7 +19,8 @@ import (
 type shareCreateRequest struct {
 	Token                    string `json:"token"`
 	ExpiresAt                string `json:"expiresAt"`
-	Password                 string `json:"password"`
+	RequirePassword          bool   `json:"requirePassword"`
+	OpaqueRegistrationUpload string `json:"opaqueRegistrationUpload"`
 	AllowPreview             bool   `json:"allowPreview"`
 	AllowDownload            bool   `json:"allowDownload"`
 	BurnAfterRead            bool   `json:"burnAfterRead"`
@@ -30,12 +31,10 @@ type shareCreateRequest struct {
 }
 
 type shareUpdateRequest struct {
-	ExpiresAt       string `json:"expiresAt"`
-	Password        string `json:"password"`
-	RequirePassword bool   `json:"requirePassword"`
-	AllowPreview    *bool  `json:"allowPreview"`
-	AllowDownload   *bool  `json:"allowDownload"`
-	BurnAfterRead   *bool  `json:"burnAfterRead"`
+	ExpiresAt     string `json:"expiresAt"`
+	AllowPreview  *bool  `json:"allowPreview"`
+	AllowDownload *bool  `json:"allowDownload"`
+	BurnAfterRead *bool  `json:"burnAfterRead"`
 }
 
 func APICreateShare(svc *shares.Service) gin.HandlerFunc {
@@ -89,6 +88,19 @@ func apiCreateShare(svc *shares.Service, folderShare bool) gin.HandlerFunc {
 				return
 			}
 		}
+		var opaqueRegistrationUpload []byte
+		if req.OpaqueRegistrationUpload != "" {
+			if len(req.OpaqueRegistrationUpload) > 2048 {
+				apierror.InvalidPayload(c)
+				return
+			}
+			decoded, err := base64.RawURLEncoding.DecodeString(req.OpaqueRegistrationUpload)
+			if err != nil || len(decoded) == 0 {
+				apierror.InvalidPayload(c)
+				return
+			}
+			opaqueRegistrationUpload = decoded
+		}
 		fileID, folderID := entryID, ""
 		if folderShare {
 			fileID, folderID = "", entryID
@@ -99,7 +111,8 @@ func apiCreateShare(svc *shares.Service, folderShare bool) gin.HandlerFunc {
 			FolderID:                 folderID,
 			OwnerUserID:              userID.(string),
 			Token:                    req.Token,
-			Password:                 req.Password,
+			RequirePassword:          req.RequirePassword,
+			OpaqueRegistrationUpload: opaqueRegistrationUpload,
 			ExpiresAt:                expiresAt,
 			AllowPreview:             req.AllowPreview,
 			AllowDownload:            req.AllowDownload,
@@ -123,9 +136,6 @@ func apiCreateShare(svc *shares.Service, folderShare bool) gin.HandlerFunc {
 				apierror.Write(c, http.StatusConflict, "share_already_exists", "Share already exists", nil)
 			case shares.ErrInvalidInput:
 				apierror.InvalidPayload(c)
-			case shares.ErrPasswordHashFailed:
-				_ = c.Error(errs.WithStack(err))
-				apierror.Internal(c, "Password hashing failed")
 			default:
 				_ = c.Error(errs.WithStack(err))
 				apierror.Internal(c, "Share create failed")
@@ -152,7 +162,7 @@ func apiCreateShare(svc *shares.Service, folderShare bool) gin.HandlerFunc {
 			"maxAccessCount":    share.MaxAccessCount,
 			"consumedAt":        share.ConsumedAt,
 			"expiresAt":         share.ExpiresAt,
-			"hasPassword":       share.PasswordHash != nil,
+			"hasPassword":       len(share.OpaqueRegistrationRecord) > 0,
 			"status":            status,
 			"isExpired":         expired,
 			"createdAt":         share.CreatedAt,
@@ -240,7 +250,7 @@ func APICompleteFolderShareSetup(svc *shares.Service) gin.HandlerFunc {
 			"allowPreview": share.AllowPreview, "allowDownload": share.AllowDownload,
 			"burnAfterRead": share.BurnAfterRead, "accessCount": share.AccessCount,
 			"maxAccessCount": share.MaxAccessCount, "consumedAt": share.ConsumedAt,
-			"expiresAt": share.ExpiresAt, "hasPassword": share.PasswordHash != nil,
+			"expiresAt": share.ExpiresAt, "hasPassword": len(share.OpaqueRegistrationRecord) > 0,
 			"status": status, "isExpired": expired, "createdAt": share.CreatedAt,
 		})
 	}
@@ -285,6 +295,144 @@ func writeFolderShareError(c *gin.Context, err error) {
 	}
 }
 
+type opaqueShareRegistrationRequest struct {
+	RegistrationRequest string `json:"registrationRequest"`
+}
+
+func APIStartSharePasswordRegistration(svc *shares.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req opaqueShareRegistrationRequest
+		if err := c.ShouldBindJSON(&req); err != nil || len(req.RegistrationRequest) == 0 || len(req.RegistrationRequest) > 2048 {
+			apierror.InvalidPayload(c)
+			return
+		}
+		request, err := base64.RawURLEncoding.DecodeString(req.RegistrationRequest)
+		if err != nil || len(request) == 0 {
+			apierror.InvalidPayload(c)
+			return
+		}
+		userID, ok := c.Get("user_id")
+		if !ok {
+			apierror.Unauthorized(c)
+			return
+		}
+		response, err := svc.StartPasswordRegistration(c.Request.Context(), c.Param("id"), userID.(string), request)
+		if err != nil {
+			switch err {
+			case shares.ErrUnauthorized:
+				apierror.Unauthorized(c)
+			case shares.ErrNotFound:
+				apierror.Write(c, http.StatusNotFound, "share_not_found", "Share not found", nil)
+			case shares.ErrInvalidInput:
+				apierror.InvalidPayload(c)
+			default:
+				_ = c.Error(errs.WithStack(err))
+				apierror.Internal(c, "Share password setup failed")
+			}
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"registrationResponse": response})
+	}
+}
+
+func APIStartNewSharePasswordRegistration(svc *shares.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req struct {
+			Token               string `json:"token"`
+			RegistrationRequest string `json:"registrationRequest"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil || len(req.RegistrationRequest) == 0 || len(req.RegistrationRequest) > 2048 {
+			apierror.InvalidPayload(c)
+			return
+		}
+		request, err := base64.RawURLEncoding.DecodeString(req.RegistrationRequest)
+		if err != nil || len(request) == 0 {
+			apierror.InvalidPayload(c)
+			return
+		}
+		if _, ok := c.Get("user_id"); !ok {
+			apierror.Unauthorized(c)
+			return
+		}
+		response, err := svc.StartNewSharePasswordRegistration(req.Token, request)
+		if err != nil {
+			if err == shares.ErrInvalidInput {
+				apierror.InvalidPayload(c)
+				return
+			}
+			_ = c.Error(errs.WithStack(err))
+			apierror.Internal(c, "Share password setup failed")
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"registrationResponse": response})
+	}
+}
+
+type opaqueShareRegistrationFinishRequest struct {
+	RegistrationRecord string `json:"registrationRecord"`
+}
+
+func APIFinishSharePasswordRegistration(svc *shares.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req opaqueShareRegistrationFinishRequest
+		if err := c.ShouldBindJSON(&req); err != nil || len(req.RegistrationRecord) == 0 || len(req.RegistrationRecord) > 2048 {
+			apierror.InvalidPayload(c)
+			return
+		}
+		record, err := base64.RawURLEncoding.DecodeString(req.RegistrationRecord)
+		if err != nil || len(record) == 0 {
+			apierror.InvalidPayload(c)
+			return
+		}
+		userID, ok := c.Get("user_id")
+		if !ok {
+			apierror.Unauthorized(c)
+			return
+		}
+		share, err := svc.FinishPasswordRegistration(c.Request.Context(), c.Param("id"), userID.(string), record)
+		if err != nil {
+			switch err {
+			case shares.ErrUnauthorized:
+				apierror.Unauthorized(c)
+			case shares.ErrNotFound:
+				apierror.Write(c, http.StatusNotFound, "share_not_found", "Share not found", nil)
+			case shares.ErrInvalidInput:
+				apierror.InvalidPayload(c)
+			default:
+				_ = c.Error(errs.WithStack(err))
+				apierror.Internal(c, "Share password setup failed")
+			}
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"hasPassword": len(share.OpaqueRegistrationRecord) > 0, "status": share.Status})
+	}
+}
+
+func APIRemoveSharePassword(svc *shares.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, ok := c.Get("user_id")
+		if !ok {
+			apierror.Unauthorized(c)
+			return
+		}
+		if _, err := svc.RemovePassword(c.Request.Context(), c.Param("id"), userID.(string)); err != nil {
+			switch err {
+			case shares.ErrUnauthorized:
+				apierror.Unauthorized(c)
+			case shares.ErrInvalidInput:
+				apierror.InvalidPayload(c)
+			case shares.ErrNotFound:
+				apierror.Write(c, http.StatusNotFound, "share_not_found", "Share not found", nil)
+			default:
+				_ = c.Error(errs.WithStack(err))
+				apierror.Internal(c, "Share password removal failed")
+			}
+			return
+		}
+		c.Status(http.StatusNoContent)
+	}
+}
+
 func APIUpdateShare(svc *shares.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		shareID := strings.TrimSpace(c.Param("id"))
@@ -317,7 +465,7 @@ func APIUpdateShare(svc *shares.Service) gin.HandlerFunc {
 			return
 		}
 
-		share, validationErrors, err := svc.UpdateShareForUser(c.Request.Context(), shareID, userID.(string), expiresAt, req.Password, req.RequirePassword, req.BurnAfterRead, req.AllowPreview, req.AllowDownload)
+		share, validationErrors, err := svc.UpdateShareForUser(c.Request.Context(), shareID, userID.(string), expiresAt, req.BurnAfterRead, req.AllowPreview, req.AllowDownload)
 		if err != nil {
 			switch err {
 			case shares.ErrUnauthorized:
@@ -326,9 +474,6 @@ func APIUpdateShare(svc *shares.Service) gin.HandlerFunc {
 				apierror.Write(c, http.StatusNotFound, "share_not_found", "Share not found", nil)
 			case shares.ErrInvalidInput:
 				apierror.InvalidPayload(c)
-			case shares.ErrPasswordHashFailed:
-				_ = c.Error(errs.WithStack(err))
-				apierror.Internal(c, "Password hashing failed")
 			default:
 				_ = c.Error(errs.WithStack(err))
 				apierror.Internal(c, "Share update failed")
@@ -354,7 +499,7 @@ func APIUpdateShare(svc *shares.Service) gin.HandlerFunc {
 			"maxAccessCount":    share.MaxAccessCount,
 			"consumedAt":        share.ConsumedAt,
 			"expiresAt":         share.ExpiresAt,
-			"hasPassword":       share.PasswordHash != nil,
+			"hasPassword":       len(share.OpaqueRegistrationRecord) > 0,
 			"status":            status,
 			"isExpired":         expired,
 			"createdAt":         share.CreatedAt,
@@ -390,7 +535,7 @@ func APIGetShareForFolder(svc *shares.Service) gin.HandlerFunc {
 			"allowPreview": share.AllowPreview, "allowDownload": share.AllowDownload,
 			"burnAfterRead": share.BurnAfterRead, "accessCount": share.AccessCount,
 			"maxAccessCount": share.MaxAccessCount, "consumedAt": share.ConsumedAt,
-			"expiresAt": share.ExpiresAt, "hasPassword": share.PasswordHash != nil,
+			"expiresAt": share.ExpiresAt, "hasPassword": len(share.OpaqueRegistrationRecord) > 0,
 			"status": status, "isExpired": expired, "createdAt": share.CreatedAt,
 		})
 	}
@@ -437,7 +582,7 @@ func APIGetShareForFile(svc *shares.Service) gin.HandlerFunc {
 			"maxAccessCount":    share.MaxAccessCount,
 			"consumedAt":        share.ConsumedAt,
 			"expiresAt":         share.ExpiresAt,
-			"hasPassword":       share.PasswordHash != nil,
+			"hasPassword":       len(share.OpaqueRegistrationRecord) > 0,
 			"status":            status,
 			"isExpired":         expired,
 			"createdAt":         share.CreatedAt,
@@ -489,7 +634,7 @@ func APIListShares(svc *shares.Service) gin.HandlerFunc {
 				"accessCount":             share.AccessCount,
 				"maxAccessCount":          share.MaxAccessCount,
 				"expiresAt":               share.ExpiresAt,
-				"hasPassword":             share.PasswordHash != nil,
+				"hasPassword":             len(share.OpaqueRegistrationRecord) > 0,
 				"status":                  status,
 				"isExpired":               expired,
 				"createdAt":               share.CreatedAt,
@@ -537,7 +682,7 @@ func APIGetShareCryptoRecord(svc *shares.Service) gin.HandlerFunc {
 			"allowPreview":      share.AllowPreview,
 			"allowDownload":     share.AllowDownload,
 			"burnAfterRead":     share.BurnAfterRead,
-			"hasPassword":       share.PasswordHash != nil,
+			"hasPassword":       len(share.OpaqueRegistrationRecord) > 0,
 		})
 	}
 }
@@ -601,7 +746,7 @@ func shareStatusHandler(svc *shares.Service, activate bool) gin.HandlerFunc {
 			"maxAccessCount":    share.MaxAccessCount,
 			"consumedAt":        share.ConsumedAt,
 			"expiresAt":         share.ExpiresAt,
-			"hasPassword":       share.PasswordHash != nil,
+			"hasPassword":       len(share.OpaqueRegistrationRecord) > 0,
 			"status":            status,
 			"isExpired":         expired,
 			"revokedAt":         share.RevokedAt,

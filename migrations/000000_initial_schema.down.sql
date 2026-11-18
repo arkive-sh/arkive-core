@@ -1,6 +1,7 @@
 DROP TABLE IF EXISTS share_folder_entries;
 DROP TABLE IF EXISTS share_snapshot_files;
 DROP TABLE IF EXISTS share_items;
+DROP TABLE IF EXISTS share_opaque_login_attempts;
 DROP TABLE IF EXISTS share_links;
 DROP TABLE IF EXISTS upload_parts;
 DROP TABLE IF EXISTS upload_sessions;

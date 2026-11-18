@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"arkive/core/database"
 	"arkive/core/models"
 )
@@ -11,16 +13,16 @@ import (
 type Repository struct{}
 
 type CreateShareLinkInput struct {
-	OwnerUserID       string
-	Token             string
-	EncryptedShareKey []byte
-	AllowPreview      bool
-	AllowDownload     bool
-	PasswordHash      *string
-	ExpiresAt         *time.Time
-	BurnAfterRead     bool
-	MaxAccessCount    *int
-	Status            string
+	OwnerUserID              string
+	Token                    string
+	EncryptedShareKey        []byte
+	AllowPreview             bool
+	AllowDownload            bool
+	OpaqueRegistrationRecord []byte
+	ExpiresAt                *time.Time
+	BurnAfterRead            bool
+	MaxAccessCount           *int
+	Status                   string
 }
 
 type CreateShareItemInput struct {
@@ -56,7 +58,7 @@ func New() *Repository {
 
 func (r *Repository) CreateShareLink(ctx context.Context, db database.PgExecutor, input CreateShareLinkInput) (string, error) {
 	query := `INSERT INTO share_links
-		(owner_user_id, token, encrypted_share_key, allow_preview, allow_download, password_hash, expires_at, burn_after_read, max_access_count, status)
+		(owner_user_id, token, encrypted_share_key, allow_preview, allow_download, opaque_registration_record, expires_at, burn_after_read, max_access_count, status)
 	VALUES
 		($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	RETURNING id`
@@ -67,7 +69,7 @@ func (r *Repository) CreateShareLink(ctx context.Context, db database.PgExecutor
 		input.EncryptedShareKey,
 		input.AllowPreview,
 		input.AllowDownload,
-		input.PasswordHash,
+		input.OpaqueRegistrationRecord,
 		input.ExpiresAt,
 		input.BurnAfterRead,
 		input.MaxAccessCount,
@@ -406,7 +408,7 @@ func (r *Repository) GetShareByToken(ctx context.Context, db database.PgExecutor
 	var share models.Share
 	query := `SELECT sl.id, si.item_type, COALESCE(ssf.file_id::text, ''), COALESCE(si.folder_id::text, ''),
 		sl.owner_user_id, sl.token, sl.encrypted_share_key, sl.allow_preview, sl.allow_download, sl.burn_after_read,
-		sl.access_count, sl.max_access_count, sl.password_hash, sl.expires_at, sl.status, sl.revoked_at,
+		sl.access_count, sl.max_access_count, sl.opaque_registration_record, sl.expires_at, sl.status, sl.revoked_at,
 		sl.consumed_at, sl.created_at, sl.updated_at
 	FROM share_links sl
 	JOIN share_items si ON si.share_link_id = sl.id
@@ -431,7 +433,7 @@ func (r *Repository) GetShareByToken(ctx context.Context, db database.PgExecutor
 		&share.BurnAfterRead,
 		&share.AccessCount,
 		&share.MaxAccessCount,
-		&share.PasswordHash,
+		&share.OpaqueRegistrationRecord,
 		&share.ExpiresAt,
 		&share.Status,
 		&share.RevokedAt,
@@ -448,7 +450,7 @@ func (r *Repository) GetShareForFile(ctx context.Context, db database.PgExecutor
 	var share models.Share
 	query := `SELECT
 		sl.id, ssf.file_id, sl.owner_user_id, sl.token, sl.encrypted_share_key, sl.allow_preview, sl.allow_download, sl.burn_after_read,
-		sl.access_count, sl.max_access_count, sl.password_hash, sl.expires_at, sl.status, sl.revoked_at, sl.consumed_at, sl.created_at, sl.updated_at
+		sl.access_count, sl.max_access_count, sl.opaque_registration_record, sl.expires_at, sl.status, sl.revoked_at, sl.consumed_at, sl.created_at, sl.updated_at
 	FROM
 		share_links sl
 	JOIN
@@ -474,7 +476,7 @@ func (r *Repository) GetShareForFile(ctx context.Context, db database.PgExecutor
 		&share.BurnAfterRead,
 		&share.AccessCount,
 		&share.MaxAccessCount,
-		&share.PasswordHash,
+		&share.OpaqueRegistrationRecord,
 		&share.ExpiresAt,
 		&share.Status,
 		&share.RevokedAt,
@@ -491,7 +493,7 @@ func (r *Repository) GetShareForFileForUser(ctx context.Context, db database.PgE
 	var share models.Share
 	query := `SELECT
 		sl.id, ssf.file_id, sl.owner_user_id, sl.token, sl.encrypted_share_key, sl.allow_preview, sl.allow_download, sl.burn_after_read,
-		sl.access_count, sl.max_access_count, sl.password_hash, sl.expires_at, sl.status, sl.revoked_at, sl.consumed_at, sl.created_at, sl.updated_at
+		sl.access_count, sl.max_access_count, sl.opaque_registration_record, sl.expires_at, sl.status, sl.revoked_at, sl.consumed_at, sl.created_at, sl.updated_at
 	FROM
 		share_links sl
 	JOIN
@@ -517,7 +519,7 @@ func (r *Repository) GetShareForFileForUser(ctx context.Context, db database.PgE
 		&share.BurnAfterRead,
 		&share.AccessCount,
 		&share.MaxAccessCount,
-		&share.PasswordHash,
+		&share.OpaqueRegistrationRecord,
 		&share.ExpiresAt,
 		&share.Status,
 		&share.RevokedAt,
@@ -534,7 +536,7 @@ func (r *Repository) GetShareForFolderForUser(ctx context.Context, db database.P
 	var share models.Share
 	err := db.QueryRow(ctx, `SELECT link.id, item.item_type, ''::text, item.folder_id::text,
 		link.owner_user_id, link.token, link.encrypted_share_key, link.allow_preview, link.allow_download,
-		link.burn_after_read, link.access_count, link.max_access_count, link.password_hash, link.expires_at,
+		link.burn_after_read, link.access_count, link.max_access_count, link.opaque_registration_record, link.expires_at,
 		link.status, link.revoked_at, link.consumed_at, link.created_at, link.updated_at
 	FROM share_links link
 	JOIN share_items item ON item.share_link_id = link.id AND item.item_type = 'folder'
@@ -543,7 +545,7 @@ func (r *Repository) GetShareForFolderForUser(ctx context.Context, db database.P
 	ORDER BY item.display_order LIMIT 1`, folderID, ownerUserID).Scan(
 		&share.ID, &share.ItemType, &share.FileID, &share.FolderID, &share.OwnerUserID, &share.Token,
 		&share.EncryptedShareKey, &share.AllowPreview, &share.AllowDownload, &share.BurnAfterRead,
-		&share.AccessCount, &share.MaxAccessCount, &share.PasswordHash, &share.ExpiresAt, &share.Status,
+		&share.AccessCount, &share.MaxAccessCount, &share.OpaqueRegistrationRecord, &share.ExpiresAt, &share.Status,
 		&share.RevokedAt, &share.ConsumedAt, &share.CreatedAt, &share.UpdatedAt)
 	return share, err
 }
@@ -552,7 +554,7 @@ func (r *Repository) GetShareForUser(ctx context.Context, db database.PgExecutor
 	var share models.Share
 	query := `SELECT sl.id, si.item_type, COALESCE(ssf.file_id::text, ''), COALESCE(si.folder_id::text, ''),
 		sl.owner_user_id, sl.token, sl.encrypted_share_key, sl.allow_preview, sl.allow_download, sl.burn_after_read,
-		sl.access_count, sl.max_access_count, sl.password_hash, sl.expires_at, sl.status, sl.revoked_at,
+		sl.access_count, sl.max_access_count, sl.opaque_registration_record, sl.expires_at, sl.status, sl.revoked_at,
 		sl.consumed_at, sl.created_at, sl.updated_at
 	FROM share_links sl
 	JOIN share_items si ON si.share_link_id = sl.id
@@ -577,7 +579,7 @@ func (r *Repository) GetShareForUser(ctx context.Context, db database.PgExecutor
 		&share.BurnAfterRead,
 		&share.AccessCount,
 		&share.MaxAccessCount,
-		&share.PasswordHash,
+		&share.OpaqueRegistrationRecord,
 		&share.ExpiresAt,
 		&share.Status,
 		&share.RevokedAt,
@@ -590,25 +592,24 @@ func (r *Repository) GetShareForUser(ctx context.Context, db database.PgExecutor
 	return share, nil
 }
 
-func (r *Repository) UpdateShareForUser(ctx context.Context, db database.PgExecutor, shareID, ownerUserID string, passwordHash *string, expiresAt *time.Time, burnAfterRead bool, maxAccessCount *int, allowPreview, allowDownload bool) (models.Share, error) {
+func (r *Repository) UpdateShareForUser(ctx context.Context, db database.PgExecutor, shareID, ownerUserID string, expiresAt *time.Time, burnAfterRead bool, maxAccessCount *int, allowPreview, allowDownload bool) (models.Share, error) {
 	var share models.Share
 	query := `UPDATE
 		share_links
 	SET
-		password_hash = $3,
-		expires_at = $4,
-		burn_after_read = $5,
-		max_access_count = $6,
-		allow_preview = $7,
-		allow_download = $8,
+		expires_at = $3,
+		burn_after_read = $4,
+		max_access_count = $5,
+		allow_preview = $6,
+		allow_download = $7,
 		updated_at = now()
 	WHERE
 		id = $1 AND owner_user_id = $2 AND status = 'active'
 	RETURNING
 		id, owner_user_id, token, encrypted_share_key, allow_preview, allow_download, burn_after_read,
-		access_count, max_access_count, password_hash, expires_at, status, revoked_at, consumed_at, created_at, updated_at`
+		access_count, max_access_count, opaque_registration_record, expires_at, status, revoked_at, consumed_at, created_at, updated_at`
 	var shareIDValue string
-	if err := db.QueryRow(ctx, query, shareID, ownerUserID, passwordHash, expiresAt, burnAfterRead, maxAccessCount, allowPreview, allowDownload).Scan(
+	if err := db.QueryRow(ctx, query, shareID, ownerUserID, expiresAt, burnAfterRead, maxAccessCount, allowPreview, allowDownload).Scan(
 		&shareIDValue,
 		&share.OwnerUserID,
 		&share.Token,
@@ -618,7 +619,7 @@ func (r *Repository) UpdateShareForUser(ctx context.Context, db database.PgExecu
 		&share.BurnAfterRead,
 		&share.AccessCount,
 		&share.MaxAccessCount,
-		&share.PasswordHash,
+		&share.OpaqueRegistrationRecord,
 		&share.ExpiresAt,
 		&share.Status,
 		&share.RevokedAt,
@@ -637,6 +638,62 @@ func (r *Repository) UpdateShareForUser(ctx context.Context, db database.PgExecu
 	share.ItemType = linked.ItemType
 	share.FolderID = linked.FolderID
 	return share, nil
+}
+
+type OpaqueLoginAttempt struct {
+	State     []byte
+	ExpiresAt time.Time
+}
+
+func (r *Repository) CreateOpaqueLoginAttempt(ctx context.Context, db database.PgExecutor, id, shareID string, state []byte, expiresAt time.Time) error {
+	if _, err := db.Exec(ctx, `DELETE FROM share_opaque_login_attempts WHERE expires_at <= now()`); err != nil {
+		return err
+	}
+	_, err := db.Exec(ctx, `INSERT INTO share_opaque_login_attempts (id, share_link_id, server_state, expires_at)
+		VALUES ($1, $2, $3, $4)`, id, shareID, state, expiresAt)
+	return err
+}
+
+func (r *Repository) ConsumeOpaqueLoginAttempt(ctx context.Context, tx pgx.Tx, id, shareID string) (OpaqueLoginAttempt, error) {
+	var attempt OpaqueLoginAttempt
+	if err := tx.QueryRow(ctx, `SELECT server_state, expires_at FROM share_opaque_login_attempts
+		WHERE id = $1 AND share_link_id = $2 AND expires_at > now() FOR UPDATE`, id, shareID).Scan(
+		&attempt.State, &attempt.ExpiresAt,
+	); err != nil {
+		return OpaqueLoginAttempt{}, err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM share_opaque_login_attempts WHERE id = $1`, id); err != nil {
+		return OpaqueLoginAttempt{}, err
+	}
+	return attempt, nil
+}
+
+func (r *Repository) SetOpaqueRegistrationRecord(ctx context.Context, db database.PgExecutor, shareID, ownerUserID string, record []byte) (bool, error) {
+	result, err := db.Exec(ctx, `UPDATE share_links
+		SET opaque_registration_record = $3,
+			status = CASE WHEN status = 'provisioning' AND EXISTS (
+				SELECT 1 FROM share_items WHERE share_link_id = share_links.id AND item_type = 'file'
+			) THEN 'active' ELSE status END,
+			updated_at = now()
+		WHERE id = $1 AND owner_user_id = $2 AND status IN ('active', 'provisioning')`, shareID, ownerUserID, record)
+	if err != nil {
+		return false, err
+	}
+	return result.RowsAffected() == 1, nil
+}
+
+func (r *Repository) ClearOpaqueRegistrationRecord(ctx context.Context, db database.PgExecutor, shareID, ownerUserID string) (bool, error) {
+	result, err := db.Exec(ctx, `UPDATE share_links SET opaque_registration_record = NULL, updated_at = now()
+		WHERE id = $1 AND owner_user_id = $2 AND status IN ('active', 'provisioning')`, shareID, ownerUserID)
+	if err != nil {
+		return false, err
+	}
+	return result.RowsAffected() == 1, nil
+}
+
+func (r *Repository) DeleteOpaqueLoginAttempts(ctx context.Context, db database.PgExecutor, shareID string) error {
+	_, err := db.Exec(ctx, `DELETE FROM share_opaque_login_attempts WHERE share_link_id = $1`, shareID)
+	return err
 }
 
 func (r *Repository) DeleteShareForUser(ctx context.Context, db database.PgExecutor, shareID, ownerUserID string) (bool, error) {
@@ -671,7 +728,7 @@ func (r *Repository) setShareStatus(ctx context.Context, db database.PgExecutor,
 		id = $1 AND owner_user_id = $2 AND status = $3
 	RETURNING
 		id, owner_user_id, token, encrypted_share_key, allow_preview, allow_download, burn_after_read,
-		access_count, max_access_count, password_hash, expires_at, status, revoked_at, consumed_at, created_at, updated_at`
+		access_count, max_access_count, opaque_registration_record, expires_at, status, revoked_at, consumed_at, created_at, updated_at`
 	var shareIDValue string
 	if err := db.QueryRow(ctx, query, shareID, ownerUserID, fromStatus, toStatus).Scan(
 		&shareIDValue,
@@ -683,7 +740,7 @@ func (r *Repository) setShareStatus(ctx context.Context, db database.PgExecutor,
 		&share.BurnAfterRead,
 		&share.AccessCount,
 		&share.MaxAccessCount,
-		&share.PasswordHash,
+		&share.OpaqueRegistrationRecord,
 		&share.ExpiresAt,
 		&share.Status,
 		&share.RevokedAt,
@@ -734,7 +791,7 @@ func (r *Repository) ConsumeShareByToken(ctx context.Context, db database.PgExec
 	  )
 	RETURNING
 	  id, owner_user_id, token, encrypted_share_key, allow_preview, allow_download, burn_after_read,
-	  access_count, max_access_count, password_hash, expires_at, status, revoked_at, consumed_at, created_at, updated_at`
+	  access_count, max_access_count, opaque_registration_record, expires_at, status, revoked_at, consumed_at, created_at, updated_at`
 	err := db.QueryRow(ctx, query, token).Scan(
 		&share.ID,
 		&share.OwnerUserID,
@@ -745,7 +802,7 @@ func (r *Repository) ConsumeShareByToken(ctx context.Context, db database.PgExec
 		&share.BurnAfterRead,
 		&share.AccessCount,
 		&share.MaxAccessCount,
-		&share.PasswordHash,
+		&share.OpaqueRegistrationRecord,
 		&share.ExpiresAt,
 		&share.Status,
 		&share.RevokedAt,
@@ -773,7 +830,7 @@ func (r *Repository) ListSharesForUser(ctx context.Context, db database.PgExecut
 		sl.burn_after_read,
 		sl.access_count,
 		sl.max_access_count,
-		sl.password_hash,
+		sl.opaque_registration_record,
 		sl.expires_at,
 		sl.status,
 		sl.revoked_at,
@@ -832,7 +889,7 @@ func (r *Repository) ListSharesForUser(ctx context.Context, db database.PgExecut
 			&share.BurnAfterRead,
 			&share.AccessCount,
 			&share.MaxAccessCount,
-			&share.PasswordHash,
+			&share.OpaqueRegistrationRecord,
 			&share.ExpiresAt,
 			&share.Status,
 			&share.RevokedAt,

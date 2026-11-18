@@ -41,7 +41,7 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 	settingsRepo := settingsrepo.New()
 	settingsService := settingssvc.NewService(db, settingsRepo, usersRepo)
 	setupService := setup.NewService(db, authRepo, usersRepo, settingsRepo, cfg.OpaqueServerSetup)
-	shareService := shares.NewService(db, filerepo.New(), foldersrepo.New(), sharerepo.New())
+	shareService := shares.NewService(db, filerepo.New(), foldersrepo.New(), sharerepo.New(), cfg.OpaqueServerSetup)
 	syncService := syncsvc.NewService(db, syncrepo.New())
 
 	// Public API endpoints
@@ -54,7 +54,8 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 	publicShareAuthLimit := middleware.LimitRequestsPerIP(cfg.RateLimitRPM)
 	publicShareBrowseLimit := middleware.LimitRequestsPerIP(cfg.PublicShareRateLimitRPM)
 	{
-		publicShares.POST("/unlock", publicShareAuthLimit, middleware.LimitBody(16<<10), handlers.APIPublicShareUnlock(shareService, cfg.CookieSecret))
+		publicShares.POST("/password/opaque/start", publicShareAuthLimit, middleware.LimitBody(16<<10), handlers.APIPublicSharePasswordLoginStart(shareService))
+		publicShares.POST("/password/opaque/finish", publicShareAuthLimit, middleware.LimitBody(16<<10), handlers.APIPublicSharePasswordLoginFinish(shareService, cfg.CookieSecret))
 		publicShares.GET("", publicShareBrowseLimit, handlers.APIPublicShareRecord(shareService, filesService, cfg.CookieSecret))
 		publicShares.POST("/consume", publicShareBrowseLimit, handlers.APIPublicShareConsume(shareService, filesService, cfg.CookieSecret))
 		publicShares.GET("/folders/:folderID/entries", publicShareBrowseLimit, handlers.APIPublicShareFolderEntries(shareService, cfg.CookieSecret))
@@ -117,7 +118,11 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 	apiShares.Use(middleware.RequireSessionJSON(authService))
 	{
 		apiShares.GET("", handlers.APIListShares(shareService))
+		apiShares.POST("/password/opaque/start", middleware.LimitBody(16<<10), handlers.APIStartNewSharePasswordRegistration(shareService))
 		apiShares.PATCH("/:id", middleware.LimitBody(16<<10), handlers.APIUpdateShare(shareService))
+		apiShares.POST("/:id/password/opaque/start", middleware.LimitBody(16<<10), handlers.APIStartSharePasswordRegistration(shareService))
+		apiShares.POST("/:id/password/opaque/finish", middleware.LimitBody(16<<10), handlers.APIFinishSharePasswordRegistration(shareService))
+		apiShares.DELETE("/:id/password", handlers.APIRemoveSharePassword(shareService))
 		apiShares.POST("/:id/revoke", handlers.APIRevokeShare(shareService))
 		apiShares.POST("/:id/activate", handlers.APIActivateShare(shareService))
 		apiShares.GET("/:id/crypto-record", handlers.APIGetShareCryptoRecord(shareService))
