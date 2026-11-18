@@ -7,6 +7,7 @@
 	import Modal from '#lib/components/Modal.svelte';
 	import FileTypeIcon from '#lib/components/FileTypeIcon.svelte';
 	import Skeleton from '#lib/components/Skeleton.svelte';
+	import { isSaveShortcut } from './keyboard';
 	import {
 		useTransferManager,
 		type UploadItem,
@@ -212,14 +213,6 @@
 		allLinesSelected = false;
 		selectionMessage = '';
 		if (!editing || showHiddenCharacters) viewport?.focus({ preventScroll: true });
-	}
-
-	function copyName(name: string): string {
-		const extensionAt = name.lastIndexOf('.');
-
-		return extensionAt > 0
-			? `${name.slice(0, extensionAt)} (copy)${name.slice(extensionAt)}`
-			: `${name} (copy).txt`;
 	}
 
 	function decodedLine(index: number): string {
@@ -547,11 +540,11 @@
 		};
 	}
 
-	function saveCopy(): void {
-		const name = filename.trim();
+	function saveFile(): void {
+		const name = entry?.name ?? filename.trim();
 
 		if (!vaultId) {
-			errorMessage = 'A vault is required to save a copy.';
+			errorMessage = 'A vault is required to save this text file.';
 
 			return;
 		}
@@ -573,6 +566,12 @@
 		contentByteCount = 0;
 		handedOff = true;
 		onClose();
+	}
+
+	function handleWindowKeydown(event: KeyboardEvent): void {
+		if (!isSaveShortcut(event)) return;
+		event.preventDefault();
+		if (!loading && editing && !readOnly && (!entry || dirty)) saveFile();
 	}
 
 	function requestClose(): void {
@@ -617,7 +616,7 @@
 
 	onMount(() => {
 		if (entry) {
-			filename = copyName(entry.name);
+			filename = entry.name;
 			editing = false;
 			void loadFile();
 		} else {
@@ -636,6 +635,8 @@
 		errorMessage = '';
 	});
 </script>
+
+<svelte:window onkeydown={handleWindowKeydown} />
 
 <Modal
 	open
@@ -692,10 +693,10 @@
 				<button
 					class="inline-flex size-9 cursor-pointer items-center justify-center rounded border border-(--border) hover:bg-(--surface-highest)"
 					type="button"
-					aria-label="Edit a copy"
+					aria-label="Edit file"
 					onclick={() => {
 						editing = true;
-						filename = copyName(entry.name);
+						filename = entry.name;
 						showHiddenCharacters = false;
 						allLinesSelected = false;
 						selectionMessage = '';
@@ -713,12 +714,14 @@
 	<div class="flex min-h-0 flex-1 flex-col">
 		{#if editing}
 			<div class="flex flex-wrap items-center gap-2 border-b border-(--border) px-4 py-3">
-				<input
-					class="h-9 min-w-0 flex-1 rounded border border-(--border) bg-(--bg) px-3 text-sm text-(--text) outline-none focus:border-(--accent)"
-					aria-label="Text file name"
-					bind:value={filename}
-					oninput={() => (dirty = true)}
-				/>
+				{#if !entry}
+					<input
+						class="h-9 min-w-0 flex-1 rounded border border-(--border) bg-(--bg) px-3 text-sm text-(--text) outline-none focus:border-(--accent)"
+						aria-label="Text file name"
+						bind:value={filename}
+						oninput={() => (dirty = true)}
+					/>
+				{/if}
 				<button
 					class={`h-9 cursor-pointer rounded border px-3 text-sm hover:bg-(--surface-highest) ${wrapLines ? 'border-(--accent)' : 'border-(--border)'}`}
 					type="button"
@@ -736,8 +739,15 @@
 					class="h-9 cursor-pointer rounded border border-(--accent) bg-(--accent) px-3 text-sm font-semibold text-(--accent-ink) disabled:cursor-not-allowed disabled:opacity-50"
 					type="button"
 					disabled={loading || (!dirty && entry !== null)}
-					onclick={saveCopy}>{entry ? 'Save copy' : 'Save file'}</button
+					aria-keyshortcuts="Control+S Meta+S"
+					onclick={saveFile}
 				>
+					{entry ? 'Save changes' : 'Save file'}
+					<kbd
+						class="rounded border border-current/20 px-1.5 py-0.5 text-[11px] font-normal"
+						aria-hidden="true">Ctrl/⌘ S</kbd
+					>
+				</button>
 			</div>
 		{/if}
 		{#if bidiControlCount > 0}

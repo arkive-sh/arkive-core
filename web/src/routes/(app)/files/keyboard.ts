@@ -40,6 +40,15 @@ type FileManagerViewKeyboardOptions = {
 	openEntry: (entry: FileManagerEntry, trigger: HTMLElement) => void;
 };
 
+export function isSaveShortcut(event: KeyboardEvent): boolean {
+	return (
+		(event.ctrlKey || event.metaKey) &&
+		!event.altKey &&
+		!event.shiftKey &&
+		event.key.toLowerCase() === 's'
+	);
+}
+
 function getDeleteShortcut(event: KeyboardEvent): DeleteShortcut | null {
 	if (
 		event.key !== 'Delete' ||
