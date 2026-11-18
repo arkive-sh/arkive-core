@@ -129,7 +129,15 @@
 			if (storageUsage)
 				storageUsage = { ...storageUsage, maxStorageBytes: settings.maxStorageBytes };
 			await tick();
-			form.reset();
+			const secretAccessKey = form.elements.namedItem('s3_secret_access_key');
+
+			if (secretAccessKey instanceof HTMLInputElement) secretAccessKey.value = '';
+			const sessionToken = form.elements.namedItem('s3_session_token');
+
+			if (sessionToken instanceof HTMLInputElement) sessionToken.value = '';
+			const clearSessionToken = form.elements.namedItem('clear_session_token');
+
+			if (clearSessionToken instanceof HTMLInputElement) clearSessionToken.checked = false;
 			toast.success('Storage settings saved.');
 		} catch (error) {
 			storageSettingsError =
