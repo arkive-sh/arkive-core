@@ -1,5 +1,3 @@
--- Includes former migrations 000001-000004; continue future versions at 000005
--- because existing development databases may already record versions 1-4.
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS citext;
 
@@ -22,6 +20,14 @@ CREATE TABLE users (
   recovery_proof_public_key BYTEA,
   password_reset_token_hash TEXT UNIQUE,
   password_reset_token_expires_at TIMESTAMPTZ,
+  encrypted_totp_secret BYTEA,
+  pending_totp_secret BYTEA,
+  pending_totp_expires_at TIMESTAMPTZ,
+  totp_last_step BIGINT,
+  totp_setup_required BOOLEAN NOT NULL DEFAULT FALSE,
+  totp_failed_attempts INTEGER NOT NULL DEFAULT 0,
+  totp_failure_window_started_at TIMESTAMPTZ,
+  totp_locked_until TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT users_username_key UNIQUE (username),
   CONSTRAINT users_email_key UNIQUE (email),
@@ -33,7 +39,15 @@ CREATE TABLE users (
   CONSTRAINT users_name_min_length_chk
     CHECK (char_length(btrim(name)) >= 3),
   CONSTRAINT users_bytes_nonnegative_chk
-    CHECK (used_bytes >= 0 AND reserved_bytes >= 0)
+    CHECK (used_bytes >= 0 AND reserved_bytes >= 0),
+  CONSTRAINT users_totp_pending_pair
+    CHECK ((pending_totp_secret IS NULL) = (pending_totp_expires_at IS NULL)),
+  CONSTRAINT users_recovery_key_pair
+    CHECK ((encrypted_master_key_recovery IS NULL) = (recovery_proof_public_key IS NULL)),
+  CONSTRAINT users_recovery_setup_token_pair
+    CHECK ((recovery_setup_token_hash IS NULL) = (recovery_setup_token_expires_at IS NULL)),
+  CONSTRAINT users_password_reset_token_pair
+    CHECK ((password_reset_token_hash IS NULL) = (password_reset_token_expires_at IS NULL))
 );
 
 CREATE FUNCTION prevent_username_change() RETURNS trigger AS $$
@@ -49,6 +63,30 @@ CREATE TRIGGER users_username_immutable
   BEFORE UPDATE OF username ON users
   FOR EACH ROW EXECUTE FUNCTION prevent_username_change();
 
+CREATE TABLE auth_mfa_challenges (
+  token_hash BYTEA PRIMARY KEY CHECK (octet_length(token_hash) = 32),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  failed_attempts INTEGER NOT NULL DEFAULT 0 CHECK (failed_attempts BETWEEN 0 AND 5),
+  expires_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX auth_mfa_challenges_expires_at_idx ON auth_mfa_challenges (expires_at);
+
+CREATE TABLE totp_recovery_codes (
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code_hash BYTEA NOT NULL CHECK (octet_length(code_hash) = 32),
+  PRIMARY KEY (user_id, code_hash)
+);
+
+CREATE TABLE totp_trusted_devices (
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash BYTEA NOT NULL CHECK (octet_length(token_hash) = 32),
+  expires_at TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (user_id, token_hash)
+);
+
+CREATE INDEX totp_trusted_devices_expires_at_idx ON totp_trusted_devices (expires_at);
+
 
 CREATE TABLE sessions (
   -- The cookie is a bearer secret; only its SHA-256 digest belongs in the database.
@@ -59,15 +97,13 @@ CREATE TABLE sessions (
 );
 
 CREATE INDEX sessions_user_id_idx ON sessions (user_id);
-CREATE INDEX sessions_expires_at_idx ON sessions (expires_at);
 
 CREATE TABLE opaque_login_attempts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES users(id) ON DELETE CASCADE,
   -- Application code stores this OPAQUE state encrypted and authenticated.
   server_state BYTEA NOT NULL,
-  expires_at TIMESTAMPTZ NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  expires_at TIMESTAMPTZ NOT NULL
 );
 
 CREATE INDEX opaque_login_attempts_expires_at_idx ON opaque_login_attempts (expires_at);
@@ -86,12 +122,22 @@ CREATE TABLE folders (
   encrypted_metadata BYTEA,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  deleted_at TIMESTAMPTZ
+  deleted_at TIMESTAMPTZ,
+  purged_at TIMESTAMPTZ,
+  purge_requested_at TIMESTAMPTZ
 );
 
 CREATE INDEX idx_folders_user_parent_created
-  ON folders (user_id, parent_folder_id, created_at DESC)
+  ON folders (user_id, parent_folder_id, created_at DESC, id DESC)
   WHERE deleted_at IS NULL;
+CREATE INDEX idx_folders_deleted_cleanup
+  ON folders (deleted_at)
+  WHERE deleted_at IS NOT NULL AND purged_at IS NULL;
+CREATE INDEX idx_folders_purge_requested
+  ON folders (purge_requested_at)
+  WHERE purge_requested_at IS NOT NULL AND purged_at IS NULL;
+CREATE INDEX idx_folders_sync_listing
+  ON folders (user_id, parent_folder_id, updated_at DESC, id);
 
 CREATE TABLE files (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -112,6 +158,10 @@ CREATE TABLE files (
   thumbnail_size_bytes BIGINT NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deleted_at TIMESTAMPTZ,
+  purged_at TIMESTAMPTZ,
+  purge_requested_at TIMESTAMPTZ,
+  tombstone_purged_at TIMESTAMPTZ,
   CONSTRAINT files_upload_status_chk
     CHECK (upload_status IN ('pending', 'uploading', 'complete', 'failed', 'aborted')),
   CONSTRAINT files_thumbnail_bytes_nonnegative_chk
@@ -119,13 +169,23 @@ CREATE TABLE files (
 );
 
 CREATE INDEX files_user_id_idx ON files (user_id);
-CREATE INDEX files_expires_at_idx
-  ON files (expires_at)
-  WHERE expires_at IS NOT NULL;
 CREATE INDEX idx_files_user_folder_complete_created
-  ON files (user_id, folder_id, created_at DESC)
+  ON files (user_id, folder_id, created_at DESC, id DESC)
   WHERE upload_status = 'complete'
-    AND expires_at IS NULL;
+    AND expires_at IS NULL
+    AND deleted_at IS NULL;
+CREATE INDEX idx_files_deleted_cleanup
+  ON files (deleted_at)
+  WHERE deleted_at IS NOT NULL AND purged_at IS NULL;
+CREATE INDEX idx_files_tombstone_cleanup
+  ON files (deleted_at)
+  WHERE deleted_at IS NOT NULL AND purged_at IS NOT NULL;
+CREATE INDEX idx_files_purge_requested
+  ON files (purge_requested_at)
+  WHERE purge_requested_at IS NOT NULL AND purged_at IS NULL;
+CREATE INDEX idx_files_sync_listing
+  ON files (user_id, folder_id, updated_at DESC, id)
+  WHERE upload_status = 'complete';
 
 CREATE TABLE file_versions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -148,9 +208,6 @@ CREATE TABLE file_versions (
   CONSTRAINT file_versions_size_nonnegative_chk CHECK (actual_encrypted_size >= 0),
   CONSTRAINT file_versions_thumbnail_nonnegative_chk CHECK (thumbnail_size_bytes >= 0)
 );
-
-CREATE INDEX file_versions_file_id_number_idx
-  ON file_versions (file_id, version_number DESC);
 
 CREATE TABLE file_search_tokens (
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -188,6 +245,7 @@ CREATE TABLE upload_sessions (
   total_chunks INTEGER NOT NULL DEFAULT 0,
   provider_upload_id TEXT,
   encrypted_size BIGINT NOT NULL DEFAULT 0,
+  upload_part_size BIGINT NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'active',
   expires_at TIMESTAMPTZ NOT NULL,
   upload_part_count INTEGER NOT NULL DEFAULT 0,
@@ -226,7 +284,7 @@ CREATE TABLE share_links (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT share_links_status_chk
-    CHECK (status IN ('active', 'expired', 'revoked', 'burned', 'disabled'))
+    CHECK (status IN ('active', 'provisioning', 'revoked', 'burned'))
 );
 
 CREATE INDEX share_links_owner_user_id_idx ON share_links (owner_user_id);
@@ -235,8 +293,7 @@ CREATE TABLE share_opaque_login_attempts (
   id UUID PRIMARY KEY,
   share_link_id UUID NOT NULL REFERENCES share_links(id) ON DELETE CASCADE,
   server_state BYTEA NOT NULL,
-  expires_at TIMESTAMPTZ NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  expires_at TIMESTAMPTZ NOT NULL
 );
 
 CREATE INDEX share_opaque_login_attempts_expiry_idx ON share_opaque_login_attempts (expires_at);
@@ -245,102 +302,29 @@ CREATE TABLE share_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   share_link_id UUID NOT NULL REFERENCES share_links(id) ON DELETE CASCADE,
   item_type TEXT NOT NULL,
-  file_id UUID NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+  file_id UUID REFERENCES files(id) ON DELETE CASCADE,
+  folder_id UUID REFERENCES folders(id) ON DELETE CASCADE,
   display_order INTEGER NOT NULL DEFAULT 0,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT share_items_item_type_chk
-    CHECK (item_type = 'file')
+    CHECK (
+      (item_type = 'file' AND file_id IS NOT NULL AND folder_id IS NULL)
+      OR (item_type = 'folder' AND file_id IS NULL AND folder_id IS NOT NULL)
+    )
 );
 
 CREATE INDEX share_items_share_link_id_idx ON share_items (share_link_id);
 CREATE INDEX share_items_file_id_idx ON share_items (file_id);
+CREATE INDEX share_items_folder_id_idx ON share_items (folder_id);
 
 CREATE TABLE share_snapshot_files (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   share_item_id UUID NOT NULL REFERENCES share_items(id) ON DELETE CASCADE,
   file_id UUID NOT NULL REFERENCES files(id) ON DELETE CASCADE,
-  encrypted_relative_path BYTEA,
   encrypted_file_key_for_share BYTEA NOT NULL,
   display_order INTEGER NOT NULL DEFAULT 0,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  PRIMARY KEY (share_item_id, file_id)
 );
 
-CREATE INDEX share_snapshot_files_share_item_id_idx ON share_snapshot_files (share_item_id);
 CREATE INDEX share_snapshot_files_file_id_idx ON share_snapshot_files (file_id);
-
-ALTER TABLE files
-ADD COLUMN IF NOT EXISTS deleted_at timestamptz NULL,
-ADD COLUMN IF NOT EXISTS purged_at timestamptz NULL,
-ADD COLUMN IF NOT EXISTS purge_requested_at timestamptz NULL,
-ADD COLUMN IF NOT EXISTS tombstone_purged_at timestamptz NULL;
-
-ALTER TABLE folders
-ADD COLUMN IF NOT EXISTS purged_at timestamptz NULL,
-ADD COLUMN IF NOT EXISTS purge_requested_at timestamptz NULL;
-
-CREATE INDEX IF NOT EXISTS idx_files_deleted_cleanup
-ON files(deleted_at)
-WHERE deleted_at IS NOT NULL
-  AND purged_at IS NULL;
-
-CREATE INDEX IF NOT EXISTS idx_files_tombstone_cleanup
-ON files(deleted_at)
-WHERE deleted_at IS NOT NULL
-  AND purged_at IS NOT NULL;
-
-CREATE INDEX IF NOT EXISTS idx_folders_deleted_cleanup
-ON folders(deleted_at)
-WHERE deleted_at IS NOT NULL
-  AND purged_at IS NULL;
-
-CREATE INDEX IF NOT EXISTS idx_files_purge_requested
-ON files(purge_requested_at)
-WHERE purge_requested_at IS NOT NULL
-  AND purged_at IS NULL;
-
-CREATE INDEX IF NOT EXISTS idx_folders_purge_requested
-ON folders(purge_requested_at)
-WHERE purge_requested_at IS NOT NULL
-  AND purged_at IS NULL;
-
-CREATE INDEX IF NOT EXISTS idx_files_sync_listing
-ON files(user_id, folder_id, updated_at DESC, id)
-WHERE upload_status = 'complete';
-
-CREATE INDEX IF NOT EXISTS idx_folders_sync_listing
-ON folders(user_id, parent_folder_id, updated_at DESC, id);
-
-ALTER TABLE upload_sessions
-  ADD COLUMN upload_part_size BIGINT NOT NULL DEFAULT 0;
-
-DROP INDEX IF EXISTS idx_folders_user_parent_created;
-CREATE INDEX idx_folders_user_parent_created
-  ON folders (user_id, parent_folder_id, created_at DESC, id DESC)
-  WHERE deleted_at IS NULL;
-
-DROP INDEX IF EXISTS idx_files_user_folder_complete_created;
-CREATE INDEX idx_files_user_folder_complete_created
-  ON files (user_id, folder_id, created_at DESC, id DESC)
-  WHERE upload_status = 'complete'
-    AND expires_at IS NULL
-    AND deleted_at IS NULL;
-
-ALTER TABLE share_links
-  DROP CONSTRAINT share_links_status_chk,
-  ADD CONSTRAINT share_links_status_chk
-    CHECK (status IN ('active', 'expired', 'revoked', 'burned', 'disabled', 'provisioning'));
-
-ALTER TABLE share_items
-  ALTER COLUMN file_id DROP NOT NULL,
-  ADD COLUMN folder_id UUID REFERENCES folders(id) ON DELETE CASCADE,
-  DROP CONSTRAINT share_items_item_type_chk,
-  ADD CONSTRAINT share_items_item_type_chk
-    CHECK (
-      (item_type = 'file' AND file_id IS NOT NULL AND folder_id IS NULL)
-      OR (item_type = 'folder' AND file_id IS NULL AND folder_id IS NOT NULL)
-    );
-
-CREATE INDEX share_items_folder_id_idx ON share_items (folder_id);
 
 CREATE TABLE share_folder_entries (
   share_link_id UUID NOT NULL REFERENCES share_links(id) ON DELETE CASCADE,
@@ -349,7 +333,6 @@ CREATE TABLE share_folder_entries (
   encrypted_file_key_for_share BYTEA,
   encrypted_name BYTEA,
   encrypted_metadata BYTEA,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT share_folder_entries_target_chk CHECK (
     (file_id IS NOT NULL AND folder_id IS NULL AND encrypted_file_key_for_share IS NOT NULL
       AND encrypted_name IS NULL AND encrypted_metadata IS NULL)

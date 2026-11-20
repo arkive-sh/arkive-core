@@ -40,10 +40,10 @@ func TestOpaqueLoginFinalizationCannotBeAppliedToAnotherAttempt(t *testing.T) {
 		t.Fatal(err)
 	}
 	wrongAttemptFinalization := append([]byte(nil), finalization...)
-	if _, err := f.service.FinishOpaqueLogin(f.ctx, second.AttemptID, wrongAttemptFinalization, "192.0.2.5"); !errors.Is(err, ErrInvalidCredentials) {
+	if _, err := f.service.FinishOpaqueLogin(f.ctx, second.AttemptID, wrongAttemptFinalization, "192.0.2.5", ""); !errors.Is(err, ErrInvalidCredentials) {
 		t.Fatalf("cross-attempt finalization error = %v, want ErrInvalidCredentials", err)
 	}
-	if _, err := f.service.FinishOpaqueLogin(f.ctx, first.AttemptID, finalization, "192.0.2.5"); err != nil {
+	if _, err := f.service.FinishOpaqueLogin(f.ctx, first.AttemptID, finalization, "192.0.2.5", ""); err != nil {
 		t.Fatalf("correct attempt could not finish after cross-attempt rejection: %v", err)
 	}
 }

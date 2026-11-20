@@ -10,6 +10,7 @@ import (
 )
 
 const SessionName = "arkive_session"
+const TOTPDeviceName = "arkive_totp_device"
 
 func SetSession(c *gin.Context, sessionToken string, expiresAt time.Time) {
 	SetCustom(c, SessionName, sessionToken, expiresAt)

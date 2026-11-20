@@ -10,6 +10,7 @@ import (
 
 	"arkive/core/services/auth"
 	"arkive/pkg/apierror"
+	"arkive/pkg/cookies"
 	"arkive/pkg/errs"
 )
 
@@ -161,6 +162,7 @@ func APICompletePasswordReset(svc *auth.Service) gin.HandlerFunc {
 			return
 		}
 
+		cookies.ClearCustom(c, cookies.TOTPDeviceName)
 		c.Status(http.StatusNoContent)
 	}
 }

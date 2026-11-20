@@ -8,10 +8,27 @@ interface LoginStartResponse {
 	loginResponse: string;
 }
 
-interface LoginFinishResponse {
+export interface LoginFinishResponse {
 	userID: string;
 	salt: string;
 	encryptedMasterKey: string;
+	recoveryCodes?: string[];
+}
+
+export interface TOTPSetup {
+	secret: string;
+	qrCodeDataURL: string;
+}
+
+export interface MFAChallenge {
+	challenge: string;
+	totpSetup?: TOTPSetup;
+}
+
+export interface MFAProof {
+	code?: string;
+	recoveryCode?: string;
+	rememberDevice?: boolean;
 }
 
 interface RegistrationStartResponse {
@@ -27,6 +44,7 @@ export class OpaqueAuth {
 	async login(
 		email: string,
 		password: string,
+		requestMFA: (challenge: MFAChallenge, invalidCode: boolean) => Promise<MFAProof>,
 	): Promise<LoginFinishResponse & { exportKey: Uint8Array<ArrayBuffer> }> {
 		let clientState: ReturnType<typeof opaque.client.startLogin> | null = opaque.client.startLogin({
 			password,
@@ -54,13 +72,39 @@ export class OpaqueAuth {
 			const finishLoginRequest = login.finishLoginRequest;
 			encodedExportKey = login.exportKey;
 			exportKey = fromBase64(encodedExportKey);
+			password = '';
 			clientState = null;
 			login = null;
 			encodedExportKey = null;
-			const { data } = await api.post<LoginFinishResponse>('/api/auth/opaque/login/finish', {
+			const { data: finish } = await api.post<
+				LoginFinishResponse | { mfaRequired: true; challenge: string; totpSetup?: TOTPSetup }
+			>('/api/auth/opaque/login/finish', {
 				attemptId: start.attemptId,
 				finishLoginRequest,
 			});
+			let data: LoginFinishResponse;
+
+			if ('mfaRequired' in finish) {
+				const challenge = { challenge: finish.challenge, totpSetup: finish.totpSetup };
+				let invalidCode = false;
+
+				while (true) {
+					const proof = await requestMFA(challenge, invalidCode);
+
+					try {
+						({ data } = await api.post<LoginFinishResponse>('/api/auth/totp/verify', {
+							challenge: challenge.challenge,
+							...proof,
+						}));
+						break;
+					} catch (error) {
+						if (!axios.isAxiosError(error) || error.response?.status !== 401) throw error;
+						invalidCode = true;
+					}
+				}
+			} else {
+				data = finish;
+			}
 			const result = { ...data, exportKey };
 			exportKey = null;
 

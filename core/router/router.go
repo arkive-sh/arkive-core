@@ -14,6 +14,7 @@ import (
 	settingsrepo "arkive/core/repositories/settings"
 	sharerepo "arkive/core/repositories/shares"
 	syncrepo "arkive/core/repositories/sync"
+	totprepo "arkive/core/repositories/totp"
 	usersrepo "arkive/core/repositories/users"
 	"arkive/core/services/auth"
 	filessvc "arkive/core/services/files"
@@ -22,6 +23,7 @@ import (
 	"arkive/core/services/setup"
 	"arkive/core/services/shares"
 	syncsvc "arkive/core/services/sync"
+	totpservice "arkive/core/services/totp"
 	"arkive/core/services/uploads"
 )
 
@@ -32,7 +34,8 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 
 	authRepo := authrepo.New()
 	usersRepo := usersrepo.New()
-	authService := auth.NewService(db, authRepo, sessionrepo.New(), usersRepo, auth.Config{
+	totpService := totpservice.NewService(db, totprepo.New(), cfg.OpaqueServerSetup)
+	authService := auth.NewService(db, authRepo, sessionrepo.New(), usersRepo, totpService, auth.Config{
 		SessionTTL:            cfg.SessionTTL,
 		PasswordResetTokenTTL: cfg.PasswordResetTokenTTL,
 		BaseURL:               cfg.BaseURL,
@@ -61,6 +64,7 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 		publicShares.GET("/folders/:folderID/entries", publicShareBrowseLimit, handlers.APIPublicShareFolderEntries(shareService, cfg.CookieSecret))
 		publicShares.GET("/files/:fileID", publicShareBrowseLimit, handlers.APIPublicShareFolderFile(shareService, filesService, cfg.CookieSecret))
 	}
+
 	publicAuth := api.Group("")
 	// Bound auth and setup JSON before ShouldBindJSON reads it; uploads have their own larger limit.
 	publicAuth.Use(middleware.LimitRequestsPerIP(cfg.RateLimitRPM))
@@ -72,18 +76,24 @@ func New(db database.PgPool, cfg config.Config, uploadService *uploads.Service, 
 		publicAuth.POST("/setup/recovery-key", handlers.APICompleteInitialSetup(setupService))
 		publicAuth.POST("/auth/opaque/login/start", handlers.APIOpaqueLoginStart(authService))
 		publicAuth.POST("/auth/opaque/login/finish", handlers.APIOpaqueLoginFinish(authService))
+		publicAuth.POST("/auth/totp/verify", handlers.APICompleteTOTPLogin(authService))
 		publicAuth.POST("/auth/logout", handlers.APILogout(authService))
 		publicAuth.POST("/auth/forgot-password", handlers.APIForgotPassword(authService))
 		publicAuth.GET("/auth/password-reset/vault", handlers.APIPasswordResetVault(authService))
 		publicAuth.POST("/auth/password-reset/opaque/start", handlers.APIStartPasswordResetRegistration(authService))
 		publicAuth.POST("/auth/password-reset/complete", handlers.APICompletePasswordReset(authService))
 	}
+
 	{
 		api.GET("/me", middleware.RequireSessionJSON(authService), handlers.APIMe(authService))
 		api.GET("/settings/storage-usage", middleware.RequireSessionJSON(authService), handlers.APIStorageUsage(settingsService))
 		api.GET("/settings/storage", middleware.RequireSessionJSON(authService), handlers.APIStorageSettings(settingsService))
 		api.PUT("/settings/storage", middleware.RequireSessionJSON(authService), middleware.LimitBody(16<<10), handlers.APIUpdateStorageSettings(settingsService))
 		api.PUT("/settings/recovery-key", middleware.RequireSessionJSON(authService), middleware.LimitBody(16<<10), handlers.APIUpdateRecoveryKey(authService))
+		api.GET("/settings/totp", middleware.RequireSessionJSON(authService), handlers.APIGetTOTPStatus(totpService))
+		api.POST("/settings/totp/enroll", middleware.RequireSessionJSON(authService), middleware.LimitBody(16<<10), handlers.APIBeginTOTPEnrollment(totpService))
+		api.POST("/settings/totp/confirm", middleware.RequireSessionJSON(authService), middleware.LimitBody(16<<10), handlers.APIConfirmTOTPEnrollment(totpService))
+		api.POST("/settings/totp/disable", middleware.RequireSessionJSON(authService), middleware.LimitBody(16<<10), handlers.APIDisableTOTP(totpService))
 		api.GET("/health", handlers.Health(db))
 		api.POST("/search", middleware.RequireSessionJSON(authService), handlers.APISearch(filesService, folderService))
 	}

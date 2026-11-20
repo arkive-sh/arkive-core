@@ -47,7 +47,6 @@ type FolderShareFolderEntry struct {
 type CreateShareSnapshotFileInput struct {
 	ShareItemID              string
 	FileID                   string
-	EncryptedRelativePath    []byte
 	EncryptedFileKeyForShare []byte
 	DisplayOrder             int
 }
@@ -366,13 +365,12 @@ func (r *Repository) GetPublicFolderShareFileRecord(ctx context.Context, db data
 
 func (r *Repository) CreateShareSnapshotFile(ctx context.Context, db database.PgExecutor, input CreateShareSnapshotFileInput) error {
 	query := `INSERT INTO share_snapshot_files
-		(share_item_id, file_id, encrypted_relative_path, encrypted_file_key_for_share, display_order)
+		(share_item_id, file_id, encrypted_file_key_for_share, display_order)
 	VALUES
-		($1, $2, $3, $4, $5)`
+		($1, $2, $3, $4)`
 	_, err := db.Exec(ctx, query,
 		input.ShareItemID,
 		input.FileID,
-		input.EncryptedRelativePath,
 		input.EncryptedFileKeyForShare,
 		input.DisplayOrder,
 	)

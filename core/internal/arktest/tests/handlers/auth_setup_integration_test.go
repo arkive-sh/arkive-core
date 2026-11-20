@@ -15,19 +15,22 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/pquerna/otp/totp"
 
 	"arkive/core/internal/arktest"
 	"arkive/core/opaque"
 	authrepo "arkive/core/repositories/auth"
 	sessionrepo "arkive/core/repositories/session"
 	settingsrepo "arkive/core/repositories/settings"
+	totprepo "arkive/core/repositories/totp"
 	usersrepo "arkive/core/repositories/users"
 	"arkive/core/services/auth"
 	"arkive/core/services/setup"
+	totpservice "arkive/core/services/totp"
 	"arkive/pkg/cookies"
 )
 
-func TestAuthAndSetupHandlersValidateRequestsAndManageSessionCookie(t *testing.T) {
+func TestAuthAndSetupHandlersManageSessionsAndTrustedDevices(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("APP_ENV", "dev")
 	env := arktest.NewEnvironment(t)
@@ -59,7 +62,8 @@ func TestAuthAndSetupHandlersValidateRequestsAndManageSessionCookie(t *testing.T
 		t.Fatal(err)
 	}
 
-	authService := auth.NewService(env.DB, authrepo.New(), sessionrepo.New(), usersrepo.New(), auth.Config{
+	totpService := totpservice.NewService(env.DB, totprepo.New(), serverSetup)
+	authService := auth.NewService(env.DB, authrepo.New(), sessionrepo.New(), usersrepo.New(), totpService, auth.Config{
 		SessionTTL:            time.Hour,
 		PasswordResetTokenTTL: time.Hour,
 		BaseURL:               "https://arkive.example",
@@ -73,18 +77,21 @@ func TestAuthAndSetupHandlersValidateRequestsAndManageSessionCookie(t *testing.T
 	router.POST("/setup/recovery-key", APICompleteInitialSetup(setupService))
 	router.POST("/login/start", APIOpaqueLoginStart(authService))
 	router.POST("/login/finish", APIOpaqueLoginFinish(authService))
+	router.POST("/totp/verify", APICompleteTOTPLogin(authService))
 	router.POST("/logout", APILogout(authService))
 	router.POST("/password-reset/forgot", APIForgotPassword(authService))
 	router.GET("/password-reset/vault", APIPasswordResetVault(authService))
 	router.POST("/password-reset/start", APIStartPasswordResetRegistration(authService))
 	router.POST("/password-reset/complete", APICompletePasswordReset(authService))
 
-	request := func(method, path, body string, cookie *http.Cookie) *httptest.ResponseRecorder {
+	request := func(method, path, body string, requestCookies ...*http.Cookie) *httptest.ResponseRecorder {
 		t.Helper()
 		req := httptest.NewRequest(method, path, bytes.NewBufferString(body))
 		req.Header.Set("Content-Type", "application/json")
-		if cookie != nil {
-			req.AddCookie(cookie)
+		for _, cookie := range requestCookies {
+			if cookie != nil {
+				req.AddCookie(cookie)
+			}
 		}
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, req)
@@ -115,6 +122,19 @@ func TestAuthAndSetupHandlersValidateRequestsAndManageSessionCookie(t *testing.T
 	if response := request(http.MethodGet, "/password-reset/vault", "", nil); response.Code != http.StatusBadRequest {
 		t.Fatalf("recovery vault request without a token = %d, want %d", response.Code, http.StatusBadRequest)
 	}
+
+	totpSetup, err := totpService.BeginEnrollment(ctx, user.ID, username)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enrollmentCode, err := totp.GenerateCode(totpSetup.Secret, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := totpService.ConfirmEnrollment(ctx, user.ID, enrollmentCode); err != nil {
+		t.Fatal(err)
+	}
+
 	if response := request(http.MethodPost, "/password-reset/forgot", `{}`, nil); response.Code != http.StatusOK {
 		t.Fatalf("forgot-password response = %d, want %d", response.Code, http.StatusOK)
 	}
@@ -168,34 +188,76 @@ func TestAuthAndSetupHandlersValidateRequestsAndManageSessionCookie(t *testing.T
 	if finishResponse.Code != http.StatusOK {
 		t.Fatalf("valid login finish response = %d: %s", finishResponse.Code, finishResponse.Body.String())
 	}
+	var mfaResult struct {
+		MFARequired bool   `json:"mfaRequired"`
+		Challenge   string `json:"challenge"`
+	}
+	if err := json.Unmarshal(finishResponse.Body.Bytes(), &mfaResult); err != nil {
+		t.Fatal(err)
+	}
+	if !mfaResult.MFARequired || mfaResult.Challenge == "" || len(finishResponse.Result().Cookies()) != 0 {
+		t.Fatalf("login finish = %+v, cookies=%+v; want an MFA challenge without a session", mfaResult, finishResponse.Result().Cookies())
+	}
+
+	loginCode, err := totp.GenerateCode(totpSetup.Secret, time.Now().Add(30*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifyBody, _ := json.Marshal(map[string]any{
+		"challenge": mfaResult.Challenge, "code": loginCode, "rememberDevice": true,
+	})
+	verifiedResponse := request(http.MethodPost, "/totp/verify", string(verifyBody), nil)
+	if verifiedResponse.Code != http.StatusOK {
+		t.Fatalf("TOTP verification response = %d: %s", verifiedResponse.Code, verifiedResponse.Body.String())
+	}
 	var loginResult struct {
 		UserID             string `json:"userID"`
 		Salt               string `json:"salt"`
 		EncryptedMasterKey string `json:"encryptedMasterKey"`
 	}
-	if err := json.Unmarshal(finishResponse.Body.Bytes(), &loginResult); err != nil {
+	if err := json.Unmarshal(verifiedResponse.Body.Bytes(), &loginResult); err != nil {
 		t.Fatal(err)
 	}
 	if loginResult.UserID != user.ID || loginResult.Salt != base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{6}, 16)) || loginResult.EncryptedMasterKey != base64.StdEncoding.EncodeToString([]byte("encrypted-vault-key")) {
 		t.Fatalf("login response returned incorrect user or vault credentials: %+v", loginResult)
 	}
-	sessionCookies := finishResponse.Result().Cookies()
-	if len(sessionCookies) != 1 || sessionCookies[0].Name != cookies.SessionName || sessionCookies[0].Value == "" || !sessionCookies[0].HttpOnly || sessionCookies[0].Path != "/" {
-		t.Fatalf("login session cookie = %+v, want an HttpOnly session cookie", sessionCookies)
+	loginCookies := verifiedResponse.Result().Cookies()
+	if len(loginCookies) != 2 {
+		t.Fatalf("login cookies = %+v, want session and trusted-device cookies", loginCookies)
 	}
-	if got, err := authService.ValidateSession(ctx, sessionCookies[0].Value); err != nil || got != user.ID {
+	var sessionCookie, deviceCookie *http.Cookie
+	for _, cookie := range loginCookies {
+		switch cookie.Name {
+		case cookies.SessionName:
+			sessionCookie = cookie
+		case cookies.TOTPDeviceName:
+			deviceCookie = cookie
+		}
+	}
+	if sessionCookie == nil || sessionCookie.Value == "" || !sessionCookie.HttpOnly || sessionCookie.Path != "/" {
+		t.Fatalf("login session cookie = %+v, want an HttpOnly session cookie", sessionCookie)
+	}
+	if deviceCookie == nil || deviceCookie.Value == "" || !deviceCookie.HttpOnly || deviceCookie.Path != "/" {
+		t.Fatalf("remember-device cookie = %+v, want an HttpOnly trusted-device cookie", deviceCookie)
+	}
+	if got, err := authService.ValidateSession(ctx, sessionCookie.Value); err != nil || got != user.ID {
 		t.Fatalf("session cookie does not identify logged-in user: user=%q error=%v", got, err)
 	}
 
-	logoutResponse := request(http.MethodPost, "/logout", "", sessionCookies[0])
+	logoutResponse := request(http.MethodPost, "/logout", "", sessionCookie, deviceCookie)
 	if logoutResponse.Code != http.StatusNoContent {
 		t.Fatalf("logout response = %d, want %d", logoutResponse.Code, http.StatusNoContent)
 	}
 	clearedCookies := logoutResponse.Result().Cookies()
-	if len(clearedCookies) != 1 || clearedCookies[0].Name != cookies.SessionName || clearedCookies[0].Value != "" || clearedCookies[0].MaxAge != -1 {
-		t.Fatalf("logout session cookie = %+v, want a cleared session cookie", clearedCookies)
+	if len(clearedCookies) != 2 {
+		t.Fatalf("logout cookies = %+v, want session and device cookies cleared", clearedCookies)
 	}
-	if _, err := authService.ValidateSession(ctx, sessionCookies[0].Value); !errors.Is(err, auth.ErrSessionNotFound) {
+	for _, cookie := range clearedCookies {
+		if cookie.Value != "" || cookie.MaxAge != -1 {
+			t.Fatalf("logout cookie = %+v, want cleared cookie", cookie)
+		}
+	}
+	if _, err := authService.ValidateSession(ctx, sessionCookie.Value); !errors.Is(err, auth.ErrSessionNotFound) {
 		t.Fatalf("logged-out cookie still validates: %v", err)
 	}
 }

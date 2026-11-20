@@ -21,13 +21,16 @@ import (
 	"arkive/core/opaque"
 	authrepo "arkive/core/repositories/auth"
 	sessionrepo "arkive/core/repositories/session"
+	totprepo "arkive/core/repositories/totp"
 	usersrepo "arkive/core/repositories/users"
+	totpservice "arkive/core/services/totp"
 )
 
 type authLifecycleFixture struct {
 	env     *arktest.Environment
 	ctx     context.Context
 	service *Service
+	totp    *totpservice.Service
 	setup   string
 }
 
@@ -47,13 +50,14 @@ func newAuthLifecycleFixtureWithResetTTL(t *testing.T, resetTTL time.Duration) *
 	setupBuffer.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	t.Cleanup(cancel)
-	service := NewService(env.DB, authrepo.New(), sessionrepo.New(), usersrepo.New(), Config{
+	totp := totpservice.NewService(env.DB, totprepo.New(), setup)
+	service := NewService(env.DB, authrepo.New(), sessionrepo.New(), usersrepo.New(), totp, Config{
 		SessionTTL:            time.Hour,
 		PasswordResetTokenTTL: resetTTL,
 		BaseURL:               "https://arkive.example",
 		OpaqueServerSetup:     setup,
 	})
-	return &authLifecycleFixture{env: env, ctx: ctx, service: service, setup: setup}
+	return &authLifecycleFixture{env: env, ctx: ctx, service: service, totp: totp, setup: setup}
 }
 
 func (f *authLifecycleFixture) createSession(t *testing.T, userID string, expiresAt time.Time) string {
@@ -98,7 +102,7 @@ func (f *authLifecycleFixture) createOpaqueUser(t *testing.T, username, email, p
 	return user.ID
 }
 
-func (f *authLifecycleFixture) finishOpaqueLogin(t *testing.T, email, password string) LoginUnlockResult {
+func (f *authLifecycleFixture) finishOpaqueLogin(t *testing.T, email, password string, trustedDeviceToken ...string) LoginUnlockResult {
 	t.Helper()
 	state, request, err := arktest.OpaqueLoginStart(f.ctx, password)
 	if err != nil {
@@ -116,7 +120,11 @@ func (f *authLifecycleFixture) finishOpaqueLogin(t *testing.T, email, password s
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := f.service.FinishOpaqueLogin(f.ctx, start.AttemptID, finalization, "192.0.2.5")
+	deviceToken := ""
+	if len(trustedDeviceToken) > 0 {
+		deviceToken = trustedDeviceToken[0]
+	}
+	result, err := f.service.FinishOpaqueLogin(f.ctx, start.AttemptID, finalization, "192.0.2.5", deviceToken)
 	if err != nil {
 		t.Fatal(err)
 	}

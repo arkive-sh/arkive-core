@@ -61,7 +61,8 @@ func APIOpaqueLoginFinish(svc *auth.Service) gin.HandlerFunc {
 			apierror.InvalidPayload(c)
 			return
 		}
-		result, err := svc.FinishOpaqueLogin(c.Request.Context(), req.AttemptID, finalization, c.ClientIP())
+		trustedDeviceToken, _ := c.Cookie(cookies.TOTPDeviceName)
+		result, err := svc.FinishOpaqueLogin(c.Request.Context(), req.AttemptID, finalization, c.ClientIP(), trustedDeviceToken)
 		if err != nil {
 			switch err {
 			case auth.ErrInvalidCredentials:
@@ -74,14 +75,35 @@ func APIOpaqueLoginFinish(svc *auth.Service) gin.HandlerFunc {
 			}
 			return
 		}
-
-		cookies.SetSession(c, result.SessionToken, result.ExpiresAt)
-		c.JSON(http.StatusOK, gin.H{
-			"userID":             result.UserID,
-			"salt":               base64.StdEncoding.EncodeToString(result.VaultSalt),
-			"encryptedMasterKey": base64.StdEncoding.EncodeToString(result.EncryptedMasterKey),
-		})
+		if result.MFARequired {
+			if trustedDeviceToken != "" {
+				cookies.ClearCustom(c, cookies.TOTPDeviceName)
+			}
+			response := gin.H{"mfaRequired": true, "challenge": result.MFAChallenge}
+			if result.TOTPSetup != nil {
+				response["totpSetup"] = result.TOTPSetup
+			}
+			c.JSON(http.StatusOK, response)
+			return
+		}
+		writeLoginUnlock(c, result)
 	}
+}
+
+func writeLoginUnlock(c *gin.Context, result auth.LoginUnlockResult) {
+	cookies.SetSession(c, result.SessionToken, result.ExpiresAt)
+	if result.TrustedDeviceToken != "" {
+		cookies.SetCustom(c, cookies.TOTPDeviceName, result.TrustedDeviceToken, result.TrustedDeviceExpiry)
+	}
+	response := gin.H{
+		"userID":             result.UserID,
+		"salt":               base64.StdEncoding.EncodeToString(result.VaultSalt),
+		"encryptedMasterKey": base64.StdEncoding.EncodeToString(result.EncryptedMasterKey),
+	}
+	if len(result.RecoveryCodes) > 0 {
+		response["recoveryCodes"] = result.RecoveryCodes
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 func APILogout(svc *auth.Service) gin.HandlerFunc {
@@ -99,6 +121,7 @@ func APILogout(svc *auth.Service) gin.HandlerFunc {
 		}
 
 		cookies.ClearSession(c)
+		cookies.ClearCustom(c, cookies.TOTPDeviceName)
 		c.Status(http.StatusNoContent)
 	}
 }

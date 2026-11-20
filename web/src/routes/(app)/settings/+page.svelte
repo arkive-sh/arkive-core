@@ -7,6 +7,7 @@
 	import InputField from '#lib/components/InputField.svelte';
 	import Modal from '#lib/components/Modal.svelte';
 	import S3StorageFields from '#lib/components/S3StorageFields.svelte';
+	import TOTPSettings from '#lib/components/TOTPSettings.svelte';
 	import { api } from '#lib/api.ts';
 	import { clearThumbnailCache } from '#lib/thumbnail-cache.ts';
 	import { formatBytes } from '#lib/utils/format.ts';
@@ -365,6 +366,7 @@
 				<p class="mt-1 mb-5 text-sm leading-5 text-(--muted)">
 					Your vault is encrypted and unlocked only in this browser.
 				</p>
+				<TOTPSettings />
 				<div
 					class="flex flex-col gap-4 border-b border-(--border-soft) py-4 min-[640px]:flex-row min-[640px]:items-center min-[640px]:justify-between"
 				>

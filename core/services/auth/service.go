@@ -24,6 +24,7 @@ import (
 	authrepo "arkive/core/repositories/auth"
 	sessionrepo "arkive/core/repositories/session"
 	usersrepo "arkive/core/repositories/users"
+	totpservice "arkive/core/services/totp"
 	"arkive/pkg/opaqueffi"
 	"arkive/pkg/tokens"
 	"arkive/pkg/validation"
@@ -36,6 +37,7 @@ type Service struct {
 	authRepo    *authrepo.Repository
 	sessionRepo *sessionrepo.Repository
 	userRepo    *usersrepo.Repository
+	totpService *totpservice.Service
 
 	sessionTTL  time.Duration
 	resetTTL    time.Duration
@@ -51,11 +53,17 @@ type Config struct {
 }
 
 type LoginUnlockResult struct {
-	UserID             string
-	SessionToken       string
-	ExpiresAt          time.Time
-	VaultSalt          []byte
-	EncryptedMasterKey []byte
+	UserID              string
+	SessionToken        string
+	ExpiresAt           time.Time
+	VaultSalt           []byte
+	EncryptedMasterKey  []byte
+	MFARequired         bool
+	MFAChallenge        string
+	TOTPSetup           *totpservice.SetupResult
+	RecoveryCodes       []string
+	TrustedDeviceToken  string
+	TrustedDeviceExpiry time.Time
 }
 
 type OpaqueLoginStartResult struct {
@@ -80,6 +88,7 @@ func NewService(
 	authRepo *authrepo.Repository,
 	sessionRepo *sessionrepo.Repository,
 	userRepo *usersrepo.Repository,
+	totpService *totpservice.Service,
 	cfg Config,
 ) *Service {
 	return &Service{
@@ -87,6 +96,7 @@ func NewService(
 		authRepo:    authRepo,
 		sessionRepo: sessionRepo,
 		userRepo:    userRepo,
+		totpService: totpService,
 		sessionTTL:  cfg.SessionTTL,
 		resetTTL:    cfg.PasswordResetTokenTTL,
 		resetURL:    strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"),
@@ -129,7 +139,7 @@ func (s *Service) StartOpaqueLogin(ctx context.Context, email string, loginReque
 	}, nil
 }
 
-func (s *Service) FinishOpaqueLogin(ctx context.Context, attemptID string, finalization []byte, lastIP string) (LoginUnlockResult, error) {
+func (s *Service) FinishOpaqueLogin(ctx context.Context, attemptID string, finalization []byte, lastIP, trustedDeviceToken string) (LoginUnlockResult, error) {
 	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return LoginUnlockResult{}, err
@@ -163,6 +173,21 @@ func (s *Service) FinishOpaqueLogin(ctx context.Context, attemptID string, final
 	if len(user.VaultSalt) == 0 || len(user.EncryptedMasterKey) == 0 {
 		return LoginUnlockResult{}, ErrVaultNotConfigured
 	}
+	challenge, err := s.totpService.CreateLoginChallenge(ctx, tx, user.ID, user.Username, trustedDeviceToken)
+	if err != nil {
+		return LoginUnlockResult{}, err
+	}
+	if challenge != nil {
+		result := LoginUnlockResult{
+			MFARequired:  true,
+			MFAChallenge: challenge.Token,
+			TOTPSetup:    challenge.Setup,
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return LoginUnlockResult{}, err
+		}
+		return result, nil
+	}
 	sessionToken, expiresAt, err := s.createSession(ctx, tx, user.ID, lastIP)
 	if err != nil {
 		return LoginUnlockResult{}, err
@@ -174,6 +199,46 @@ func (s *Service) FinishOpaqueLogin(ctx context.Context, attemptID string, final
 		return LoginUnlockResult{}, err
 	}
 	return LoginUnlockResult{UserID: user.ID, SessionToken: sessionToken, ExpiresAt: expiresAt, VaultSalt: user.VaultSalt, EncryptedMasterKey: user.EncryptedMasterKey}, nil
+}
+
+func (s *Service) CompleteTOTPLogin(ctx context.Context, challengeToken, code, recoveryCode string, rememberDevice bool, lastIP string) (LoginUnlockResult, error) {
+	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return LoginUnlockResult{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	verified, err := s.totpService.VerifyLogin(ctx, tx, challengeToken, code, recoveryCode)
+	if err != nil {
+		return LoginUnlockResult{}, err
+	}
+	user, err := s.authRepo.GetAuthUserByID(ctx, tx, verified.UserID)
+	if err != nil {
+		return LoginUnlockResult{}, err
+	}
+	var trustedDevice totpservice.TrustedDevice
+	if rememberDevice {
+		trustedDevice, err = s.totpService.RememberDevice(ctx, tx, user.ID)
+		if err != nil {
+			return LoginUnlockResult{}, err
+		}
+	}
+	sessionToken, expiresAt, err := s.createSession(ctx, tx, user.ID, lastIP)
+	if err != nil {
+		return LoginUnlockResult{}, err
+	}
+	if err := s.userRepo.UpdateLoginActivity(ctx, tx, user.ID, time.Now()); err != nil {
+		return LoginUnlockResult{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return LoginUnlockResult{}, err
+	}
+	return LoginUnlockResult{
+		UserID: user.ID, SessionToken: sessionToken, ExpiresAt: expiresAt,
+		VaultSalt: user.VaultSalt, EncryptedMasterKey: user.EncryptedMasterKey,
+		RecoveryCodes: verified.RecoveryCodes, TrustedDeviceToken: trustedDevice.Token,
+		TrustedDeviceExpiry: trustedDevice.ExpiresAt,
+	}, nil
 }
 
 func (s *Service) LogoutSession(ctx context.Context, sessionToken string) error {
@@ -357,6 +422,9 @@ func (s *Service) CompletePasswordRecovery(
 			validationErrors.Add("token", ErrPasswordResetToken.Error())
 			return validationErrors, nil
 		}
+		return nil, err
+	}
+	if err := s.totpService.ResetForPasswordRecovery(ctx, tx, user.ID); err != nil {
 		return nil, err
 	}
 	if err := s.sessionRepo.DeleteSessionsByUserID(ctx, tx, user.ID); err != nil {

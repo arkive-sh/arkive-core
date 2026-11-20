@@ -13,6 +13,9 @@ DROP TABLE IF EXISTS folders;
 DROP TABLE IF EXISTS opaque_login_attempts;
 DROP TABLE IF EXISTS instance_settings;
 DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS totp_trusted_devices;
+DROP TABLE IF EXISTS totp_recovery_codes;
+DROP TABLE IF EXISTS auth_mfa_challenges;
 DROP TABLE IF EXISTS users;
 
 DROP FUNCTION IF EXISTS prevent_username_change();
