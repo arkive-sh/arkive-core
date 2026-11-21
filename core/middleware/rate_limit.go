@@ -3,8 +3,6 @@ package middleware
 import (
 	"container/list"
 	"math"
-	"net/http"
-	"strconv"
 	"sync"
 	"time"
 
@@ -49,12 +47,7 @@ func LimitRequestsPerIP(requestsPerMinute int) gin.HandlerFunc {
 		}
 		allowed, retryAfter := limiter.allow(clientIP, time.Now())
 		if !allowed {
-			seconds := int(math.Ceil(retryAfter.Seconds()))
-			if seconds < 1 {
-				seconds = 1
-			}
-			c.Header("Retry-After", strconv.Itoa(seconds))
-			apierror.Write(c, http.StatusTooManyRequests, "rate_limited", "Too many requests", nil)
+			apierror.TooManyRequests(c, "rate_limited", "Too many requests", retryAfter)
 			c.Abort()
 			return
 		}

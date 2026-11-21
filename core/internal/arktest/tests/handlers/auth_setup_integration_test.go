@@ -244,6 +244,37 @@ func TestAuthAndSetupHandlersManageSessionsAndTrustedDevices(t *testing.T) {
 		t.Fatalf("session cookie does not identify logged-in user: user=%q error=%v", got, err)
 	}
 
+	createTOTPChallenge := func() string {
+		t.Helper()
+		tx, err := env.DB.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		challenge, err := totpService.CreateLoginChallenge(ctx, tx, user.ID, username, "")
+		if err != nil {
+			_ = tx.Rollback(ctx)
+			t.Fatalf("create TOTP challenge: %v", err)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			t.Fatalf("commit TOTP challenge: %v", err)
+		}
+		return challenge.Token
+	}
+	for challengeNumber := 0; challengeNumber < 2; challengeNumber++ {
+		challenge := createTOTPChallenge()
+		for attempt := 0; attempt < 5; attempt++ {
+			body, _ := json.Marshal(map[string]string{"challenge": challenge, "code": "invalid"})
+			response := request(http.MethodPost, "/totp/verify", string(body), nil)
+			if challengeNumber == 1 && attempt == 4 {
+				if response.Code != http.StatusTooManyRequests || response.Header().Get("Retry-After") != "900" {
+					t.Fatalf("locked TOTP response = %d Retry-After %q, want 429 and 900 seconds: %s", response.Code, response.Header().Get("Retry-After"), response.Body.String())
+				}
+			} else if response.Code != http.StatusUnauthorized {
+				t.Fatalf("invalid TOTP attempt %d for challenge %d response = %d, want 401: %s", attempt+1, challengeNumber+1, response.Code, response.Body.String())
+			}
+		}
+	}
+
 	logoutResponse := request(http.MethodPost, "/logout", "", sessionCookie, deviceCookie)
 	if logoutResponse.Code != http.StatusNoContent {
 		t.Fatalf("logout response = %d, want %d", logoutResponse.Code, http.StatusNoContent)

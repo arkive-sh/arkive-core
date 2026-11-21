@@ -155,8 +155,9 @@ func (r *Repository) MarkUsed(ctx context.Context, tx pgx.Tx, userID string, ste
 	return tag.RowsAffected() == 1, err
 }
 
-func (r *Repository) RecordFailure(ctx context.Context, tx pgx.Tx, userID string) (bool, error) {
-	var locked bool
+// RecordFailure adds an invalid factor attempt and returns any active lock duration.
+func (r *Repository) RecordFailure(ctx context.Context, tx pgx.Tx, userID string) (time.Duration, error) {
+	var seconds int
 	err := tx.QueryRow(ctx, `UPDATE users SET
 		totp_failure_window_started_at = CASE
 			WHEN totp_failure_window_started_at IS NULL OR totp_failure_window_started_at <= now() - interval '15 minutes' THEN now()
@@ -171,8 +172,10 @@ func (r *Repository) RecordFailure(ctx context.Context, tx pgx.Tx, userID string
 			THEN now() + interval '15 minutes'
 			ELSE totp_locked_until END
 		WHERE id = $1
-		RETURNING COALESCE(totp_locked_until > now(), FALSE)`, userID).Scan(&locked)
-	return locked, err
+		RETURNING CASE WHEN totp_locked_until > now()
+			THEN GREATEST(1, CEIL(EXTRACT(EPOCH FROM (totp_locked_until - now()))))::int
+			ELSE 0 END`, userID).Scan(&seconds)
+	return time.Duration(seconds) * time.Second, err
 }
 
 func (r *Repository) ResetFailures(ctx context.Context, tx pgx.Tx, userID string) error {

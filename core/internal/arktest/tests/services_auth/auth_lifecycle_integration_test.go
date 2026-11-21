@@ -131,6 +131,31 @@ func (f *authLifecycleFixture) finishOpaqueLogin(t *testing.T, email, password s
 	return result
 }
 
+func (f *authLifecycleFixture) finishOpaqueLoginProof(t *testing.T, email, password string, corrupt bool) error {
+	t.Helper()
+	state, request, err := arktest.OpaqueLoginStart(f.ctx, password)
+	if err != nil {
+		return err
+	}
+	start, err := f.service.StartOpaqueLogin(f.ctx, email, request)
+	if err != nil {
+		return err
+	}
+	response, err := base64.RawURLEncoding.DecodeString(start.LoginResponse)
+	if err != nil {
+		return err
+	}
+	finalization, err := arktest.OpaqueLoginFinish(f.ctx, password, state, response)
+	if err != nil {
+		return err
+	}
+	if corrupt {
+		finalization[len(finalization)-1] ^= 1
+	}
+	_, err = f.service.FinishOpaqueLogin(f.ctx, start.AttemptID, finalization, "192.0.2.5", "")
+	return err
+}
+
 func (f *authLifecycleFixture) insertUser(t *testing.T, username, email string) string {
 	t.Helper()
 	user, err := arktest.CreateVerifiedUser(f.ctx, f.env.DB, "Auth Test User", username, email, []byte("opaque-registration-record"), nil, nil)
@@ -191,7 +216,7 @@ func TestOpaqueLoginWithValidPasswordCreatesPersistedSession(t *testing.T) {
 	}
 }
 
-func TestPasswordRecoveryReplacesOpaqueCredentialsConsumesTokenAndRevokesSessions(t *testing.T) {
+func TestPasswordRecoveryReplacesCredentialsRevokesSessionsAndClearsCooldown(t *testing.T) {
 	f := newAuthLifecycleFixture(t)
 	const email = "password-recovery@example.test"
 	userID := f.createOpaqueUser(t, "recoveryuser", email, "old password")
@@ -204,6 +229,22 @@ func TestPasswordRecoveryReplacesOpaqueCredentialsConsumesTokenAndRevokesSession
 	}
 	oldSession := f.createSession(t, userID, time.Now().Add(time.Hour))
 	secondOldSession := f.createSession(t, userID, time.Now().Add(time.Hour))
+	for attempt := 1; attempt <= 5; attempt++ {
+		err := f.finishOpaqueLoginProof(t, email, "old password", true)
+		if attempt < 5 && !errors.Is(err, ErrInvalidCredentials) {
+			t.Fatalf("failed login attempt %d error = %v, want ErrInvalidCredentials", attempt, err)
+		}
+		if attempt == 5 {
+			var cooldown *LoginCooldownError
+			if !errors.As(err, &cooldown) || cooldown.RetryAfter < 29*time.Second || cooldown.RetryAfter > 30*time.Second {
+				t.Fatalf("fifth failed login error = %v, want a 30-second cooldown", err)
+			}
+		}
+	}
+	var cooldown *LoginCooldownError
+	if err := f.finishOpaqueLoginProof(t, email, "old password", false); !errors.As(err, &cooldown) || cooldown.RetryAfter <= 0 {
+		t.Fatalf("correct password during cooldown error = %v, want an active login cooldown", err)
+	}
 
 	reset, err := f.service.RequestPasswordReset(f.ctx, email)
 	if err != nil || reset.ResetToken == "" {

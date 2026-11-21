@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/base64"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -64,6 +65,11 @@ func APIOpaqueLoginFinish(svc *auth.Service) gin.HandlerFunc {
 		trustedDeviceToken, _ := c.Cookie(cookies.TOTPDeviceName)
 		result, err := svc.FinishOpaqueLogin(c.Request.Context(), req.AttemptID, finalization, c.ClientIP(), trustedDeviceToken)
 		if err != nil {
+			var cooldown *auth.LoginCooldownError
+			if errors.As(err, &cooldown) {
+				apierror.TooManyRequests(c, "login_rate_limited", "Too many failed sign-in attempts. Try again later.", cooldown.RetryAfter)
+				return
+			}
 			switch err {
 			case auth.ErrInvalidCredentials:
 				apierror.Write(c, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password", nil)

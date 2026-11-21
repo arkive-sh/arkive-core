@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -137,8 +138,12 @@ func writeTOTPError(c *gin.Context, err error, internalMessage string) {
 	case errors.Is(err, totpservice.ErrInvalidCode):
 		apierror.Write(c, http.StatusUnauthorized, "invalid_two_factor_code", "Verification code is invalid or expired", nil)
 	case errors.Is(err, totpservice.ErrLocked):
-		c.Header("Retry-After", "900")
-		apierror.Write(c, http.StatusTooManyRequests, "two_factor_rate_limited", "Too many attempts. Try again later.", nil)
+		var cooldown *totpservice.LockedError
+		if errors.As(err, &cooldown) {
+			apierror.TooManyRequests(c, "two_factor_rate_limited", "Too many attempts. Try again later.", cooldown.RetryAfter)
+		} else {
+			apierror.TooManyRequests(c, "two_factor_rate_limited", "Too many attempts. Try again later.", time.Second)
+		}
 	case errors.Is(err, totpservice.ErrNotEnabled):
 		apierror.Write(c, http.StatusConflict, "two_factor_not_enabled", err.Error(), nil)
 	default:

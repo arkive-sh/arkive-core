@@ -1,8 +1,11 @@
 package apierror
 
 import (
+	"math"
 	"net/http"
 	"sort"
+	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -65,4 +68,14 @@ func Validation(c *gin.Context, errors validation.Errors) {
 
 func RequestTooLarge(c *gin.Context) {
 	Write(c, http.StatusRequestEntityTooLarge, "request_too_large", "Request too large", nil)
+}
+
+// TooManyRequests writes a 429 response with a rounded-up Retry-After value.
+func TooManyRequests(c *gin.Context, code, message string, retryAfter time.Duration) {
+	seconds := int(math.Ceil(retryAfter.Seconds()))
+	if seconds < 1 {
+		seconds = 1
+	}
+	c.Header("Retry-After", strconv.Itoa(seconds))
+	Write(c, http.StatusTooManyRequests, code, message, nil)
 }

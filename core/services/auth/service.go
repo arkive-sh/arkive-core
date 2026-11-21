@@ -154,6 +154,18 @@ func (s *Service) FinishOpaqueLogin(ctx context.Context, attemptID string, final
 		}
 		return LoginUnlockResult{}, err
 	}
+	if attempt.UserID != nil {
+		retryAfter, err := s.authRepo.PasswordLoginCooldown(ctx, tx, *attempt.UserID)
+		if err != nil {
+			return LoginUnlockResult{}, err
+		}
+		if retryAfter > 0 {
+			if err := tx.Commit(ctx); err != nil {
+				return LoginUnlockResult{}, err
+			}
+			return LoginUnlockResult{}, &LoginCooldownError{RetryAfter: retryAfter}
+		}
+	}
 	state, stateErr := s.openOpaqueLoginState(strings.TrimSpace(attemptID), attempt.UserID, attempt.ExpiresAt, attempt.State)
 	// Verify opened states before checking user existence to keep the finish path uniform.
 	var finishErr error
@@ -161,13 +173,26 @@ func (s *Service) FinishOpaqueLogin(ctx context.Context, attemptID string, final
 		finishErr = opaque.FinishLogin(state, finalization)
 	}
 	if stateErr != nil || finishErr != nil || attempt.UserID == nil {
+		var retryAfter time.Duration
+		if stateErr == nil && finishErr != nil && attempt.UserID != nil {
+			retryAfter, err = s.authRepo.RecordPasswordLoginFailure(ctx, tx, *attempt.UserID)
+			if err != nil {
+				return LoginUnlockResult{}, err
+			}
+		}
 		if commitErr := tx.Commit(ctx); commitErr != nil {
 			return LoginUnlockResult{}, commitErr
+		}
+		if retryAfter > 0 {
+			return LoginUnlockResult{}, &LoginCooldownError{RetryAfter: retryAfter}
 		}
 		return LoginUnlockResult{}, ErrInvalidCredentials
 	}
 	user, err := s.authRepo.GetAuthUserByID(ctx, tx, *attempt.UserID)
 	if err != nil {
+		return LoginUnlockResult{}, err
+	}
+	if err := s.authRepo.ResetPasswordLoginFailures(ctx, tx, user.ID); err != nil {
 		return LoginUnlockResult{}, err
 	}
 	if len(user.VaultSalt) == 0 || len(user.EncryptedMasterKey) == 0 {
@@ -425,6 +450,9 @@ func (s *Service) CompletePasswordRecovery(
 		return nil, err
 	}
 	if err := s.totpService.ResetForPasswordRecovery(ctx, tx, user.ID); err != nil {
+		return nil, err
+	}
+	if err := s.authRepo.ResetPasswordLoginFailures(ctx, tx, user.ID); err != nil {
 		return nil, err
 	}
 	if err := s.sessionRepo.DeleteSessionsByUserID(ctx, tx, user.ID); err != nil {

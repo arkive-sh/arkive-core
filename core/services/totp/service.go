@@ -57,6 +57,17 @@ type TrustedDevice struct {
 	ExpiresAt time.Time
 }
 
+// LockedError reports a verification lock and its remaining duration.
+type LockedError struct {
+	RetryAfter time.Duration
+}
+
+// Error returns the generic verification lock message.
+func (e *LockedError) Error() string { return ErrLocked.Error() }
+
+// Unwrap allows callers to match ErrLocked.
+func (e *LockedError) Unwrap() error { return ErrLocked }
+
 func NewService(db database.PgPool, repo *totprepo.Repository, opaqueSetup string) *Service {
 	return &Service{db: db, repo: repo, opaqueSetup: opaqueSetup}
 }
@@ -148,7 +159,7 @@ func (s *Service) VerifyLogin(ctx context.Context, tx pgx.Tx, challengeToken, co
 		return LoginVerification{}, err
 	}
 	if state.LockedUntil != nil && state.LockedUntil.After(time.Now()) {
-		return LoginVerification{}, ErrLocked
+		return LoginVerification{}, &LockedError{RetryAfter: time.Until(*state.LockedUntil)}
 	}
 	var recoveryCodes []string
 	switch {
@@ -270,7 +281,7 @@ func (s *Service) ConfirmEnrollment(ctx context.Context, userID, code string) ([
 		return nil, err
 	}
 	if state.LockedUntil != nil && state.LockedUntil.After(time.Now()) {
-		return nil, ErrLocked
+		return nil, &LockedError{RetryAfter: time.Until(*state.LockedUntil)}
 	}
 	sealed, err := s.repo.GetPendingSecret(ctx, tx, userID)
 	if err != nil {
@@ -320,7 +331,7 @@ func (s *Service) Disable(ctx context.Context, userID, code, recoveryCode string
 		return ErrNotEnabled
 	}
 	if state.LockedUntil != nil && state.LockedUntil.After(time.Now()) {
-		return ErrLocked
+		return &LockedError{RetryAfter: time.Until(*state.LockedUntil)}
 	}
 	if code != "" {
 		secret, err := s.openSecret(userID, state.EncryptedSecret)
@@ -397,15 +408,15 @@ func (s *Service) recordFailure(ctx context.Context, tx pgx.Tx, challengeHash []
 			return err
 		}
 	}
-	locked, err := s.repo.RecordFailure(ctx, tx, userID)
+	retryAfter, err := s.repo.RecordFailure(ctx, tx, userID)
 	if err != nil {
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return err
 	}
-	if locked {
-		return ErrLocked
+	if retryAfter > 0 {
+		return &LockedError{RetryAfter: retryAfter}
 	}
 	return ErrInvalidCode
 }

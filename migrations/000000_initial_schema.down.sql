@@ -16,6 +16,7 @@ DROP TABLE IF EXISTS sessions;
 DROP TABLE IF EXISTS totp_trusted_devices;
 DROP TABLE IF EXISTS totp_recovery_codes;
 DROP TABLE IF EXISTS auth_mfa_challenges;
+DROP TABLE IF EXISTS auth_login_lockouts;
 DROP TABLE IF EXISTS users;
 
 DROP FUNCTION IF EXISTS prevent_username_change();

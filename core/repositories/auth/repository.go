@@ -2,6 +2,7 @@ package authrepo
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -142,6 +143,55 @@ func (r *Repository) ConsumeOpaqueLoginAttempt(ctx context.Context, tx pgx.Tx, i
 		return OpaqueLoginAttempt{}, err
 	}
 	return attempt, nil
+}
+
+// PasswordLoginCooldown returns the remaining password sign-in cooldown.
+func (r *Repository) PasswordLoginCooldown(ctx context.Context, tx pgx.Tx, userID string) (time.Duration, error) {
+	var seconds int
+	err := tx.QueryRow(ctx, `SELECT CASE WHEN locked_until > now()
+		THEN GREATEST(1, CEIL(EXTRACT(EPOCH FROM (locked_until - now()))))::int
+		ELSE 0 END
+		FROM auth_login_lockouts WHERE user_id = $1`, userID).Scan(&seconds)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, nil
+	}
+	return time.Duration(seconds) * time.Second, err
+}
+
+// RecordPasswordLoginFailure counts a 24-hour window and backs off to a 15-minute cap.
+func (r *Repository) RecordPasswordLoginFailure(ctx context.Context, tx pgx.Tx, userID string) (time.Duration, error) {
+	var seconds int
+	err := tx.QueryRow(ctx, `INSERT INTO auth_login_lockouts (user_id, failed_attempts, window_started_at)
+		VALUES ($1, 1, now())
+		ON CONFLICT (user_id) DO UPDATE SET
+			failed_attempts = CASE
+				WHEN auth_login_lockouts.window_started_at <= now() - interval '24 hours' THEN 1
+				ELSE auth_login_lockouts.failed_attempts + 1
+			END,
+			window_started_at = CASE
+				WHEN auth_login_lockouts.window_started_at <= now() - interval '24 hours' THEN now()
+				ELSE auth_login_lockouts.window_started_at
+			END,
+			locked_until = CASE
+				WHEN auth_login_lockouts.window_started_at <= now() - interval '24 hours' THEN NULL
+				WHEN auth_login_lockouts.failed_attempts + 1 >= 10 THEN now() + interval '15 minutes'
+				WHEN auth_login_lockouts.failed_attempts + 1 = 9 THEN now() + interval '8 minutes'
+				WHEN auth_login_lockouts.failed_attempts + 1 = 8 THEN now() + interval '4 minutes'
+				WHEN auth_login_lockouts.failed_attempts + 1 = 7 THEN now() + interval '2 minutes'
+				WHEN auth_login_lockouts.failed_attempts + 1 = 6 THEN now() + interval '1 minute'
+				WHEN auth_login_lockouts.failed_attempts + 1 = 5 THEN now() + interval '30 seconds'
+				ELSE NULL
+			END
+		RETURNING CASE WHEN locked_until > now()
+			THEN GREATEST(1, CEIL(EXTRACT(EPOCH FROM (locked_until - now()))))::int
+			ELSE 0 END`, userID).Scan(&seconds)
+	return time.Duration(seconds) * time.Second, err
+}
+
+// ResetPasswordLoginFailures clears the user's sign-in cooldown state.
+func (r *Repository) ResetPasswordLoginFailures(ctx context.Context, tx pgx.Tx, userID string) error {
+	_, err := tx.Exec(ctx, `DELETE FROM auth_login_lockouts WHERE user_id = $1`, userID)
+	return err
 }
 
 func (r *Repository) UpdateLastLogin(ctx context.Context, db database.PgExecutor, userID, lastIP string) error {

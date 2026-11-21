@@ -72,6 +72,13 @@ CREATE TABLE auth_mfa_challenges (
 
 CREATE INDEX auth_mfa_challenges_expires_at_idx ON auth_mfa_challenges (expires_at);
 
+CREATE TABLE auth_login_lockouts (
+  user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  failed_attempts INTEGER NOT NULL CHECK (failed_attempts > 0),
+  window_started_at TIMESTAMPTZ NOT NULL,
+  locked_until TIMESTAMPTZ
+);
+
 CREATE TABLE totp_recovery_codes (
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   code_hash BYTEA NOT NULL CHECK (octet_length(code_hash) = 32),
